@@ -1,0 +1,12 @@
+Servicios sugeridos:
+- ingest: lectura de archivos y normalización de entradas.
+- ocr: OCR, postproceso y scoring.
+- layout: detección de regiones y clasificación documental.
+- symbols: detección de símbolos/objetos.
+- semantics: normalización a entidades del dominio.
+- knowledge: carga de plantillas, bibliotecas y ontologías.
+- rules: evaluación normativa y QA/QC.
+- comparison: consistencia entre láminas, tablas y versiones.
+- ranking: criticidad, confianza y agrupación de hallazgos.
+- reporting: armado de salidas HTML/PDF/JSON.
+- exports: exportaciones CSV, XLSX, JSON, snapshots visuales.

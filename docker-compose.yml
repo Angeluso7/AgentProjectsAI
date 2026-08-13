@@ -1,0 +1,26 @@
+services:
+  api:
+    build: ./backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    volumes:
+      - ./backend:/app
+      - ./knowledge:/knowledge
+      - ./rules:/rules
+      - ./data:/data
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: planreview
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"

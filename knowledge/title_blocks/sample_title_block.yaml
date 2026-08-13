@@ -1,0 +1,16 @@
+name: TB_ARQ_A1
+anchor: bottom_right
+fields:
+  - name: drawing_code
+    type: string
+    required: true
+    pattern: '^[A-Z]+-[0-9]{3,}$'
+  - name: sheet_title
+    type: string
+    required: true
+  - name: revision
+    type: string
+    required: false
+  - name: scale
+    type: string
+    required: false

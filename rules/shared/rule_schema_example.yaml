@@ -1,0 +1,8 @@
+id: DOC-001
+name: Drawing code required
+scope: title_block
+severity: medium
+inputs: [sheet.metadata.drawing_code]
+logic:
+  operator: not_empty
+message: El código de plano es obligatorio.
