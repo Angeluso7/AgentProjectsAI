@@ -8,8 +8,15 @@ node_modules/
 dist/
 build/
 .DS_Store
+data/incoming/
 data/raw/
 data/interim/
 data/processed/
+data/exports/
+datasets/train/
+datasets/val/
+datasets/test/
 models/checkpoints/
 models/trained/
+models/experiments/
+mlruns/

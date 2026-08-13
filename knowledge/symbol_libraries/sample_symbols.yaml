@@ -1,0 +1,8 @@
+library: electrical_basic
+symbols:
+  - id: SYM-001
+    name: outlet
+    aliases: [enchufe, toma, tomacorriente]
+  - id: SYM-002
+    name: switch
+    aliases: [interruptor, switch]

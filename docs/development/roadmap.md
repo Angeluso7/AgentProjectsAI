@@ -1,22 +1,22 @@
-# Roadmap sugerido
+# Roadmap
 
-## Fase 1
-- Definir entidades, esquemas y base de datos.
-- Implementar ingesta PDF y OCR base.
-- Extraer viñeta y metadatos.
-- Crear reglas documentales iniciales.
+## Etapa 1
+- Base de datos y entidades.
+- Ingesta PDF.
+- OCR y extracción inicial.
+- Gestión de conocimiento guía.
 
-## Fase 2
-- Incorporar conocimiento guía estructurado.
-- Detectar tablas, layout y referencias cruzadas.
-- Generar reportes básicos y exportaciones.
+## Etapa 2
+- Reglas documentales y normativas.
+- Persistencia de memorias.
+- Reportes y exportaciones.
 
-## Fase 3
-- Etiquetar dataset.
-- Entrenar detector de layout y símbolos.
-- Integrar scoring de confianza.
+## Etapa 3
+- Detección de layout y símbolos.
+- Revisión humana.
+- Active learning.
 
-## Fase 4
-- Interfaz web.
-- Gestión de proyectos, versiones y revisiones.
-- Benchmarking, observabilidad y operación continua.
+## Etapa 4
+- Reentrenamiento selectivo.
+- Benchmarking.
+- Interfaz completa y empaquetado.

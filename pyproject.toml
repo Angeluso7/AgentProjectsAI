@@ -1,7 +1,7 @@
 [project]
-name = "plan-review-ai"
-version = "0.1.0"
-description = "AI-assisted PDF drawing review platform"
+name = "plan-review-ai-hybrid"
+version = "0.2.0"
+description = "Hybrid AI platform for PDF drawing review"
 requires-python = ">=3.11"
 dependencies = [
   "fastapi",
@@ -28,5 +28,6 @@ dependencies = [
   "torch",
   "torchvision",
   "mlflow",
-  "dvc"
+  "dvc",
+  "faiss-cpu"
 ]

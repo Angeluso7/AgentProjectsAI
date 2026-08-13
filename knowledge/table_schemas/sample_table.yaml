@@ -1,0 +1,10 @@
+name: quantity_table
+columns:
+  - name: item
+    type: string
+  - name: quantity
+    type: number
+  - name: x_coord
+    type: number
+  - name: y_coord
+    type: number

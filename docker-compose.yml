@@ -5,8 +5,10 @@ services:
     volumes:
       - ./backend:/app
       - ./knowledge:/knowledge
+      - ./memory:/memory
       - ./rules:/rules
       - ./data:/data
+      - ./datasets:/datasets
     ports:
       - "8000:8000"
     depends_on:

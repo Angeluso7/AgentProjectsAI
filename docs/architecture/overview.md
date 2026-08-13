@@ -1,26 +1,18 @@
-# Arquitectura propuesta
+# Arquitectura híbrida
 
-## Capas
-1. Entrada documental: PDF, imágenes, Excel/CSV, plantillas guía, normas.
-2. Ingesta: partición por hoja, rasterizado, extracción textual/vectorial.
-3. Comprensión documental: clasificación de hoja, layout, viñeta, tablas, leyendas.
-4. Comprensión técnica: símbolos, regiones, relaciones espaciales, referencias cruzadas.
-5. Conocimiento guiado: plantillas de viñeta, bibliotecas de símbolos, esquemas de tablas, ontologías.
-6. Normalización semántica: mapeo a entidades estándar del dominio.
-7. Reglas y comparación: verificación normativa, QA/QC, consistencia documental.
-8. Ranking: severidad, confianza, disciplina, criticidad.
-9. Reporte y exportación: JSON, CSV, HTML, PDF, imágenes anotadas.
-
-## Tipos de input adicionales
-- title_blocks: plantillas de viñetas con campos esperados.
-- symbol_libraries: catálogos de símbolos por disciplina.
-- table_schemas: estructura y significado de tablas.
-- ontologies: equivalencias de términos y relaciones.
-- standards: normas técnicas y criterios internos.
-- templates: patrones reutilizables de extracción.
+## Flujo extremo a extremo
+1. Entrada de documentos: PDFs de planos, normas, simbologías, plantillas, tablas y anexos.
+2. Ingesta: lectura, partición por hoja, rasterización, extracción textual/vectorial.
+3. Detección: layout, viñetas, tablas, regiones, símbolos, referencias y tipos de vista.
+4. Interpretación guiada: contraste con plantillas, esquemas, ontologías y librerías de símbolos.
+5. Normalización semántica: mapeo a entidades estándar del dominio.
+6. Persistencia en memorias: documental, normativa, de plantillas y de decisiones.
+7. Verificación: reglas, consistencia cruzada, recuperación semántica y comparación entre versiones.
+8. Revisión humana: validación, correcciones, aceptación o descarte de hallazgos.
+9. Aprendizaje: active learning, weak labeling y reentrenamiento selectivo.
+10. Salida: JSON, CSV, XLSX, HTML, PDF, imágenes anotadas y API.
 
 ## Principios
-- Arquitectura híbrida: modelos ML/DL + OCR + reglas determinísticas.
-- Trazabilidad total: cada hallazgo debe enlazar a hoja, coordenada, evidencia y regla.
-- Datos primero: los modelos alimentan una base estructurada; no validan normas por sí solos.
-- Despliegue incremental: MVP documental primero, detección visual después.
+- La IA detecta y propone; la base recuerda; las reglas verifican; el humano confirma.
+- Cada resultado debe ser trazable a documento, hoja, coordenada, evidencia y regla.
+- El conocimiento externo se guarda en estructuras persistentes, no solo en prompts.

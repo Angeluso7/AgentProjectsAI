@@ -1,7 +1,0 @@
-terms:
-  - canonical: drawing
-    aliases: [plano, lamina, sheet]
-  - canonical: title_block
-    aliases: [viñeta, title block, cajetin]
-  - canonical: revision
-    aliases: [rev, revision, version]

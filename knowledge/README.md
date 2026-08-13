@@ -1,10 +1,9 @@
-Repositorio de conocimiento guía.
+Conocimiento guía versionado.
 
-Subcarpetas:
-- title_blocks: plantillas de viñetas.
-- symbol_libraries: símbolos y taxonomías.
-- table_schemas: esquemas de tablas.
-- ontologies: términos, aliases y relaciones.
-- standards: normas y estándares internos.
-- templates: patrones de extracción.
-- examples: archivos de ejemplo para pruebas.
+- title_blocks: plantillas de viñeta.
+- symbol_libraries: símbolos por disciplina.
+- table_schemas: definición de tablas.
+- ontologies: taxonomías, alias y relaciones.
+- standards: normativa y criterios internos.
+- templates: patrones de extracción y matching.
+- examples: ejemplos de entrada.

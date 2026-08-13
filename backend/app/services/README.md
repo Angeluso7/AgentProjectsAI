@@ -1,12 +1,18 @@
-Servicios sugeridos:
-- ingest: lectura de archivos y normalización de entradas.
-- ocr: OCR, postproceso y scoring.
-- layout: detección de regiones y clasificación documental.
-- symbols: detección de símbolos/objetos.
-- semantics: normalización a entidades del dominio.
-- knowledge: carga de plantillas, bibliotecas y ontologías.
-- rules: evaluación normativa y QA/QC.
-- comparison: consistencia entre láminas, tablas y versiones.
-- ranking: criticidad, confianza y agrupación de hallazgos.
-- reporting: armado de salidas HTML/PDF/JSON.
-- exports: exportaciones CSV, XLSX, JSON, snapshots visuales.
+Servicios principales:
+- ingest: lectura y normalización de documentos.
+- ocr: OCR y postproceso.
+- layout: regiones, vistas, viñetas y tablas.
+- symbols: detección de símbolos y objetos.
+- semantics: normalización a entidades estándar.
+- knowledge: carga y consulta de entradas guía.
+- knowledge_graph: relaciones entre normas, elementos, hojas y plantillas.
+- vector_index: embeddings y recuperación semántica.
+- rules: verificación normativa y QA/QC.
+- comparison: cruces entre hojas, tablas, revisiones y fuentes.
+- ranking: criticidad y confianza.
+- reporting: informes y evidencias.
+- exports: JSON, CSV, XLSX, PDF, imágenes anotadas.
+- active_learning: selección de casos inciertos para etiquetado.
+- retraining: actualización selectiva de modelos.
+- human_review: validación experta y correcciones.
+- decision_engine: combinación de reglas, recuperación y outputs de modelos.
