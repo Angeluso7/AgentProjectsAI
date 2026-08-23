@@ -1,25 +1,5 @@
-Modelos sugeridos:
-- Project
-- DocumentSet
-- SourceDocument
-- Sheet
-- SheetRevision
-- ViewRegion
-- TextBlock
-- TableRegion
-- TableCell
-- SymbolDetection
-- DetectedElement
-- KnowledgeAsset
-- TitleBlockTemplate
-- SymbolLibrary
-- TableSchema
-- OntologyTerm
-- StandardClause
-- MemoryRecord
-- Finding
-- ReviewAction
-- FeedbackLabel
-- TrainingJob
-- ModelVersion
-- ExportJob
+# Shared (Contratos y Definiciones Compartidas)
+
+Este paquete provee definiciones de modelos, contratos y utilidades compartidas:
+- `contracts/geometry.py`: Estructuras geométricas (`BoundingBox`, `Polygon2D`, `Point2D`) con conversiones de coordenadas normalizadas y píxeles absolutos.
+- `contracts/events.py`: Definición de eventos asíncronos para la cola de tareas (Celery/RQ).

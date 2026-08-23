@@ -1,6 +1,9 @@
 services:
-  api:
-    build: ./backend
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: plan_review_backend
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./backend:/app
@@ -9,20 +12,75 @@ services:
       - ./rules:/rules
       - ./data:/data
       - ./datasets:/datasets
+      - ./models:/models
+      - ./knowledge:/app/knowledge
+      - ./memory:/app/memory
+      - ./rules:/app/rules
+      - ./data:/app/data
+      - ./datasets:/app/datasets
+      - ./models:/app/models
+      - ./alembic.ini:/app/alembic.ini
+      - ./migrations:/app/migrations
+      - ./scripts:/app/scripts
     ports:
       - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://postgres:postgres@db:5432/planreview
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=dev-secret-key-change-in-production-min-32-chars-long
+      - CORS_ORIGINS=["http://localhost:5173","http://localhost:3000","http://127.0.0.1:5173"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     depends_on:
-      - db
-      - redis
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: plan_review_frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8000/api/v1
+    depends_on:
+      backend:
+        condition: service_healthy
+
   db:
-    image: postgres:16
+    image: postgis/postgis:16-3.4
+    container_name: plan_review_db
     environment:
       POSTGRES_DB: planreview
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
       - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d planreview"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
-    image: redis:7
+    image: redis:7-alpine
+    container_name: plan_review_redis
     ports:
       - "6379:6379"
+
+volumes:
+  pgdata:

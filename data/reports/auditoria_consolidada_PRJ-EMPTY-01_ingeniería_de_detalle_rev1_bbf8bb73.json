@@ -1,0 +1,320 @@
+{
+  "project_id": "9f0beae4-1b12-4c43-ad36-f0cbabcd10a2",
+  "project_name": "Proyecto Terreno Vacío",
+  "project_code": "PRJ-EMPTY-01",
+  "stage": "Ingeniería de Detalle",
+  "revision_number": 1,
+  "title": "Reporte Consolidado de Auditoría — Ingeniería de Detalle (PRJ-EMPTY-01)",
+  "global_stage_verdict": "no_aprobable_bloqueada",
+  "verdict_rationale": "La etapa NO ES APROBABLE porque presenta 6 reglas bloqueadas preventivamente, 6 entregables obligatorios faltantes y 0 observaciones técnicas críticas/altas abiertas.",
+  "issued_by": "Auditor Hardening",
+  "issued_at": "2026-08-23T04:53:39.767063",
+  "completeness": {
+    "completeness_percentage": 0.0,
+    "is_gate_passed": false,
+    "total_required_count": 8,
+    "eligible_count": 0,
+    "missing_mandatory_count": 6,
+    "missing_optional_count": 2,
+    "blocked_rules_count": 6,
+    "deliverables_matrix": [
+      {
+        "requirement_id": "05ec38d5-4817-4941-a476-0318a73e48eb",
+        "title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "deliverable_type": "plano_general",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_TITLE_BLOCK_FIELDS_V1",
+          "RULE_TITLE_BLOCK_SCALE_V1"
+        ]
+      },
+      {
+        "requirement_id": "bae9fbb4-8e64-430c-a530-88a75e533d82",
+        "title": "Detalles Constructivos y Cuadros de Vanos",
+        "deliverable_type": "plano_detalles",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "322a4b07-5c2d-4f64-9018-633d7a63c210",
+        "title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "deliverable_type": "plano_estructural",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1"
+        ]
+      },
+      {
+        "requirement_id": "8ea9c904-e9dc-4f0a-99ca-089586861634",
+        "title": "Memoria de Cálculo Estructural Definitiva",
+        "deliverable_type": "memoria_calculo",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "3ddf4139-5ef3-4c99-891a-ac6c86310d40",
+        "title": "Especificaciones Técnicas Especiales (EETT)",
+        "deliverable_type": "especificaciones_tecnicas",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "0fd54689-a0a5-4939-98c2-cebf9893c131",
+        "title": "Estudio de Mecánica de Suelos Definitivo",
+        "deliverable_type": "mecanica_suelos",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "b8508449-045d-42c8-b50e-4b754b12e66c",
+        "title": "Cuadros de Cargas y Diagramas Eléctricos",
+        "deliverable_type": "cuadro_cargas",
+        "is_mandatory": false,
+        "readiness_status": "missing_optional",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "7a005e27-29cc-4787-ba2a-f61c71f26260",
+        "title": "Plan de Evacuación y Protección Contra Incendios",
+        "deliverable_type": "plan_seguridad",
+        "is_mandatory": false,
+        "readiness_status": "missing_optional",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      }
+    ],
+    "missing_deliverables": [
+      {
+        "requirement_id": "05ec38d5-4817-4941-a476-0318a73e48eb",
+        "title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "deliverable_type": "plano_general",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_TITLE_BLOCK_FIELDS_V1",
+          "RULE_TITLE_BLOCK_SCALE_V1"
+        ]
+      },
+      {
+        "requirement_id": "bae9fbb4-8e64-430c-a530-88a75e533d82",
+        "title": "Detalles Constructivos y Cuadros de Vanos",
+        "deliverable_type": "plano_detalles",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "322a4b07-5c2d-4f64-9018-633d7a63c210",
+        "title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "deliverable_type": "plano_estructural",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1"
+        ]
+      },
+      {
+        "requirement_id": "8ea9c904-e9dc-4f0a-99ca-089586861634",
+        "title": "Memoria de Cálculo Estructural Definitiva",
+        "deliverable_type": "memoria_calculo",
+        "is_mandatory": true,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "3ddf4139-5ef3-4c99-891a-ac6c86310d40",
+        "title": "Especificaciones Técnicas Especiales (EETT)",
+        "deliverable_type": "especificaciones_tecnicas",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "0fd54689-a0a5-4939-98c2-cebf9893c131",
+        "title": "Estudio de Mecánica de Suelos Definitivo",
+        "deliverable_type": "mecanica_suelos",
+        "is_mandatory": true,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "b8508449-045d-42c8-b50e-4b754b12e66c",
+        "title": "Cuadros de Cargas y Diagramas Eléctricos",
+        "deliverable_type": "cuadro_cargas",
+        "is_mandatory": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "7a005e27-29cc-4787-ba2a-f61c71f26260",
+        "title": "Plan de Evacuación y Protección Contra Incendios",
+        "deliverable_type": "plan_seguridad",
+        "is_mandatory": false,
+        "blocked_rule_codes": []
+      }
+    ],
+    "blocked_rules": [
+      {
+        "rule_code": "RULE_DOOR_COUNT_MATCH_V1",
+        "rule_name": "RULE_DOOR_COUNT_MATCH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "blocked_by_deliverable_type": "plano_general",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Plantas, Cortes y Elevaciones Definitivos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_WINDOW_COUNT_MATCH_V1",
+        "rule_name": "RULE_WINDOW_COUNT_MATCH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "blocked_by_deliverable_type": "plano_general",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Plantas, Cortes y Elevaciones Definitivos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_TITLE_BLOCK_FIELDS_V1",
+        "rule_name": "RULE_TITLE_BLOCK_FIELDS_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "blocked_by_deliverable_type": "plano_general",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Plantas, Cortes y Elevaciones Definitivos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_TITLE_BLOCK_SCALE_V1",
+        "rule_name": "RULE_TITLE_BLOCK_SCALE_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "blocked_by_deliverable_type": "plano_general",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Plantas, Cortes y Elevaciones Definitivos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_DOOR_COUNT_MATCH_V1",
+        "rule_name": "RULE_DOOR_COUNT_MATCH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_WINDOW_COUNT_MATCH_V1",
+        "rule_name": "RULE_WINDOW_COUNT_MATCH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "rule_name": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_REQUIRED_TABLES_V1",
+        "rule_name": "RULE_REQUIRED_TABLES_V1",
+        "discipline": "structural",
+        "blocked_by_deliverable_title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "blocked_by_deliverable_type": "plano_estructural",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Enfierraduras, Fundaciones y Estructuras» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_REQUIRED_TABLES_V1",
+        "rule_name": "RULE_REQUIRED_TABLES_V1",
+        "discipline": "general",
+        "blocked_by_deliverable_title": "Especificaciones Técnicas Especiales (EETT)",
+        "blocked_by_deliverable_type": "especificaciones_tecnicas",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Especificaciones Técnicas Especiales (EETT)» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "rule_name": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "discipline": "general",
+        "blocked_by_deliverable_title": "Especificaciones Técnicas Especiales (EETT)",
+        "blocked_by_deliverable_type": "especificaciones_tecnicas",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Especificaciones Técnicas Especiales (EETT)» en estado 'Apto como Evidencia'."
+      }
+    ]
+  },
+  "audit_verdicts": {
+    "cumple_count": 0,
+    "no_cumple_count": 0,
+    "no_verificable_count": 0,
+    "no_aplica_count": 0,
+    "total_rules_evaluated": 0,
+    "by_discipline": {},
+    "verdicts_list": []
+  },
+  "observations": {
+    "total_obs": 0,
+    "open_obs": 0,
+    "closed_obs": 0,
+    "critical_obs": 0,
+    "high_obs": 0,
+    "medium_obs": 0,
+    "low_obs": 0,
+    "total_rfi": 0,
+    "open_rfi": 0,
+    "answered_rfi": 0,
+    "closed_rfi": 0,
+    "total_blk": 0,
+    "active_blk": 0,
+    "resolved_blk": 0,
+    "total_min": 0,
+    "items": []
+  },
+  "delta_evolution": {
+    "previous_snapshot_id": null,
+    "previous_revision_number": null,
+    "resolved_since_last_rev": [],
+    "new_since_last_rev": [],
+    "unblocked_rules_since_last_rev": [],
+    "status_changes": [],
+    "summary_narrative": "Primera emisión de revisión técnica para esta etapa."
+  },
+  "is_live_preview": false,
+  "snapshot_id": "bbf8bb73-585b-4bf6-afb8-2705a97d5d3c",
+  "emission_notes": null
+}

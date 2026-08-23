@@ -1,6 +1,10 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "plan-review-ai-hybrid"
-version = "0.2.0"
+version = "0.3.0"
 description = "Hybrid AI platform for PDF drawing review"
 requires-python = ">=3.11"
 dependencies = [
@@ -29,5 +33,26 @@ dependencies = [
   "torchvision",
   "mlflow",
   "dvc",
-  "faiss-cpu"
+  "faiss-cpu",
+  "httpx",
+  "pytest",
+  "argon2-cffi",
+  "email-validator",
+  "python-multipart"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "httpx",
+  "pytest-asyncio"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+pythonpath = ["backend"]
+markers = [
+  "postgres: Pruebas de integración reales contra motor PostgreSQL 15+ con RLS activo",
+  "integration: Pruebas de integración de servicios y bases de datos",
+  "unit: Pruebas unitarias rápidas aisladas en memoria"
 ]

@@ -1,0 +1,13 @@
+{
+  "clause_id": "norm-clause-001",
+  "document_code": "OGUC-CHILE-2024",
+  "clause_number": "Art. 4.1.7",
+  "criterion": {
+    "criterion_code": "CRIT-OGUC-417-DOOR-MIN",
+    "target_entity": "door",
+    "property_name": "clear_width_m",
+    "operator": "gte",
+    "threshold_value": {"min": 0.85, "unit": "m"},
+    "severity": "high"
+  }
+}

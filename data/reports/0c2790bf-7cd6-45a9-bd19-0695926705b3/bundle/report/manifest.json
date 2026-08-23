@@ -1,0 +1,36 @@
+{
+  "manifest_version": "1.0",
+  "report_id": "0c2790bf-7cd6-45a9-bd19-0695926705b3",
+  "report_type": "technical_audit_qaqc",
+  "timestamp_utc": "2026-08-22 04:16:58 UTC",
+  "engine_version": "1.0",
+  "integrity_algorithm": "SHA-256",
+  "files_count": 5,
+  "files": [
+    {
+      "path": "report/audit-report.pdf",
+      "sha256": "8df2cf7eb3a849bd2d5c7c546754f9a19831bcf9ab09f14565d3937fda730b72",
+      "size_bytes": 6667
+    },
+    {
+      "path": "report/audit-report.json",
+      "sha256": "7e957d3ee2c7f0ea6ede33c8c95b907561a148547e6281ab295ad1595f9ab48b",
+      "size_bytes": 2484
+    },
+    {
+      "path": "report/README.md",
+      "sha256": "73cb01e576a4ea9d4f8538feaa466dc9670e5f2511a3932fe142bcfc85579f89",
+      "size_bytes": 325
+    },
+    {
+      "path": "evidence/findings.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "size_bytes": 2
+    },
+    {
+      "path": "evidence/traces.json",
+      "sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "size_bytes": 2
+    }
+  ]
+}

@@ -1,7 +1,207 @@
-from fastapi import APIRouter
+import os
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models.document_memory import Document
+from app.db.repositories.document_repository import DocumentRepository
+from app.db.repositories.project_repository import ProjectRepository
+from app.schemas.document import DocumentRead, DocumentSheetRead, DocumentProcessRequest
+from app.services.ingest.service import IngestService
+from app.core.deps import get_current_tenant, require_role, TenantContext
 
 router = APIRouter()
 
-@router.get("/")
-def list_documents():
-    return {"module": "documents", "status": "placeholder"}
+@router.get("", response_model=List[DocumentRead], include_in_schema=False)
+@router.get("/", response_model=List[DocumentRead])
+def list_documents(
+    project_id: Optional[str] = None,
+    include_archived: bool = Query(False, description="Incluir documentos archivados"),
+    db: Session = Depends(get_db)
+):
+    """Lista los documentos cargados, opcionalmente filtrados por proyecto."""
+    query = db.query(Document)
+    if not include_archived:
+        query = query.filter(Document.status != "archived")
+    if project_id:
+        query = query.filter(Document.project_id == project_id)
+    return query.order_by(Document.created_at.desc()).all()
+
+
+@router.post("/upload", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+async def upload_document(
+    project_id: str = Form(...),
+    version_id: Optional[str] = Form(None),
+    auto_process: bool = Form(True),
+    dpi: Optional[int] = Form(None),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    """Carga un archivo PDF de plano técnico, extrae metadatos y ejecuta rasterizado de hojas."""
+    # Validar que el proyecto exista
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    content = await file.read()
+    ingest_svc = IngestService(db)
+    try:
+        doc = ingest_svc.ingest_pdf(
+            project_id=project_id,
+            filename=file.filename or "document.pdf",
+            file_bytes=content,
+            version_id=version_id,
+            auto_process=auto_process,
+            dpi=dpi
+        )
+        return doc
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error durante la ingesta: {str(e)}")
+
+@router.get("/{document_id}", response_model=DocumentRead)
+def get_document(document_id: str, db: Session = Depends(get_db)):
+    """Obtiene el detalle de un documento y sus hojas asociadas."""
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    return doc
+
+@router.get("/{document_id}/sheets", response_model=List[DocumentSheetRead])
+def list_document_sheets(document_id: str, db: Session = Depends(get_db)):
+    """Lista todas las hojas o planos rasterizados de un documento."""
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado")
+    return repo.list_sheets_by_document(document_id)
+
+@router.get("/sheets/{sheet_id}/image")
+def get_sheet_image(sheet_id: str, db: Session = Depends(get_db)):
+    """Retorna la imagen rasterizada maestra de la lámina técnica."""
+    from fastapi.responses import FileResponse
+    repo = DocumentRepository(db)
+    sheet = repo.get_sheet_by_id(sheet_id)
+    if not sheet or not sheet.raster_image_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lámina no encontrada o sin imagen rasterizada.")
+    
+    clean_path = sheet.raster_image_path
+    if not os.path.isabs(clean_path):
+        clean_path = os.path.normpath(clean_path)
+    
+    if not os.path.exists(clean_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Archivo raster no encontrado en disco: {sheet.raster_image_path}")
+    
+    return FileResponse(clean_path, media_type="image/png")
+
+@router.get("/sheets/{sheet_id}/thumbnail")
+def get_sheet_thumbnail(sheet_id: str, db: Session = Depends(get_db)):
+    """Retorna la miniatura o thumbnail de la lámina técnica."""
+    from fastapi.responses import FileResponse
+    repo = DocumentRepository(db)
+    sheet = repo.get_sheet_by_id(sheet_id)
+    if not sheet:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lámina no encontrada.")
+    
+    target_path = sheet.thumbnail_path or sheet.raster_image_path
+    if not target_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sin archivo visual disponible.")
+    
+    clean_path = os.path.normpath(target_path) if not os.path.isabs(target_path) else target_path
+    if not os.path.exists(clean_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Archivo thumbnail no encontrado en disco: {target_path}")
+    
+    return FileResponse(clean_path, media_type="image/png")
+
+@router.post("/{document_id}/process", response_model=DocumentRead)
+def process_document(
+    document_id: str,
+    request: Optional[DocumentProcessRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """Dispara el procesamiento / rasterizado manual o reprocesamiento de un documento."""
+    ingest_svc = IngestService(db)
+    target_dpi = request.dpi if request else None
+    try:
+        return ingest_svc.process_document(document_id=document_id, dpi=target_dpi)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error procesando documento: {str(e)}")
+
+@router.get("/{document_id}/impact")
+def get_document_impact(
+    document_id: str,
+    db: Session = Depends(get_db),
+    tenant_ctx: TenantContext = Depends(get_current_tenant)
+):
+    """Obtiene el desglose de impacto de un documento antes de su eliminación o archivado."""
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+    
+    # Validar tenant
+    if not tenant_ctx.user.is_superuser and doc.organization_id != tenant_ctx.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: El documento pertenece a otra organización."
+        )
+
+    impact = repo.get_impact_analysis(document_id)
+    if not impact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se pudo calcular el impacto del documento.")
+    return impact
+
+@router.delete("/{document_id}")
+def delete_document(
+    document_id: str,
+    hard_delete: bool = Query(False, description="Si es True, realiza eliminación definitiva y física"),
+    db: Session = Depends(get_db),
+    tenant_ctx: TenantContext = Depends(require_role(["admin", "audit_lead", "reviewer"]))
+):
+    """
+    Elimina o archiva un documento y limpia sus entidades dependientes de forma transaccional.
+    - Soft-delete (por defecto): status = 'archived', preserva trazabilidad y archiva hallazgos.
+    - Hard-delete: solo rol admin, purga registros dependientes y archivos en disco.
+    """
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+
+    # Validar tenant
+    if not tenant_ctx.user.is_superuser and doc.organization_id != tenant_ctx.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Acceso denegado: El documento pertenece a otra organización."
+        )
+
+    user_id = tenant_ctx.user.id
+
+    if hard_delete:
+        # Validar permiso de admin para hard-delete
+        if not tenant_ctx.user.is_superuser and tenant_ctx.role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Permiso denegado: Solo usuarios con rol 'admin' pueden realizar la eliminación definitiva (hard-delete)."
+            )
+        result = repo.hard_delete_document(document_id=document_id, user_id=user_id)
+        if not result:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Fallo durante la eliminación definitiva del documento.")
+        return result
+    else:
+        archived_doc = repo.soft_delete_document(document_id=document_id, user_id=user_id)
+        if not archived_doc:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Fallo al archivar el documento.")
+        return {
+            "success": True,
+            "document_id": document_id,
+            "delete_type": "soft_delete",
+            "status": "archived",
+            "message": f"Documento '{archived_doc.filename}' archivado exitosamente."
+        }
+

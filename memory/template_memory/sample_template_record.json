@@ -1,0 +1,10 @@
+{
+  "template_id": "tpl-tb-001",
+  "template_type": "title_block",
+  "name": "Standard-A0-BottomRight",
+  "anchors": {
+    "sheet_code": ["PLANO N°", "CODIGO", "LAMINA"],
+    "scale": ["ESCALA", "ESC."],
+    "revision": ["REV", "REVISION"]
+  }
+}

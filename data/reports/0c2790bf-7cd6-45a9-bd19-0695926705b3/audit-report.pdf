@@ -1,0 +1,92 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>
+endobj
+4 0 obj
+<< /Length 6091 >>
+stream
+q 0.06 0.09 0.16 rg 0.00 817.89 595.28 24.00 re f Q
+q 0.80 0.85 0.90 RG 0.75 w 40.00 35.00 m 555.28 35.00 l S Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 22.00 Tm (Plan Review AI Hybrid ? Technical QA/QC Audit Report ? Hash-Based Integrity) Tj ET Q
+q 0.96 0.97 0.99 rg 0.85 0.89 0.95 RG 1.00 w 40.00 720.00 515.00 80.00 re B Q
+q 0.20 0.50 0.80 rg BT /F2 11.0 Tf 1 0 0 1 55.00 775.00 Tm (PLAN REVIEW AI HYBRID ? INFORME TÉCNICO DE AUDITORÍA QA/QC) Tj ET Q
+q 0.06 0.09 0.16 rg BT /F2 18.0 Tf 1 0 0 1 55.00 750.00 Tm (Auditoría Técnica: SHEET-01) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F1 9.0 Tf 1 0 0 1 55.00 732.00 Tm (Alcance: SHEET ? Tipo: technical_audit_qaqc ? Fecha UTC: 2026-08-22 04:16:58 UTC) Tj ET Q
+q 1.00 1.00 1.00 rg 0.88 0.90 0.94 RG 1.00 w 40.00 610.00 515.00 95.00 re B Q
+q 0.06 0.09 0.16 rg BT /F2 11.0 Tf 1 0 0 1 55.00 688.00 Tm (1. METADATOS DEL DOCUMENTO & VIÑETA) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 9.0 Tf 1 0 0 1 55.00 670.00 Tm (Archivo Origen: 00002.pdf \(ID: 8e4bf162...\)) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 9.0 Tf 1 0 0 1 55.00 654.00 Tm (Código Lámina: SHEET-01 ? Título: Model) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 9.0 Tf 1 0 0 1 55.00 638.00 Tm (Escala Declarada: N/A ? Revisión: 0 ? Disciplina: GENERAL) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F1 9.0 Tf 1 0 0 1 55.00 622.00 Tm (Generado por: auditor_senior ? Versión Motor: 1.0) Tj ET Q
+q 0.98 0.98 0.99 rg 0.88 0.90 0.94 RG 1.00 w 40.00 480.00 515.00 115.00 re B Q
+q 0.06 0.09 0.16 rg BT /F2 11.0 Tf 1 0 0 1 55.00 575.00 Tm (2. RESUMEN EJECUTIVO DE HALLAZGOS) Tj ET Q
+q 0.99 0.92 0.92 rg 0.95 0.40 0.40 RG 1.00 w 55.00 500.00 110.00 60.00 re B Q
+q 0.80 0.10 0.10 rg BT /F2 9.0 Tf 1 0 0 1 65.00 545.00 Tm (CRÍTICO) Tj ET Q
+q 0.80 0.10 0.10 rg BT /F2 22.0 Tf 1 0 0 1 65.00 515.00 Tm (0) Tj ET Q
+q 1.00 0.96 0.90 rg 0.95 0.60 0.20 RG 1.00 w 175.00 500.00 110.00 60.00 re B Q
+q 0.85 0.40 0.00 rg BT /F2 9.0 Tf 1 0 0 1 185.00 545.00 Tm (ALTO) Tj ET Q
+q 0.85 0.40 0.00 rg BT /F2 22.0 Tf 1 0 0 1 185.00 515.00 Tm (0) Tj ET Q
+q 0.92 0.96 1.00 rg 0.30 0.60 0.95 RG 1.00 w 295.00 500.00 110.00 60.00 re B Q
+q 0.10 0.40 0.80 rg BT /F2 9.0 Tf 1 0 0 1 305.00 545.00 Tm (MEDIO) Tj ET Q
+q 0.10 0.40 0.80 rg BT /F2 22.0 Tf 1 0 0 1 305.00 515.00 Tm (0) Tj ET Q
+q 0.94 0.95 0.97 rg 0.60 0.65 0.75 RG 1.00 w 415.00 500.00 125.00 60.00 re B Q
+q 0.20 0.25 0.30 rg BT /F2 8.0 Tf 1 0 0 1 425.00 545.00 Tm (TOTAL HALLAZGOS) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F2 22.0 Tf 1 0 0 1 425.00 515.00 Tm (0) Tj ET Q
+q 1.00 1.00 1.00 rg 0.88 0.90 0.94 RG 1.00 w 40.00 200.00 515.00 265.00 re B Q
+q 0.06 0.09 0.16 rg BT /F2 11.0 Tf 1 0 0 1 55.00 445.00 Tm (3. REGLAS DETERMINÍSTICAS EVALUADAS) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F2 8.0 Tf 1 0 0 1 55.00 425.00 Tm (Código Regla) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F2 8.0 Tf 1 0 0 1 190.00 425.00 Tm (Nombre / Descripción) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F2 8.0 Tf 1 0 0 1 450.00 425.00 Tm (Disciplina) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F2 8.0 Tf 1 0 0 1 510.00 425.00 Tm (Sev.) Tj ET Q
+q 0.80 0.85 0.90 RG 1.00 w 55.00 421.00 m 540.00 421.00 l S Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 399.00 Tm (RULE_DOOR_COUNT_MATCH_) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 399.00 Tm (Conciliación de Conteo de Puertas \(Dibujo vs ) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 399.00 Tm (architecture) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 399.00 Tm (HIGH) Tj ET Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 373.00 Tm (RULE_WINDOW_COUNT_MATC) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 373.00 Tm (Conciliación de Conteo de Ventanas \(Dibujo vs) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 373.00 Tm (architecture) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 373.00 Tm (HIGH) Tj ET Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 347.00 Tm (RULE_TITLE_BLOCK_REQUI) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 347.00 Tm (Integridad de Campos Críticos de Viñeta) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 347.00 Tm (general) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 347.00 Tm (CRIT) Tj ET Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 321.00 Tm (RULE_TITLE_BLOCK_SCALE) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 321.00 Tm (Validez de Formato de Escala Técnica) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 321.00 Tm (general) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 321.00 Tm (MEDI) Tj ET Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 295.00 Tm (RULE_REQUIRED_TABLES_B) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 295.00 Tm (Presencia de Cuadros Técnicos Obligatorios) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 295.00 Tm (architecture) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 295.00 Tm (MEDI) Tj ET Q
+q 0.20 0.40 0.80 rg BT /F2 8.0 Tf 1 0 0 1 55.00 269.00 Tm (RULE_NORMATIVE_MIN_WID) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 190.00 269.00 Tm (Validación Normativa de Ancho Mínimo de Puert) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 450.00 269.00 Tm (architecture) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 8.0 Tf 1 0 0 1 510.00 269.00 Tm (CRIT) Tj ET Q
+q 0.96 0.98 0.96 rg 0.60 0.85 0.60 RG 1.00 w 40.00 55.00 515.00 130.00 re B Q
+q 0.10 0.50 0.20 rg BT /F2 10.0 Tf 1 0 0 1 55.00 165.00 Tm (4. TRAZABILIDAD & DECLARACIÓN DE INTEGRIDAD) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 55.00 148.00 Tm (? Este informe fue generado por el motor híbrido determinístico Plan Review AI Hybrid.) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 55.00 134.00 Tm (? Toda discrepancia incluye evidencia relacional indexada en el paquete de evidencias.) Tj ET Q
+q 0.10 0.15 0.20 rg BT /F1 8.0 Tf 1 0 0 1 55.00 120.00 Tm (? Las resoluciones humanas asociadas quedan vinculadas con sello de tiempo inmutable.) Tj ET Q
+q 0.15 0.30 0.20 rg BT /F2 8.0 Tf 1 0 0 1 55.00 102.00 Tm (? ID Único de Reporte: 0c2790bf-7cd6-45a9-bd19-0695926705b3) Tj ET Q
+q 0.30 0.40 0.30 rg BT /F1 8.0 Tf 1 0 0 1 55.00 88.00 Tm (? Hash de Integridad Manifiesto: 0c2790bf-7cd6-45... \(ver manifest.json\)) Tj ET Q
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000360 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+6503
+%%EOF

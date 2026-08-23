@@ -1,0 +1,160 @@
+{
+  "ocr": {
+    "vector_pdf": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "scale_dpi": 300,
+        "extract_embedded_fonts": true,
+        "clean_whitespace": true
+      }
+    },
+    "tesseract": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "psm": 11,
+        "oem": 3,
+        "lang": "spa+eng",
+        "dpi": 400
+      }
+    },
+    "paddleocr": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "use_angle_cls": true,
+        "lang": "es",
+        "det_db_thresh": 0.3
+      }
+    },
+    "google_vision_ocr": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "language_hints": [
+          "es",
+          "en"
+        ],
+        "enable_symbol_confidence": true
+      }
+    }
+  },
+  "symbols": {
+    "yolo_sahi_hybrid": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "confidence_threshold": 0.5,
+        "iou_threshold": 0.45,
+        "slice_height": 1024,
+        "slice_width": 1024
+      }
+    },
+    "template_matcher": {
+      "is_active": false,
+      "status": "fallback",
+      "parameters": {
+        "matching_threshold": 0.7,
+        "rotation_invariance": true
+      }
+    },
+    "openai_vision_symbols": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "temperature": 0.0,
+        "max_tokens": 1500,
+        "detail": "high"
+      }
+    }
+  },
+  "layout": {
+    "spatial_density": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "min_drawing_area_ratio": 0.5,
+        "title_block_bottom_corner": true
+      }
+    },
+    "layoutlm_v3": {
+      "is_active": false,
+      "status": "experimental",
+      "parameters": {
+        "confidence_threshold": 0.8
+      }
+    }
+  },
+  "tables": {
+    "geometric_grid": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "min_cell_area_px": 50,
+        "line_kernel_size": 25,
+        "header_detection": true
+      }
+    },
+    "table_transformer": {
+      "is_active": false,
+      "status": "experimental",
+      "parameters": {
+        "structure_threshold": 0.75
+      }
+    }
+  },
+  "embeddings": {
+    "ontology_lexicon": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "case_sensitive": false,
+        "strip_accents": true
+      }
+    },
+    "openai_embeddings": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "dimensions": 1536
+      }
+    }
+  },
+  "llm": {
+    "fastapi_rule_reasoner": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "strict_formatting": true
+      }
+    },
+    "google_gemini_flash": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "temperature": 0.1,
+        "max_output_tokens": 2048
+      }
+    },
+    "openai_gpt4o": {
+      "is_active": false,
+      "status": "inactive",
+      "parameters": {
+        "temperature": 0.2,
+        "max_tokens": 2000
+      }
+    }
+  },
+  "rules": {
+    "qa_qc_deterministic_engine": {
+      "is_active": true,
+      "status": "active",
+      "parameters": {
+        "min_door_width_m": 0.8,
+        "auto_escalate_critical": true,
+        "strict_title_block": true
+      }
+    }
+  }
+}

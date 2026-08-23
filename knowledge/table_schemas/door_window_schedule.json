@@ -1,0 +1,37 @@
+{
+  "schema_code": "SCHEMA_DOOR_SCHEDULE_V1",
+  "name": "Cuadro de Vanos de Puertas",
+  "discipline": "architecture",
+  "columns_spec": [
+    {
+      "col_key": "door_id",
+      "synonyms": ["CODIGO", "TIPO", "ITEM", "TIPO PUERTA", "MARCA"],
+      "data_type": "string",
+      "required": true
+    },
+    {
+      "col_key": "width_m",
+      "synonyms": ["ANCHO", "A", "ANCHO (M)", "DIM. ANCHO", "WIDTH"],
+      "data_type": "float",
+      "required": true
+    },
+    {
+      "col_key": "height_m",
+      "synonyms": ["ALTO", "H", "ALTO (M)", "DIM. ALTO", "HEIGHT"],
+      "data_type": "float",
+      "required": true
+    },
+    {
+      "col_key": "quantity",
+      "synonyms": ["CANTIDAD", "CANT.", "CANT", "QTY"],
+      "data_type": "integer",
+      "required": false
+    },
+    {
+      "col_key": "material",
+      "synonyms": ["MATERIAL", "TIPO HOJA", "ESPECIFICACION", "MAT."],
+      "data_type": "string",
+      "required": false
+    }
+  ]
+}
