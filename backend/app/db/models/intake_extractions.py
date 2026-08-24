@@ -49,6 +49,9 @@ class ExtractedItem(Base):
     item_type = Column(String(50), nullable=False, index=True)
     # rule, article, chapter, table, image, figure, symbol, text_note, definition, procedure, restriction, requirement, other
     
+    candidate_type = Column(String(50), nullable=True, index=True)
+    # premise_candidate, rule_candidate, symbol_candidate, table_matrix_candidate, equipment_image_candidate, diagram_candidate, example_candidate
+    
     source_origin = Column(String(50), default="document", nullable=False, index=True) # document, web
     source_reference = Column(String(500), nullable=True) # URL o cita normativa / bibliográfica
     item_nature = Column(String(50), default="official_rule", nullable=False) 
@@ -59,11 +62,16 @@ class ExtractedItem(Base):
     code_or_number = Column(String(100), nullable=True, index=True) # e.g. "Art. 4.1.7", "Capítulo 2", "Tabla 3.1", "REF-WEB-01"
     description = Column(Text, nullable=True)
     content_text = Column(Text, nullable=True)
+    derived_text = Column(Text, nullable=True) # Resumen o formulación técnica derivada por IA
     ocr_text = Column(Text, nullable=True)
+    caption_or_context = Column(Text, nullable=True) # Caption, texto circundante o contexto de foto/diagrama
+    disclaimer_notes = Column(Text, nullable=True) # e.g. "Sin inferencia de conectividad topológica"
     
     crop_image_path = Column(String(500), nullable=True)
     bbox_normalized = Column(JSON, default=list) # [x0, y0, x1, y1]
     page_number = Column(Integer, default=1, nullable=False)
+    evidence_references = Column(JSON, default=list) # Enlaces a DocumentStructuralNode, ExtractedText o regiones
+    technical_parameters = Column(JSON, default=dict) # Parámetros técnicos específicos (line_count, ratings, etc.)
     
     target_destination = Column(String(30), default="rules_engine", nullable=False) # rules_engine, knowledge_base, both
     review_status = Column(String(30), default="draft", nullable=False, index=True) # draft, editado, por_confirmar, validada, eliminado, to_confirm, accepted, rejected

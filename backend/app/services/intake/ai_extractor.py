@@ -92,15 +92,22 @@ class AiDocumentExtractorService:
             self.repo.add_extracted_item(
                 extraction_id=session.id,
                 item_type=spec["item_type"],
+                candidate_type=spec.get("candidate_type"),
                 title=spec["title"],
                 code_or_number=spec.get("code_or_number"),
                 description=spec.get("description"),
                 content_text=spec.get("content_text"),
+                derived_text=spec.get("derived_text"),
                 ocr_text=spec.get("ocr_text"),
+                disclaimer_notes=spec.get("disclaimer_notes"),
+                caption_or_context=spec.get("caption_or_context"),
                 bbox_normalized=spec.get("bbox_normalized", [0.05, 0.1, 0.95, 0.3]),
                 page_number=spec.get("page_number", 1),
+                evidence_references=spec.get("evidence_references", []),
+                technical_parameters=spec.get("technical_parameters", {}),
                 target_destination=spec.get("target_destination", "rules_engine"),
                 review_status="to_confirm",
+                structured_matrix=spec.get("structured_matrix", {}),
                 source_origin="document",
                 source_reference=spec.get("source_reference", f"Documento: {title}"),
                 item_nature=spec.get("item_nature", "official_rule"),
@@ -279,10 +286,12 @@ class AiDocumentExtractorService:
         # 1. Capítulo Oficial
         items.append({
             "item_type": "chapter",
+            "candidate_type": "example_candidate",
             "code_or_number": "Capítulo 1",
             "title": f"Capítulo 1: Disposiciones Generales y Alcance de {title}",
             "description": "Establece el marco de aplicación, definiciones normativas y responsabilidades técnicas para proyectos.",
             "content_text": "Las presentes disposiciones aplican a todo proyecto técnico presentado a revisión municipal o sectorial.",
+            "derived_text": f"Marco normativo general y ámbito de aplicación para {title}.",
             "ocr_text": f"{title.upper()} - CAPITULO 1: DISPOSICIONES GENERALES. AMBITO DE APLICACION Y EXIGENCIAS BASICAS.",
             "target_destination": "knowledge_base",
             "item_nature": "official_rule",
@@ -292,10 +301,12 @@ class AiDocumentExtractorService:
         # 2. Artículo Oficial
         items.append({
             "item_type": "article",
+            "candidate_type": "premise_candidate",
             "code_or_number": "Art. 1.1",
             "title": "Art. 1.1: Requisitos de Diseño y Vías de Evacuación / Espacios Libres",
             "description": "Especifica las dimensiones mínimas libres de paso, distanciamientos y alturas reglamentarias.",
             "content_text": "Todo pasillo, vano de puerta y vía de escape deberá contar con un ancho libre continuo y expedito.",
+            "derived_text": "Premisa técnica: Ancho libre y despeje continuo en circulaciones principales.",
             "ocr_text": "ART. 1.1: EL ANCHO MINIMO DE PASO EN VIAS DE CIRCULACION NO PODRA SER MENOR A 1.20 M.",
             "target_destination": "both",
             "item_nature": "official_rule",
@@ -305,37 +316,52 @@ class AiDocumentExtractorService:
         # 3. Regla QA/QC Oficial
         items.append({
             "item_type": "rule",
+            "candidate_type": "rule_candidate",
             "code_or_number": f"REG-{discipline[:3].upper()}-01",
             "title": f"Regla QA/QC: Ancho mínimo libre de puertas ({discipline.capitalize()})",
             "description": "Valida determinísticamente que el ancho acotado o medido de puertas de acceso no sea inferior a 0.90 m.",
             "content_text": "VERIFICACIÓN REGLA: Ancho libre >= 0.90 m. Severidad: ALTA. Entidad destino: Puertas / Accesos.",
+            "derived_text": "Regla determinística QA/QC para validación de dimensiones libres en puertas de acceso.",
             "ocr_text": "REQUISITO: PUERTAS DE ACCESO PRINCIPAL ANCHO >= 0.90 M LIBRE.",
             "target_destination": "rules_engine",
             "item_nature": "official_rule",
             "page_number": 2,
+            "technical_parameters": {"target_entity": "door", "min_width": 0.90},
             "metadata_payload": {"target_entity": "door", "min_width": 0.90}
         })
 
-        # 4. Tabla Técnica
+        # 4. Tabla Técnica / Matriz
         items.append({
             "item_type": "table",
+            "candidate_type": "table_matrix_candidate",
             "code_or_number": "Tabla 2.1",
             "title": "Tabla 2.1: Cuadro de Exigencias de Resistencia al Fuego y Separaciones",
             "description": "Matriz de verificación de elementos estructurales, muros perimetrales y techumbres según tipo de edificación.",
             "content_text": "Tipo A: F-120 | Tipo B: F-90 | Tipo C: F-60. Muros divisorios: F-120 sin aberturas.",
+            "derived_text": "Matriz de resistencia al fuego estructurada con 3 categorías de edificación.",
             "ocr_text": "TABLA 2.1: RESISTENCIA AL FUEGO MINIMA (MINUTOS). MUROS CORTAFUEGO: F-120.",
+            "structured_matrix": {
+                "headers": ["TIPO_EDIFICACION", "MUROS_PORTANTES", "MUROS_DIVISORIOS", "TECHUMBRE"],
+                "rows": [
+                    {"TIPO_EDIFICACION": "Tipo A", "MUROS_PORTANTES": "F-120", "MUROS_DIVISORIOS": "F-120", "TECHUMBRE": "F-60"},
+                    {"TIPO_EDIFICACION": "Tipo B", "MUROS_PORTANTES": "F-90", "MUROS_DIVISORIOS": "F-90", "TECHUMBRE": "F-30"}
+                ]
+            },
             "target_destination": "both",
             "item_nature": "official_rule",
             "page_number": 2
         })
 
-        # 5. Figura / Detalle
+        # 5. Figura / Detalle / Diagrama
         items.append({
             "item_type": "figure",
+            "candidate_type": "diagram_candidate",
             "code_or_number": "Fig. 3.A",
             "title": "Figura 3.A: Detalle Constructivo de Encuentro Muro Cortafuego y Cubierta",
             "description": "Esquema obligatorio de sobre-elevación mínima de 0.50 m del muro cortafuego sobre la cubierta.",
             "content_text": "El muro cortafuego deberá sobrepasar en al menos 0.50 m el plano superior de la cubierta adyacente.",
+            "derived_text": "Esquema de detalle constructivo regional.",
+            "disclaimer_notes": "Extracción semántica regional realizada sin inferencia de conectividad topológica ni grafo P&ID en esta fase.",
             "target_destination": "knowledge_base",
             "item_nature": "official_rule",
             "page_number": 3
@@ -344,13 +370,46 @@ class AiDocumentExtractorService:
         # 6. Definición / Procedimiento
         items.append({
             "item_type": "definition",
+            "candidate_type": "premise_candidate",
             "code_or_number": "Def. 1.4",
             "title": "Definición Técnica: Vía de Evacuación Segura y Protegida",
             "description": "Concepto normativo de circulación horizontal y vertical protegida contra fuego y humos.",
             "content_text": "Circulación horizontal o vertical de un edificio que permite la salida segura y continua de ocupantes hacia el exterior.",
+            "derived_text": "Concepto técnico base para auditoría de rutas de escape.",
             "target_destination": "knowledge_base",
             "item_nature": "official_rule",
             "page_number": 1
+        })
+
+        # 7. Símbolo Técnico
+        items.append({
+            "item_type": "symbol",
+            "candidate_type": "symbol_candidate",
+            "code_or_number": "SYM-01",
+            "title": f"Símbolo Técnico / Leyenda: Válvula / Accesorio ({discipline})",
+            "description": "Símbolo gráfico y designación técnica para lectura de planos y leyendas.",
+            "content_text": "Simbología técnica normalizada con indicación de tag y tipo de conexión.",
+            "derived_text": "Identificador gráfico para componentes de piping y planos técnicos.",
+            "bbox_normalized": [0.05, 0.7, 0.35, 0.95],
+            "page_number": 1,
+            "target_destination": "knowledge_base",
+            "item_nature": "official_rule"
+        })
+
+        # 8. Imagen / Foto de Equipo
+        items.append({
+            "item_type": "image",
+            "candidate_type": "equipment_image_candidate",
+            "code_or_number": "EQ-01",
+            "title": f"Fotografía / Imagen Técnica de Equipo ({discipline})",
+            "description": "Registro visual de equipo industrial o dispositivo para apoyo del auditor.",
+            "caption_or_context": "Vista frontal del equipo mecánico con conexiones bridadas de entrada y salida.",
+            "content_text": "Equipo mecánico principal y distancias de mantenimiento recomendadas.",
+            "derived_text": "Referencia visual para corroboración de espacio en planta.",
+            "bbox_normalized": [0.6, 0.6, 0.95, 0.95],
+            "page_number": 1,
+            "target_destination": "knowledge_base",
+            "item_nature": "concept"
         })
 
         return items
@@ -366,6 +425,7 @@ class AiDocumentExtractorService:
         # 1. Resumen Ejecutivo / Concepto Clave
         items.append({
             "item_type": "text_note",
+            "candidate_type": "premise_candidate",
             "code_or_number": "WEB-RESUMEN-01",
             "title": f"Resumen Ejecutivo de Investigación: {prompt[:60]}",
             "description": f"Síntesis técnica basada en fuentes normativas e investigación sobre '{prompt}'.",
@@ -373,6 +433,7 @@ class AiDocumentExtractorService:
                 f"La investigación en Internet para '{prompt}' arrojó requerimientos mandatorios y buenas prácticas aplicables. "
                 "Se identifican parámetros dimensionales críticos, condiciones de accesibilidad universal, criterios de evacuación y resistencia estructural."
             ),
+            "derived_text": f"Síntesis de premisas técnicas para '{prompt}'.",
             "ocr_text": f"SINTESIS DE INVESTIGACION WEB: {prompt.upper()}. REFERENCIAS MINVU / INN / NCH.",
             "target_destination": "knowledge_base",
             "item_nature": "concept",
@@ -383,6 +444,7 @@ class AiDocumentExtractorService:
         # 2. Regla Propuesta 1 (Propuesta vía Web - Requiere Validación)
         items.append({
             "item_type": "rule",
+            "candidate_type": "rule_candidate",
             "code_or_number": f"REG-WEB-{discipline[:3].upper()}-01",
             "title": f"Regla Propuesta: Parámetro Crítico para {prompt[:40]}",
             "description": f"Propuesta de regla QA/QC sugerida por investigación web: verificación de cumplimiento dimensional y límites normativos.",
@@ -390,6 +452,7 @@ class AiDocumentExtractorService:
                 f"REGLA PROPUESTA (APOYO WEB): Validar que las dimensiones de diseño para '{prompt}' "
                 "cumplan con los rangos estándar recomendados (Pendiente <= 8%, Ancho libre >= 1.10 m, Altura libre >= 2.10 m)."
             ),
+            "derived_text": "Propuesta de regla determinística sujeta a validación humana.",
             "ocr_text": "PROPUESTA DE REGLA: VERIFICACION DIMENSIONAL SEGUN INVESTIGACION WEB.",
             "target_destination": "rules_engine",
             "item_nature": "proposed_rule",
@@ -404,10 +467,12 @@ class AiDocumentExtractorService:
         # 3. Regla Propuesta 2 (Seguridad / Especificación)
         items.append({
             "item_type": "rule",
+            "candidate_type": "rule_candidate",
             "code_or_number": f"REG-WEB-{discipline[:3].upper()}-02",
             "title": f"Regla Propuesta: Continuidad y Señalización de Seguridad ({discipline})",
             "description": "Comprobación de que los elementos de seguridad cuenten con señalética fotoluminiscente y barreras de protección.",
             "content_text": "REGLA PROPUESTA: Todo recorrido o elemento crítico debe disponer de señalización reglamentaria a altura entre 1.40 m y 1.70 m.",
+            "derived_text": "Verificación de señalización de seguridad según norma sectorial.",
             "target_destination": "rules_engine",
             "item_nature": "proposed_rule",
             "source_reference": "https://www.inn.cl/normas-construccion",
@@ -420,10 +485,12 @@ class AiDocumentExtractorService:
         # 4. Referencia Normativa Encontrada
         items.append({
             "item_type": "article",
+            "candidate_type": "premise_candidate",
             "code_or_number": "REF-LEGAL-WEB",
             "title": f"Referencia Legal / Normativa: Artículos aplicables a '{prompt[:45]}'",
             "description": "Cita y transcripción de artículos pertinentes encontrados en bases normativas públicas.",
             "content_text": "Disposiciones concordantes de la OGUC y Normas Chilenas NCh sobre edificación y accesibilidad universal.",
+            "derived_text": "Referencias concordantes recopiladas.",
             "target_destination": "both",
             "item_nature": "reference",
             "source_reference": "https://www.minvu.gob.cl/normativas/oguc/",
@@ -432,10 +499,19 @@ class AiDocumentExtractorService:
         # 5. Tabla de Criterios y Parámetros Recomendados
         items.append({
             "item_type": "table",
+            "candidate_type": "table_matrix_candidate",
             "code_or_number": "TABLA-WEB-01",
             "title": f"Tabla de Parámetros de Diseño: {prompt[:40]}",
             "description": "Matriz comparativa de valores mínimos, tolerancias y estándares sugeridos según investigación.",
             "content_text": "Ancho Mínimo: 1.10 m | Altura Mínima: 2.10 m | Pendiente Máxima: 8% | Resistencia Fuego: F-60 / F-120.",
+            "derived_text": "Matriz de parámetros recomendados por investigación web.",
+            "structured_matrix": {
+                "headers": ["PARAMETRO", "VALOR_MINIMO", "UNIDAD", "OBSERVACION"],
+                "rows": [
+                    {"PARAMETRO": "Ancho Libre", "VALOR_MINIMO": "1.10", "UNIDAD": "m", "OBSERVACION": "Vía principal"},
+                    {"PARAMETRO": "Pendiente Rampa", "VALOR_MINIMO": "8", "UNIDAD": "%", "OBSERVACION": "Máximo reglamentario"}
+                ]
+            },
             "target_destination": "knowledge_base",
             "item_nature": "support_research",
             "source_reference": "https://www.bcn.cl/leychile/navegar?idNorma=8201",

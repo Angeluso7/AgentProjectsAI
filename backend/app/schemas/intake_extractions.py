@@ -8,14 +8,20 @@ from datetime import datetime
 
 class ExtractedItemBase(BaseModel):
     item_type: str = Field(..., description="rule, article, chapter, table, image, figure, symbol, text_note, definition, procedure, restriction, requirement, other")
+    candidate_type: Optional[str] = Field(None, description="premise_candidate, rule_candidate, symbol_candidate, table_matrix_candidate, equipment_image_candidate, diagram_candidate, example_candidate")
     title: str
     code_or_number: Optional[str] = None
     description: Optional[str] = None
     content_text: Optional[str] = None
+    derived_text: Optional[str] = None
     ocr_text: Optional[str] = None
+    caption_or_context: Optional[str] = None
+    disclaimer_notes: Optional[str] = None
     crop_image_path: Optional[str] = None
     bbox_normalized: List[float] = Field(default_factory=list)
     page_number: int = 1
+    evidence_references: List[str] = Field(default_factory=list)
+    technical_parameters: Dict[str, Any] = Field(default_factory=dict)
     target_destination: str = "rules_engine" # rules_engine, knowledge_base, both
     review_status: str = "draft" # draft, editado, por_confirmar, validada, eliminado, to_confirm, accepted, rejected
     
@@ -35,14 +41,20 @@ class ExtractedItemCreate(ExtractedItemBase):
 
 class ExtractedItemUpdate(BaseModel):
     item_type: Optional[str] = None
+    candidate_type: Optional[str] = None
     title: Optional[str] = None
     code_or_number: Optional[str] = None
     description: Optional[str] = None
     content_text: Optional[str] = None
+    derived_text: Optional[str] = None
     ocr_text: Optional[str] = None
+    caption_or_context: Optional[str] = None
+    disclaimer_notes: Optional[str] = None
     target_destination: Optional[str] = None
     review_status: Optional[str] = None
     structured_matrix: Optional[Dict[str, Any]] = None
+    evidence_references: Optional[List[str]] = None
+    technical_parameters: Optional[Dict[str, Any]] = None
     validated_at: Optional[datetime] = None
     validated_by: Optional[str] = None
     source_origin: Optional[str] = None
@@ -59,6 +71,9 @@ class ExtractedItemRead(ExtractedItemBase):
 
     class Config:
         from_attributes = True
+
+class TechnicalInterpretationCandidateRead(ExtractedItemRead):
+    pass
 
 
 # =========================================================

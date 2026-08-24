@@ -738,11 +738,34 @@ export interface DocumentItem {
   filename: string;
   file_hash_sha256: string;
   file_size_bytes: number;
+  mime_type?: string;
   page_count: number;
   status: string;
   created_at: string;
   sheets?: DocumentSheet[];
 }
+
+export interface BatchFileResultItem {
+  filename: string;
+  status: 'uploaded' | 'ready' | 'already_exists' | 'failed' | string;
+  document_id?: string;
+  file_size_bytes: number;
+  mime_type?: string;
+  page_count: number;
+  sheets_count: number;
+  error_message?: string;
+}
+
+export interface BatchUploadResponse {
+  project_id: string;
+  total_files: number;
+  successful_count: number;
+  duplicated_count: number;
+  failed_count: number;
+  documents: DocumentItem[];
+  results: BatchFileResultItem[];
+}
+
 
 export interface DocumentImpact {
   document_id: string;

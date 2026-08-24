@@ -251,6 +251,19 @@ def sync_snapshots_knowledge(
         total_items_updated=0
     )
 
+@router.post("/sync-hybrid")
+def sync_hybrid_knowledge(
+    payload: KnowledgeSyncRequest,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """
+    Sincroniza todos los chunks aprobados y activos de la Base de Conocimiento hacia Qdrant.
+    Excluye estrictamente borradores, rechazados o ítems inactivos.
+    """
+    service = KnowledgeBaseService(db)
+    return service.sync_hybrid_vector_store(tenant.organization.id, payload.project_id)
+
 # =========================================================================
 # RECUPERACIÓN CONTEXTUAL (RAG) & ESTADÍSTICAS
 # =========================================================================

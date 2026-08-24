@@ -146,3 +146,50 @@ class DocumentRead(DocumentBase):
 
 class DocumentProcessRequest(BaseModel):
     dpi: Optional[int] = Field(default=None, description="DPI para rasterizado (opcional, usa DEFAULT_RENDER_DPI por defecto)")
+
+class BatchFileResultItem(BaseModel):
+    filename: str
+    status: str # "uploaded", "ready", "already_exists", "failed"
+    document_id: Optional[str] = None
+    file_size_bytes: int = 0
+    mime_type: Optional[str] = None
+    page_count: int = 0
+    sheets_count: int = 0
+    error_message: Optional[str] = None
+
+class BatchUploadResponse(BaseModel):
+    project_id: str
+    total_files: int
+    successful_count: int
+    duplicated_count: int
+    failed_count: int
+    documents: List[DocumentRead] = []
+    results: List[BatchFileResultItem] = []
+
+class DocumentStructuralNodeRead(BaseModel):
+    id: str
+    document_id: str
+    sheet_id: Optional[str] = None
+    node_type: str
+    hierarchy_path: Optional[str] = None
+    level: int = 0
+    title: Optional[str] = None
+    content_text: str
+    structured_payload: Dict[str, Any] = {}
+    page_number: Optional[int] = 1
+    bbox_normalized: Optional[List[float]] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+class CadEntitiesSummaryRead(BaseModel):
+    filename: str
+    dxf_version: Optional[str] = None
+    layers: List[Dict[str, Any]] = []
+    blocks_inserted: List[Dict[str, Any]] = []
+    texts: List[Dict[str, Any]] = []
+    summary: Dict[str, Any] = {}
+    error: Optional[str] = None
+
+

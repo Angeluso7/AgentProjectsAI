@@ -14,23 +14,25 @@ from app.db.models.intake import SourceAsset
 from app.db.models.operations import ProcessingJob, ReviewPipelineRun, PipelineStageRun, ReviewTask, DecisionTrace
 from app.db.models.decision_memory import RuleFinding, RuleExecution, FindingResolution, ReviewRun
 from app.db.models.reporting import AuditReport, EvidenceManifest
+from app.db.session import Base
+import app.db.models
 
 # URL de conexión para rol de aplicación no privilegiado (app_user)
 APP_USER_DB_URL = os.getenv(
     "POSTGRES_APP_USER_URL",
-    "postgresql+psycopg://app_user:app_user_dev_pass@localhost:5433/planreview_test"
+    "postgresql+psycopg://app_user:app_user_dev_pass@127.0.0.1:5433/planreview_test"
 )
 
 # URL de conexión de administración/migrador (solo para setup/teardown de fixtures)
 MIGRATOR_DB_URL = os.getenv(
     "POSTGRES_MIGRATOR_URL",
-    "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5433/planreview_test"
+    "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@127.0.0.1:5433/planreview_test"
 )
 
 def is_postgres_available() -> bool:
     """Verifica si el servicio PostgreSQL de pruebas está accesible."""
     try:
-        engine = create_engine(APP_USER_DB_URL, connect_args={"connect_timeout": 2})
+        engine = create_engine(MIGRATOR_DB_URL, connect_args={"connect_timeout": 3})
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         return True
@@ -49,8 +51,32 @@ pytestmark = [
 
 @pytest.fixture(scope="module")
 def migrator_session():
-    """Sesión privilegiada usada exclusivamente para poblar fixtures de prueba sin RLS."""
+    """Sesión privilegiada usada exclusivamente para inicializar esquema, políticas RLS y poblar fixtures de prueba."""
     engine = create_engine(MIGRATOR_DB_URL)
+    
+    # 1. Crear todas las tablas SQLAlchemy en PostgreSQL
+    Base.metadata.create_all(bind=engine)
+
+    # 2. Cargar y ejecutar políticas RLS desde migrations/rls_prepared_policies.sql
+    rls_sql_path = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "../../../migrations/rls_prepared_policies.sql")
+    )
+    if os.path.exists(rls_sql_path):
+        with open(rls_sql_path, "r", encoding="utf-8") as f:
+            rls_sql = f.read()
+        
+        # Ejecutar usando connection raw con autocommit para plpgsql y sentencias DDL
+        raw_conn = engine.raw_connection()
+        try:
+            with raw_conn.cursor() as cursor:
+                cursor.execute(rls_sql)
+                cursor.execute("CREATE INDEX IF NOT EXISTS ix_document_sheets_document_id ON document_sheets (document_id);")
+            raw_conn.commit()
+        except Exception as e:
+            raw_conn.rollback()
+        finally:
+            raw_conn.close()
+
     Session = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = Session()
     try:
@@ -74,8 +100,12 @@ def test_tenants_fixture(migrator_session):
 
     # 2. Datos Directos Tenant Alpha
     proj_alpha = Project(id=str(uuid.uuid4()), organization_id=org_alpha.id, code="PRJ-ALPHA", name="Torre Alpha")
-    doc_alpha = Document(id=str(uuid.uuid4()), organization_id=org_alpha.id, project_id=proj_alpha.id, filename="plano_alpha.pdf", file_path="./alpha.pdf", file_hash_sha256="sha-alpha", total_pages=1)
-    asset_alpha = SourceAsset(id=str(uuid.uuid4()), organization_id=org_alpha.id, title="Norma Alpha", source_type="normative_document", status="ingested")
+    doc_alpha = Document(
+        id=str(uuid.uuid4()), organization_id=org_alpha.id, project_id=proj_alpha.id,
+        filename="plano_alpha.pdf", file_path="./alpha.pdf", file_hash_sha256=f"sha-alpha-{uuid.uuid4().hex[:8]}",
+        file_size_bytes=1024, page_count=1, status="uploaded"
+    )
+    asset_alpha = SourceAsset(id=str(uuid.uuid4()), organization_id=org_alpha.id, title="Norma Alpha", source_type="normative_document", status="ingested", linked_memory_target="normative_memory")
     job_alpha = ProcessingJob(id=str(uuid.uuid4()), organization_id=org_alpha.id, job_type="ocr_process", target_type="sheet", target_id="sheet-alpha", pipeline_name="qa_pipe", status="completed")
     pipe_alpha = ReviewPipelineRun(id=str(uuid.uuid4()), organization_id=org_alpha.id, scope_type="document", scope_id=doc_alpha.id, status="completed")
     finding_alpha = RuleFinding(id=str(uuid.uuid4()), organization_id=org_alpha.id, document_id=doc_alpha.id, rule_code="ARQ-001", rule_name="Test Rule Alpha", category="qa", title="Finding Alpha", description="Desc Alpha")
@@ -85,26 +115,49 @@ def test_tenants_fixture(migrator_session):
     migrator_session.commit()
 
     # Datos Heredados Tenant Alpha (JOINs)
-    sheet_alpha = DocumentSheet(id=str(uuid.uuid4()), document_id=doc_alpha.id, sheet_number=1, sheet_code="A-01", rendered_image_path="./render_alpha.png", width_pixels=1000, height_pixels=1000)
+    sheet_alpha = DocumentSheet(
+        id=str(uuid.uuid4()), document_id=doc_alpha.id, sheet_number=1, sheet_code="A-01",
+        raster_image_path="./render_alpha.png", width_px=1000, height_px=1000
+    )
     migrator_session.add(sheet_alpha)
     migrator_session.commit()
 
-    region_alpha = SheetRegion(id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, region_type="drawing_area", bbox=[0, 0, 1, 1], confidence=0.99)
-    text_alpha = ExtractedText(id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, text_content="Texto Alpha Privado", bbox=[0.1, 0.1, 0.2, 0.2], confidence=0.95)
-    table_alpha = ExtractedTable(id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, table_type="door_schedule", total_rows=2, total_cols=2, bbox=[0.2, 0.2, 0.5, 0.5])
+    region_alpha = SheetRegion(
+        id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, region_type="drawing_area",
+        polygon_points=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        bbox=[0, 0, 1000, 1000], bbox_normalized=[0.0, 0.0, 1.0, 1.0], confidence=0.99
+    )
+    text_alpha = ExtractedText(
+        id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, text="Texto Alpha Privado",
+        bbox=[100, 100, 200, 200], bbox_normalized=[0.1, 0.1, 0.2, 0.2], confidence=0.95
+    )
+    table_alpha = ExtractedTable(
+        id=str(uuid.uuid4()), document_id=doc_alpha.id, sheet_id=sheet_alpha.id, table_type="door_schedule",
+        row_count=2, column_count=2, bbox=[200, 200, 500, 500], bbox_normalized=[0.2, 0.2, 0.5, 0.5]
+    )
     migrator_session.add_all([region_alpha, text_alpha, table_alpha])
     migrator_session.commit()
 
-    cell_alpha = ExtractedTableCell(id=str(uuid.uuid4()), table_id=table_alpha.id, row_index=0, col_index=0, cell_text="P-01", bbox=[0.2, 0.2, 0.3, 0.3])
-    symbol_alpha = DetectedSymbol(id=str(uuid.uuid4()), sheet_id=sheet_alpha.id, symbol_type="door_single", label="Puerta Alpha", bbox=[0.3, 0.3, 0.4, 0.4], confidence=0.92)
+    cell_alpha = ExtractedTableCell(
+        id=str(uuid.uuid4()), table_id=table_alpha.id, row_index=0, column_index=0,
+        text="P-01", bbox=[200, 200, 300, 300], bbox_normalized=[0.2, 0.2, 0.3, 0.3]
+    )
+    symbol_alpha = DetectedSymbol(
+        id=str(uuid.uuid4()), document_id=doc_alpha.id, sheet_id=sheet_alpha.id,
+        symbol_type="door_symbol", bbox=[300, 300, 400, 400], bbox_normalized=[0.3, 0.3, 0.4, 0.4], confidence=0.92
+    )
     stage_alpha = PipelineStageRun(id=str(uuid.uuid4()), pipeline_run_id=pipe_alpha.id, stage_name="ocr", stage_order=1, status="completed")
     migrator_session.add_all([cell_alpha, symbol_alpha, stage_alpha])
     migrator_session.commit()
 
     # 3. Datos Directos Tenant Beta
     proj_beta = Project(id=str(uuid.uuid4()), organization_id=org_beta.id, code="PRJ-BETA", name="Planta Beta")
-    doc_beta = Document(id=str(uuid.uuid4()), organization_id=org_beta.id, project_id=proj_beta.id, filename="plano_beta.pdf", file_path="./beta.pdf", file_hash_sha256="sha-beta", total_pages=1)
-    asset_beta = SourceAsset(id=str(uuid.uuid4()), organization_id=org_beta.id, title="Norma Beta", source_type="normative_document", status="ingested")
+    doc_beta = Document(
+        id=str(uuid.uuid4()), organization_id=org_beta.id, project_id=proj_beta.id,
+        filename="plano_beta.pdf", file_path="./beta.pdf", file_hash_sha256=f"sha-beta-{uuid.uuid4().hex[:8]}",
+        file_size_bytes=1024, page_count=1, status="uploaded"
+    )
+    asset_beta = SourceAsset(id=str(uuid.uuid4()), organization_id=org_beta.id, title="Norma Beta", source_type="normative_document", status="ingested", linked_memory_target="normative_memory")
     pipe_beta = ReviewPipelineRun(id=str(uuid.uuid4()), organization_id=org_beta.id, scope_type="document", scope_id=doc_beta.id, status="completed")
     finding_beta = RuleFinding(id=str(uuid.uuid4()), organization_id=org_beta.id, document_id=doc_beta.id, rule_code="ARQ-002", rule_name="Test Rule Beta", category="qa", title="Finding Beta", description="Desc Beta")
     report_beta = AuditReport(id=str(uuid.uuid4()), organization_id=org_beta.id, document_id=doc_beta.id, report_type="qa_audit", status="completed")
@@ -113,16 +166,28 @@ def test_tenants_fixture(migrator_session):
     migrator_session.commit()
 
     # Datos Heredados Tenant Beta (JOINs)
-    sheet_beta = DocumentSheet(id=str(uuid.uuid4()), document_id=doc_beta.id, sheet_number=1, sheet_code="B-01", rendered_image_path="./render_beta.png", width_pixels=1000, height_pixels=1000)
+    sheet_beta = DocumentSheet(
+        id=str(uuid.uuid4()), document_id=doc_beta.id, sheet_number=1, sheet_code="B-01",
+        raster_image_path="./render_beta.png", width_px=1000, height_px=1000
+    )
     migrator_session.add(sheet_beta)
     migrator_session.commit()
 
-    text_beta = ExtractedText(id=str(uuid.uuid4()), sheet_id=sheet_beta.id, text_content="Texto Beta Confidencial", bbox=[0.1, 0.1, 0.2, 0.2], confidence=0.95)
-    table_beta = ExtractedTable(id=str(uuid.uuid4()), sheet_id=sheet_beta.id, table_type="window_schedule", total_rows=2, total_cols=2, bbox=[0.2, 0.2, 0.5, 0.5])
+    text_beta = ExtractedText(
+        id=str(uuid.uuid4()), sheet_id=sheet_beta.id, text="Texto Beta Confidencial",
+        bbox=[100, 100, 200, 200], bbox_normalized=[0.1, 0.1, 0.2, 0.2], confidence=0.95
+    )
+    table_beta = ExtractedTable(
+        id=str(uuid.uuid4()), document_id=doc_beta.id, sheet_id=sheet_beta.id, table_type="window_schedule",
+        row_count=2, column_count=2, bbox=[200, 200, 500, 500], bbox_normalized=[0.2, 0.2, 0.5, 0.5]
+    )
     migrator_session.add_all([text_beta, table_beta])
     migrator_session.commit()
 
-    symbol_beta = DetectedSymbol(id=str(uuid.uuid4()), sheet_id=sheet_beta.id, symbol_type="window_standard", label="Ventana Beta", bbox=[0.3, 0.3, 0.4, 0.4], confidence=0.90)
+    symbol_beta = DetectedSymbol(
+        id=str(uuid.uuid4()), document_id=doc_beta.id, sheet_id=sheet_beta.id,
+        symbol_type="window_symbol", bbox=[300, 300, 400, 400], bbox_normalized=[0.3, 0.3, 0.4, 0.4], confidence=0.90
+    )
     stage_beta = PipelineStageRun(id=str(uuid.uuid4()), pipeline_run_id=pipe_beta.id, stage_name="ocr", stage_order=1, status="completed")
     migrator_session.add_all([symbol_beta, stage_beta])
     migrator_session.commit()
@@ -187,14 +252,14 @@ def test_rls_02_lectura_heredada_aislada(app_user_engine, test_tenants_fixture):
             assert beta_sheet_id not in sheet_ids
 
             # 2. ExtractedTexts
-            texts = conn.execute(text("SELECT id, text_content FROM extracted_texts;")).fetchall()
+            texts = conn.execute(text("SELECT id, text FROM extracted_texts;")).fetchall()
             text_ids = [t[0] for t in texts]
             assert beta_text_id not in text_ids
 
             # 3. DetectedSymbols
-            symbols = conn.execute(text("SELECT id, label FROM detected_symbols;")).fetchall()
-            labels = [s[1] for s in symbols]
-            assert "Ventana Beta" not in labels
+            symbols = conn.execute(text("SELECT id, symbol_type FROM detected_symbols;")).fetchall()
+            symbol_types = [s[1] for s in symbols]
+            assert "window_symbol" not in symbol_types
 
 def test_rls_03_contexto_omitido_fail_closed(app_user_engine, test_tenants_fixture):
     """CASO 3: Sin setear tenant context (app_user directo) -> SELECT retorna 0 filas (Fail-Closed)."""
@@ -226,8 +291,8 @@ def test_rls_04_insert_cross_tenant(app_user_engine, test_tenants_fixture):
             with pytest.raises((IntegrityError, ProgrammingError, DBAPIError)) as exc:
                 conn.execute(
                     text("""
-                        INSERT INTO documents (id, organization_id, project_id, filename, file_path, file_hash_sha256, total_pages, status, created_at, updated_at)
-                        VALUES (:id, :org_id, :proj_id, 'cross_tenant.pdf', './ct.pdf', 'hash-ct', 1, 'active', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
+                        INSERT INTO documents (id, organization_id, project_id, filename, file_path, file_hash_sha256, file_size_bytes, page_count, status, created_at, updated_at)
+                        VALUES (:id, :org_id, :proj_id, 'cross_tenant.pdf', './ct.pdf', 'hash-ct-99', 1024, 1, 'uploaded', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
                     """),
                     {"id": new_doc_id, "org_id": beta_id, "proj_id": test_tenants_fixture["doc_alpha"].project_id}
                 )

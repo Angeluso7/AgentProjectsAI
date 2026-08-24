@@ -30,7 +30,7 @@ class IntakeExtractionRepository:
                 id=str(uuid.uuid4()),
                 name="Organización Principal",
                 slug="org-principal",
-                is_active=True
+                status="active"
             )
             self.db.add(org)
             self.db.commit()
@@ -120,13 +120,19 @@ class IntakeExtractionRepository:
         extraction_id: str,
         item_type: str,
         title: str,
+        candidate_type: Optional[str] = None,
         code_or_number: Optional[str] = None,
         description: Optional[str] = None,
         content_text: Optional[str] = None,
+        derived_text: Optional[str] = None,
         ocr_text: Optional[str] = None,
+        caption_or_context: Optional[str] = None,
+        disclaimer_notes: Optional[str] = None,
         crop_image_base64: Optional[str] = None,
         bbox_normalized: Optional[List[float]] = None,
         page_number: int = 1,
+        evidence_references: Optional[List[str]] = None,
+        technical_parameters: Optional[Dict[str, Any]] = None,
         target_destination: str = "rules_engine",
         review_status: str = "draft",
         structured_matrix: Optional[Dict[str, Any]] = None,
@@ -163,14 +169,20 @@ class IntakeExtractionRepository:
             id=item_id,
             extraction_id=extraction_id,
             item_type=item_type,
+            candidate_type=candidate_type,
             title=title,
             code_or_number=code_or_number,
             description=description,
             content_text=content_text,
+            derived_text=derived_text,
             ocr_text=ocr_text,
+            caption_or_context=caption_or_context,
+            disclaimer_notes=disclaimer_notes,
             crop_image_path=crop_image_path,
             bbox_normalized=bbox_normalized or [],
             page_number=page_number,
+            evidence_references=evidence_references or [],
+            technical_parameters=technical_parameters or {},
             target_destination=target_destination,
             review_status=review_status,
             structured_matrix=structured_matrix or {},
@@ -193,6 +205,23 @@ class IntakeExtractionRepository:
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def list_extracted_candidates(
+        self,
+        extraction_id: str,
+        candidate_type: Optional[str] = None,
+        review_status: Optional[str] = None,
+        page_number: Optional[int] = None
+    ) -> List[ExtractedItem]:
+        """Consulta filtrada de candidatos generados en una sesión de extracción."""
+        query = self.db.query(ExtractedItem).filter(ExtractedItem.extraction_id == extraction_id)
+        if candidate_type:
+            query = query.filter(ExtractedItem.candidate_type == candidate_type)
+        if review_status:
+            query = query.filter(ExtractedItem.review_status == review_status)
+        if page_number:
+            query = query.filter(ExtractedItem.page_number == page_number)
+        return query.order_by(ExtractedItem.page_number.asc(), ExtractedItem.created_at.asc()).all()
 
     def update_extracted_item(
         self,
@@ -325,6 +354,11 @@ class IntakeExtractionRepository:
                 status="active",
                 metadata_payload={
                     **it.metadata_payload,
+                    "candidate_type": it.candidate_type,
+                    "derived_text": it.derived_text,
+                    "disclaimer_notes": it.disclaimer_notes,
+                    "technical_parameters": it.technical_parameters or {},
+                    "evidence_references": it.evidence_references or [],
                     "governance_note": it.governance_note,
                     "structured_matrix": it.structured_matrix or {}
                 },
@@ -356,6 +390,11 @@ class IntakeExtractionRepository:
                     validated_at=datetime.utcnow(),
                     metadata_payload={
                         **it.metadata_payload,
+                        "candidate_type": it.candidate_type,
+                        "derived_text": it.derived_text,
+                        "disclaimer_notes": it.disclaimer_notes,
+                        "technical_parameters": it.technical_parameters or {},
+                        "evidence_references": it.evidence_references or [],
                         "source_origin": it.source_origin,
                         "source_reference": it.source_reference
                     },
@@ -364,6 +403,52 @@ class IntakeExtractionRepository:
                 )
                 self.db.add(sup_item)
                 supporting_items_created += 1
+
+                # C) Integración a Base de Conocimiento Reutilizable (KnowledgeItem) con gobernanza aprobada
+                try:
+                    from app.db.models.knowledge_base import KnowledgeItem
+                    from app.services.knowledge.service import KnowledgeBaseService
+
+                    k_domain = "normative_knowledge" if extraction.document_type == "norma" else "rule_knowledge"
+                    k_modality = "table" if it.item_type in ["table", "tabla"] else ("symbol" if it.item_type in ["symbol", "simbolo"] else "text")
+
+                    k_item = KnowledgeItem(
+                        id=str(uuid.uuid4()),
+                        organization_id=extraction.organization_id,
+                        project_id=extraction.project_id,
+                        domain=k_domain,
+                        item_type=it.candidate_type or it.item_type,
+                        title=it.title,
+                        summary=it.description or it.derived_text,
+                        content_text=it.content_text or it.title,
+                        structured_payload=it.structured_matrix or it.technical_parameters or {},
+                        discipline=extraction.discipline,
+                        status="validated",
+                        is_active_for_reuse=True,
+                        confidence_score=1.0,
+                        version_number=1,
+                        author="user_reviewer",
+                        origin_type="auto_extraction",
+                        ingestion_channel="manual_intake",
+                        modality=k_modality,
+                        visual_crop_url=it.crop_image_path,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    self.db.add(k_item)
+                    self.db.flush()
+
+                    kb_service = KnowledgeBaseService(self.db)
+                    chunks = kb_service._generate_chunks_for_item(k_item)
+                    self.db.flush()
+                    kb_service.vector_store.upsert_approved_chunks(
+                        organization_id=extraction.organization_id,
+                        project_id=extraction.project_id,
+                        chunks=chunks,
+                        item=k_item
+                    )
+                except Exception as ex:
+                    print(f"Aviso en sincronización de KnowledgeItem: {ex}")
 
         # Verificar si quedan items pendientes en 'por_confirmar'
         remaining_pending = sum(1 for it in all_items if it.id not in [x.id for x in items_to_commit] and it.review_status not in ["eliminado", "rejected"])

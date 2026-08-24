@@ -1,11 +1,15 @@
 import os
+import io
 import hashlib
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
+from PIL import Image
 
-from app.db.models.document_memory import Document, DocumentSheet
+from app.db.models.document_memory import Document, DocumentSheet, DocumentStructuralNode
 from app.db.repositories.document_repository import DocumentRepository
+from app.services.document_processing.docling_service import DoclingService
+from app.services.cad.dxf_service import DxfService
 from app.core.settings import settings
 from app.core.logging import logger
 
@@ -17,17 +21,241 @@ except ImportError:
     logger.warning("PyMuPDF (fitz) no esta instalado en el entorno actual. Las operaciones de PDF requeriran instalacion.")
 
 class IngestService:
-    """Servicio responsable de la ingesta de documentos PDF, cálculo de hash SHA-256,
-    extracción de metadatos, enumeración de hojas y rasterizado a imágenes de alta resolución.
+    """Servicio responsable de la ingesta de documentos técnicos (PDF, Imágenes, CAD, Especificaciones),
+    cálculo de hash SHA-256, extracción de metadatos, enumeración de hojas y rasterizado a imágenes de alta resolución.
     """
 
     def __init__(self, db: Session):
         self.db = db
         self.repo = DocumentRepository(db)
+        self.docling_service = DoclingService()
+        self.dxf_service = DxfService()
 
     def calculate_file_hash(self, file_bytes: bytes) -> str:
         """Calcula el hash SHA-256 del contenido binario de un archivo."""
         return hashlib.sha256(file_bytes).hexdigest()
+
+    def _resolve_organization_id(self, project_id: str) -> str:
+        from app.db.models.core import Project, Organization
+        project = self.db.query(Project).filter(Project.id == project_id).first()
+        org_id = project.organization_id if project else None
+        if not org_id:
+            org = self.db.query(Organization).first()
+            if org:
+                org_id = org.id
+            else:
+                import uuid
+                default_org = Organization(id=str(uuid.uuid4()), name="Default Organization", slug="default-org")
+                self.db.add(default_org)
+                self.db.commit()
+                self.db.refresh(default_org)
+                org_id = default_org.id
+        return org_id
+
+    def ingest_file(
+        self,
+        project_id: str,
+        filename: str,
+        file_bytes: bytes,
+        version_id: Optional[str] = None,
+        auto_process: bool = True,
+        dpi: Optional[int] = None
+    ) -> Document:
+        """Ingesta cualquier tipo de archivo técnico delegando según formato."""
+        if not file_bytes:
+            raise ValueError(f"El archivo '{filename}' está vacío.")
+
+        lower_name = (filename or "").lower()
+        
+        # 1. Si es PDF o contiene encabezado PDF
+        if lower_name.endswith(".pdf") or file_bytes.startswith(b"%PDF-"):
+            return self.ingest_pdf(
+                project_id=project_id,
+                filename=filename,
+                file_bytes=file_bytes,
+                version_id=version_id,
+                auto_process=auto_process,
+                dpi=dpi
+            )
+
+        # 2. Si es imagen raster (PNG, JPG, JPEG, WEBP, BMP, TIFF)
+        image_extensions = (".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff")
+        if lower_name.endswith(image_extensions):
+            return self.ingest_image(
+                project_id=project_id,
+                filename=filename,
+                file_bytes=file_bytes,
+                version_id=version_id,
+                dpi=dpi
+            )
+
+        # 3. Si es otro archivo técnico (CAD, DXF, DWG, DOCX, XLSX, TXT, CSV, etc.)
+        return self.ingest_generic_doc(
+            project_id=project_id,
+            filename=filename,
+            file_bytes=file_bytes,
+            version_id=version_id
+        )
+
+    def ingest_image(
+        self,
+        project_id: str,
+        filename: str,
+        file_bytes: bytes,
+        version_id: Optional[str] = None,
+        dpi: Optional[int] = None
+    ) -> Document:
+        """Ingesta una imagen de plano/croquis, creando una lámina lista para el visor."""
+        file_hash = self.calculate_file_hash(file_bytes)
+        
+        # Verificar duplicado
+        existing = self.repo.get_by_hash(file_hash)
+        if existing:
+            logger.info(f"Imagen '{filename}' ya existe con hash SHA-256: {file_hash} (ID: {existing.id})")
+            return existing
+
+        try:
+            pil_img = Image.open(io.BytesIO(file_bytes))
+            width_px, height_px = pil_img.size
+            img_format = (pil_img.format or "PNG").upper()
+            mime_type = f"image/{img_format.lower()}"
+        except Exception as e:
+            raise ValueError(f"No se pudo decodificar la imagen '{filename}': {str(e)}")
+
+        # Guardar archivo original
+        os.makedirs(settings.RAW_DOCUMENTS_DIR, exist_ok=True)
+        target_path = os.path.join(settings.RAW_DOCUMENTS_DIR, f"{file_hash}_{filename}")
+        with open(target_path, "wb") as f:
+            f.write(file_bytes)
+
+        org_id = self._resolve_organization_id(project_id)
+        target_dpi = dpi or settings.DEFAULT_RENDER_DPI
+
+        doc = Document(
+            organization_id=org_id,
+            project_id=project_id,
+            project_version_id=version_id,
+            filename=filename,
+            file_path=target_path,
+            file_hash_sha256=file_hash,
+            file_size_bytes=len(file_bytes),
+            mime_type=mime_type,
+            status="ready",
+            page_count=1
+        )
+        self.db.add(doc)
+        self.db.commit()
+        self.db.refresh(doc)
+
+        # Generar lámina renderizada y thumbnail
+        os.makedirs(settings.RENDERED_SHEETS_DIR, exist_ok=True)
+        raster_filename = f"{doc.id}_sheet_1.png"
+        raster_path = os.path.join(settings.RENDERED_SHEETS_DIR, raster_filename)
+        pil_img.convert("RGB").save(raster_path, "PNG")
+
+        thumb_filename = f"{doc.id}_sheet_1_thumb.png"
+        thumb_path = os.path.join(settings.RENDERED_SHEETS_DIR, thumb_filename)
+        thumb_img = pil_img.copy()
+        thumb_img.thumbnail((300, 300))
+        thumb_img.convert("RGB").save(thumb_path, "PNG")
+
+        # Calcular dimensiones físicas estimadas a target_dpi
+        width_mm = round(width_px * 25.4 / target_dpi, 2)
+        height_mm = round(height_px * 25.4 / target_dpi, 2)
+
+        sheet = DocumentSheet(
+            document_id=doc.id,
+            sheet_number=1,
+            sheet_code="IMG-01",
+            title=filename,
+            width_px=width_px,
+            height_px=height_px,
+            width_mm=width_mm,
+            height_mm=height_mm,
+            dpi=target_dpi,
+            raster_image_path=raster_path,
+            thumbnail_path=thumb_path
+        )
+        self.db.add(sheet)
+        self.db.commit()
+        self.db.refresh(doc)
+        logger.info(f"Imagen técnica ingresada e indexada: {doc.filename} (ID: {doc.id})")
+        return doc
+
+    def ingest_generic_doc(
+        self,
+        project_id: str,
+        filename: str,
+        file_bytes: bytes,
+        version_id: Optional[str] = None
+    ) -> Document:
+        """Ingesta un documento técnico no gráfico (CAD, especificación, cálculo)."""
+        file_hash = self.calculate_file_hash(file_bytes)
+        
+        # Verificar duplicado
+        existing = self.repo.get_by_hash(file_hash)
+        if existing:
+            logger.info(f"Documento '{filename}' ya existe con hash SHA-256: {file_hash} (ID: {existing.id})")
+            return existing
+
+        # Determinar mime_type según extensión
+        lower_name = (filename or "").lower()
+        if lower_name.endswith((".dxf", ".dwg")):
+            mime_type = "application/acad"
+        elif lower_name.endswith((".docx", ".doc")):
+            mime_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        elif lower_name.endswith((".xlsx", ".xls")):
+            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        elif lower_name.endswith(".csv"):
+            mime_type = "text/csv"
+        elif lower_name.endswith(".txt"):
+            mime_type = "text/plain"
+        elif lower_name.endswith(".zip"):
+            mime_type = "application/zip"
+        else:
+            mime_type = "application/octet-stream"
+
+        # Guardar archivo original en directorio raw
+        os.makedirs(settings.RAW_DOCUMENTS_DIR, exist_ok=True)
+        target_path = os.path.join(settings.RAW_DOCUMENTS_DIR, f"{file_hash}_{filename}")
+        with open(target_path, "wb") as f:
+            f.write(file_bytes)
+
+        org_id = self._resolve_organization_id(project_id)
+
+        doc = Document(
+            organization_id=org_id,
+            project_id=project_id,
+            project_version_id=version_id,
+            filename=filename,
+            file_path=target_path,
+            file_hash_sha256=file_hash,
+            file_size_bytes=len(file_bytes),
+            mime_type=mime_type,
+            status="ready",
+            page_count=1
+        )
+        self.db.add(doc)
+        self.db.commit()
+        self.db.refresh(doc)
+
+        # Extracción estructural (Docling / ezdxf)
+        try:
+            if lower_name.endswith(".dxf"):
+                nodes = self.dxf_service.extract_structural_nodes(file_bytes, filename, doc.id)
+                if nodes:
+                    self.db.add_all(nodes)
+                    self.db.commit()
+            elif lower_name.endswith((".docx", ".doc", ".xlsx", ".xls", ".csv", ".txt")):
+                nodes = self.docling_service.extract_structural_nodes(file_bytes, filename, doc.id)
+                if nodes:
+                    self.db.add_all(nodes)
+                    self.db.commit()
+        except Exception as e:
+            logger.warning(f"Extracción estructural secundaria para '{filename}' registró excepción: {e}")
+
+        logger.info(f"Documento técnico entregable registrado: {doc.filename} (ID: {doc.id})")
+        return doc
 
     def ingest_pdf(
         self,
@@ -62,21 +290,7 @@ class IngestService:
         with open(target_path, "wb") as f:
             f.write(file_bytes)
 
-        # Resolver organization_id a partir del proyecto
-        from app.db.models.core import Project, Organization
-        project = self.db.query(Project).filter(Project.id == project_id).first()
-        org_id = project.organization_id if project else None
-        if not org_id:
-            org = self.db.query(Organization).first()
-            if org:
-                org_id = org.id
-            else:
-                import uuid
-                default_org = Organization(id=str(uuid.uuid4()), name="Default Organization", slug="default-org")
-                self.db.add(default_org)
-                self.db.commit()
-                self.db.refresh(default_org)
-                org_id = default_org.id
+        org_id = self._resolve_organization_id(project_id)
 
         # Crear registro de documento
         doc = Document(
@@ -101,6 +315,7 @@ class IngestService:
             return self.process_document(doc.id, dpi=dpi)
 
         return doc
+
 
     def process_document(self, document_id: str, dpi: Optional[int] = None) -> Document:
         """Procesa un PDF con PyMuPDF: extrae metadatos, enumera páginas y rasteriza cada hoja a imagen."""
@@ -192,6 +407,15 @@ class IngestService:
             doc.updated_at = datetime.utcnow()
             self.db.commit()
             self.db.refresh(doc)
+
+            # Extracción estructural de secciones y tablas con Docling
+            try:
+                nodes = self.docling_service.extract_structural_nodes(file_bytes, doc.filename, doc.id)
+                if nodes:
+                    self.db.add_all(nodes)
+                    self.db.commit()
+            except Exception as e:
+                logger.warning(f"Extracción de secciones/tablas PDF falló para '{doc.filename}': {e}")
 
             logger.info(f"Documento procesado exitosamente: {doc.filename} ({page_count} hojas rasterizadas a {target_dpi} DPI)")
             return doc

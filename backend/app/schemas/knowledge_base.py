@@ -158,6 +158,7 @@ class KnowledgeSearchQuery(BaseModel):
     project_id: Optional[str] = None
     domain: Optional[str] = None
     discipline: Optional[str] = None
+    secondary_disciplines: Optional[List[str]] = Field(default_factory=list)
     stage: Optional[str] = None
     active_only: bool = True # Solo approved_for_reuse o validated
     top_k: int = 5

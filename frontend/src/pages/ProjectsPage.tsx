@@ -7,7 +7,7 @@ import {
   RefreshCw, Eye, AlertCircle, Clock, ExternalLink, Plus, Trash2,
   FolderKanban, Archive, ArchiveRestore, Download, Edit3, Check, Search,
   Filter, Building2, Shield, Calendar, BarChart3, ChevronRight, HardDriveDownload,
-  Compass, SquareCheck
+  Compass, SquareCheck, UploadCloud
 } from 'lucide-react';
 import { DeleteDocumentModal } from '../components/DeleteDocumentModal';
 import { ProjectFormModal, PROJECT_STAGES, PROJECT_DISCIPLINES } from '../components/ProjectFormModal';
@@ -15,6 +15,8 @@ import { ProjectDeleteModal } from '../components/ProjectDeleteModal';
 import { CompletenessGatekeeperCard } from '../components/CompletenessGatekeeperCard';
 import { DocumentDeliverableModal } from '../components/DocumentDeliverableModal';
 import { ProjectMaturityProfileView } from '../components/ProjectMaturityProfileView';
+import { BatchDocumentUploadModal } from '../components/BatchDocumentUploadModal';
+
 
 export const ProjectsPage: React.FC = () => {
   const {
@@ -50,6 +52,7 @@ export const ProjectsPage: React.FC = () => {
   const [docToClassify, setDocToClassify] = useState<DocumentItem | null>(null);
   const [isClassifyModalOpen, setIsClassifyModalOpen] = useState(false);
   const [completenessRefreshKey, setCompletenessRefreshKey] = useState(0);
+  const [isBatchUploadModalOpen, setIsBatchUploadModalOpen] = useState(false);
 
   // Filtros
   const [searchQuery, setSearchQuery] = useState('');
@@ -129,11 +132,11 @@ export const ProjectsPage: React.FC = () => {
       setUploading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
-      const currentProj = projects.find((p) => p.id === targetProjId);
       await apiService.uploadDocument(targetProjId, file);
       setSuccessMessage(`Documento «${file.name}» cargado e indexado exitosamente.`);
       await loadDocuments(targetProjId);
       await reloadProjects();
+      setCompletenessRefreshKey(prev => prev + 1);
     } catch (err: any) {
       setErrorMessage(err.response?.data?.detail || 'Error al procesar y cargar el documento.');
     } finally {
@@ -141,6 +144,7 @@ export const ProjectsPage: React.FC = () => {
       e.target.value = '';
     }
   };
+
 
   // Filtrado de proyectos
   const filteredProjects = projects.filter((p) => {
@@ -595,18 +599,29 @@ export const ProjectsPage: React.FC = () => {
                 </p>
               </div>
 
-              {/* Subir Documento a este proyecto */}
+              {/* Subir Documentos al proyecto */}
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchUploadModalOpen(true)}
+                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                  title="Abrir asistente de carga múltiple de documentos y planos"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Carga por Lotes / Planos</span>
+                </button>
+
                 <label
-                  className={`px-3.5 py-1.5 text-xs font-bold text-white bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl flex items-center gap-2 cursor-pointer transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors ${
                     uploading ? 'opacity-50 pointer-events-none' : ''
                   }`}
+                  title="Carga instantánea de un único archivo"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>{uploading ? 'Cargando...' : 'Cargar Documento'}</span>
+                  <span>{uploading ? 'Cargando...' : 'Carga Rápida'}</span>
                   <input
                     type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.dxf"
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.dxf,.dwg,.docx,.xlsx,.txt,.csv,.zip"
                     onChange={handleFileUpload}
                     className="hidden"
                     disabled={uploading}
@@ -614,6 +629,7 @@ export const ProjectsPage: React.FC = () => {
                 </label>
               </div>
             </div>
+
 
             {/* Listado de Documentos del Proyecto */}
             {loadingDocs ? (
@@ -760,6 +776,24 @@ export const ProjectsPage: React.FC = () => {
           reloadProjects();
         }}
       />
+
+      {/* Modal de Carga por Lotes de Documentos y Planos */}
+      {inspectedProject && (
+        <BatchDocumentUploadModal
+          isOpen={isBatchUploadModalOpen}
+          projectId={inspectedProject.id}
+          projectName={inspectedProject.name}
+          projectCode={inspectedProject.code}
+          onClose={() => setIsBatchUploadModalOpen(false)}
+          onSuccess={(uploadedDocs, summaryMsg) => {
+            setSuccessMessage(summaryMsg);
+            loadDocuments(inspectedProject.id);
+            reloadProjects();
+            setCompletenessRefreshKey(prev => prev + 1);
+          }}
+        />
+      )}
     </div>
   );
+
 };

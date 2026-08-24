@@ -18,17 +18,49 @@ from app.schemas.knowledge_base import (
     KnowledgeItemVersionRequest, KnowledgeSearchQuery, KnowledgeSearchResultItem,
     KnowledgeSearchResponse, KnowledgeBaseStatsRead, KnowledgeSyncResponse
 )
+from app.services.knowledge.vector_store import VectorStore
 from app.core.logging import logger
 
 class KnowledgeBaseService:
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, in_memory_vector: bool = False, vector_store: Optional[VectorStore] = None):
         self.db = db
+        self.vector_store = vector_store or VectorStore(in_memory=in_memory_vector)
 
     # =========================================================================
-    # CHUNKING HELPER
+    # CHUNKING ESTRUCTURAL Y METADATOS
     # =========================================================================
+    def _build_chunk_metadata(self, item: KnowledgeItem, chunk_type: str) -> Dict[str, Any]:
+        return {
+            "item_id": item.id,
+            "domain": item.domain,
+            "item_type": item.item_type,
+            "title": item.title,
+            "discipline": item.discipline,
+            "stage": item.stage,
+            "project_id": item.project_id,
+            "tags": item.tags or [],
+            "version_number": item.version_number,
+            "is_active_for_reuse": item.is_active_for_reuse,
+            "chunk_type": chunk_type
+        }
+
+    def _build_markdown_table_snippet(self, headers: List[str], rows: List[List[Any]]) -> str:
+        if not headers and not rows:
+            return ""
+        clean_headers = [str(h).replace("|", "/") for h in headers]
+        if not clean_headers and rows:
+            clean_headers = [f"Col {i+1}" for i in range(len(rows[0]))]
+        header_line = "| " + " | ".join(clean_headers) + " |"
+        sep_line = "| " + " | ".join(["---"] * len(clean_headers)) + " |"
+        row_lines = []
+        for r in rows:
+            padded = list(r) + [""] * (len(clean_headers) - len(r))
+            clean_r = [str(c).replace("|", "/").replace("\n", " ") for c in padded[:len(clean_headers)]]
+            row_lines.append("| " + " | ".join(clean_r) + " |")
+        return "\n".join([header_line, sep_line] + row_lines)
+
     def _generate_chunks_for_item(self, item: KnowledgeItem) -> List[KnowledgeChunk]:
-        """Divide el contenido en fragmentos indexables y normalizados."""
+        """Divide el contenido en fragmentos indexables con chunking estructural para piping y specs."""
         # Eliminar chunks previos si existen
         self.db.query(KnowledgeChunk).filter(KnowledgeChunk.knowledge_item_id == item.id).delete()
         
@@ -36,56 +68,127 @@ class KnowledgeBaseService:
         if not text:
             return []
 
-        # Separar por párrafos o ventanas de 400-600 caracteres
-        raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-        chunks_text_list: List[str] = []
-
-        current_block = ""
-        for p in raw_paragraphs:
-            if len(current_block) + len(p) < 600:
-                current_block = f"{current_block}\n\n{p}".strip() if current_block else p
-            else:
-                if current_block:
-                    chunks_text_list.append(current_block)
-                current_block = p
-        if current_block:
-            chunks_text_list.append(current_block)
-
-        if not chunks_text_list:
-            chunks_text_list = [text]
-
         created_chunks: List[KnowledgeChunk] = []
-        for idx, c_text in enumerate(chunks_text_list):
-            words = len(c_text.split())
-            token_est = int(words * 1.35)
+        payload = item.structured_payload or {}
+
+        # 1. Chunking de Tablas Técnicas (Line Lists, Valve Schedules, Specs)
+        if item.modality == "table" or "headers" in payload or "rows" in payload:
+            headers = payload.get("headers", [])
+            rows = payload.get("rows", [])
+            table_name = payload.get("table_name", item.title)
             
-            meta = {
-                "item_id": item.id,
-                "domain": item.domain,
-                "item_type": item.item_type,
-                "title": item.title,
-                "discipline": item.discipline,
-                "stage": item.stage,
-                "project_id": item.project_id,
-                "tags": item.tags or [],
-                "version_number": item.version_number,
-                "is_active_for_reuse": item.is_active_for_reuse
-            }
-            
+            if rows:
+                batch_size = 5 # Bloques de 5 filas por chunk para mantener granularidad técnica
+                for b_idx in range(0, len(rows), batch_size):
+                    batch_rows = rows[b_idx:b_idx + batch_size]
+                    md_chunk = self._build_markdown_table_snippet(headers, batch_rows)
+                    c_idx = len(created_chunks)
+                    
+                    chunk = KnowledgeChunk(
+                        id=str(uuid.uuid4()),
+                        knowledge_item_id=item.id,
+                        chunk_index=c_idx,
+                        chunk_title=f"{item.title} - Filas {b_idx + 1} a {min(b_idx + len(batch_rows), len(rows))}",
+                        chunk_type="table_chunk",
+                        hierarchy_path=f"/{table_name}/Filas_{b_idx + 1}_{min(b_idx + len(batch_rows), len(rows))}",
+                        chunk_text=md_chunk,
+                        token_count=int(len(md_chunk.split()) * 1.35),
+                        structured_data={
+                            "table_name": table_name,
+                            "headers": headers,
+                            "rows": batch_rows,
+                            "row_start": b_idx + 1,
+                            "row_end": min(b_idx + len(batch_rows), len(rows))
+                        },
+                        metadata_payload=self._build_chunk_metadata(item, "table_chunk")
+                    )
+                    self.db.add(chunk)
+                    created_chunks.append(chunk)
+
+        # 2. Chunking por Secciones Normativas / Técnicas
+        elif "CAPÍTULO" in text.upper() or "## " in text or "SECCIÓN" in text.upper():
+            raw_sections = re.split(r"(?=(?:^|\n)#{1,3}\s+|(?:^|\n)(?:CAP[ÍI]TULO|SECCI[ÓO]N)\s+)", text, flags=re.IGNORECASE)
+            for s_idx, sec_text in enumerate(raw_sections):
+                s_clean = sec_text.strip()
+                if not s_clean:
+                    continue
+                first_line = s_clean.split("\n")[0].replace("#", "").strip()
+                chunk = KnowledgeChunk(
+                    id=str(uuid.uuid4()),
+                    knowledge_item_id=item.id,
+                    chunk_index=s_idx,
+                    chunk_title=f"{item.title}: {first_line[:60]}",
+                    chunk_type="section_chunk",
+                    hierarchy_path=f"/{item.title}/{first_line[:40].replace(' ', '_')}",
+                    chunk_text=s_clean,
+                    token_count=int(len(s_clean.split()) * 1.35),
+                    structured_data={"section_title": first_line},
+                    metadata_payload=self._build_chunk_metadata(item, "section_chunk")
+                )
+                self.db.add(chunk)
+                created_chunks.append(chunk)
+
+        # 3. Chunking de Bloques CAD / DXF
+        elif item.domain == "cad_knowledge" or "blocks_inserted" in payload:
+            blocks = payload.get("blocks_inserted", [])
             chunk = KnowledgeChunk(
                 id=str(uuid.uuid4()),
                 knowledge_item_id=item.id,
-                chunk_index=idx,
-                chunk_title=f"{item.title} (Part {idx + 1})" if len(chunks_text_list) > 1 else item.title,
-                chunk_text=c_text,
-                token_count=token_est,
-                metadata_payload=meta,
-                embedding_json=None # Listo para inyección de embeddings vectoriales
+                chunk_index=0,
+                chunk_title=f"Bloques CAD: {item.title}",
+                chunk_type="dxf_block_summary",
+                hierarchy_path=f"/{item.title}/CAD_Blocks",
+                chunk_text=text,
+                token_count=int(len(text.split()) * 1.35),
+                structured_data={"blocks_count": len(blocks)},
+                metadata_payload=self._build_chunk_metadata(item, "dxf_block_summary")
             )
             self.db.add(chunk)
             created_chunks.append(chunk)
 
+        # 4. Fallback Párrafos Estructurados
+        if not created_chunks:
+            raw_paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+            chunks_text_list: List[str] = []
+            current_block = ""
+            for p in raw_paragraphs:
+                if len(current_block) + len(p) < 800:
+                    current_block = f"{current_block}\n\n{p}".strip() if current_block else p
+                else:
+                    if current_block:
+                        chunks_text_list.append(current_block)
+                    current_block = p
+            if current_block:
+                chunks_text_list.append(current_block)
+
+            for idx, c_text in enumerate(chunks_text_list):
+                words = len(c_text.split())
+                chunk = KnowledgeChunk(
+                    id=str(uuid.uuid4()),
+                    knowledge_item_id=item.id,
+                    chunk_index=idx,
+                    chunk_title=f"{item.title} (Parte {idx + 1})" if len(chunks_text_list) > 1 else item.title,
+                    chunk_type="technical_note",
+                    hierarchy_path=f"/{item.title}/Parte_{idx + 1}",
+                    chunk_text=c_text,
+                    token_count=int(words * 1.35),
+                    structured_data={},
+                    metadata_payload=self._build_chunk_metadata(item, "technical_note")
+                )
+                self.db.add(chunk)
+                created_chunks.append(chunk)
+
         self.db.flush()
+
+        # Si el item cumple gobernanza activa de reuso, indexar en Qdrant
+        if item.is_active_for_reuse and item.status in ["validated", "approved_for_reuse"]:
+            self.vector_store.upsert_approved_chunks(
+                organization_id=item.organization_id,
+                project_id=item.project_id,
+                chunks=created_chunks,
+                item=item
+            )
+
         return created_chunks
 
     # =========================================================================
@@ -264,9 +367,39 @@ class KnowledgeBaseService:
             meta["is_active_for_reuse"] = item.is_active_for_reuse
             c.metadata_payload = meta
 
+        # Sincronización vectorial atómica
+        payload_data = dict(item.structured_payload or {})
+        if item.is_active_for_reuse:
+            if not item.chunks:
+                self._generate_chunks_for_item(item)
+            ok = self.vector_store.upsert_approved_chunks(item.organization_id, item.project_id, item.chunks, item)
+            payload_data["qdrant_sync_status"] = "synced" if ok else "failed"
+            payload_data["qdrant_last_synced_at"] = datetime.utcnow().isoformat()
+        else:
+            # Desindexación inmediata ante rechazo, archivo, retiro o superseded
+            self.vector_store.delete_item_vectors(item.id)
+            payload_data["qdrant_sync_status"] = "purged"
+            payload_data["qdrant_purged_at"] = datetime.utcnow().isoformat()
+
+        item.structured_payload = payload_data
         self.db.commit()
         self.db.refresh(item)
         return item
+
+    def delete_item(self, item_id: str, organization_id: str) -> bool:
+        """Elimina físicamente una unidad de conocimiento y purga sus vectores en Qdrant."""
+        item = self.get_item(item_id, organization_id)
+        if not item:
+            return False
+
+        # Purgar vectores en Qdrant
+        self.vector_store.delete_item_vectors(item.id)
+
+        # Eliminar chunks y registro en SQL
+        self.db.query(KnowledgeChunk).filter(KnowledgeChunk.knowledge_item_id == item.id).delete()
+        self.db.delete(item)
+        self.db.commit()
+        return True
 
     def create_new_version(
         self,
@@ -275,7 +408,7 @@ class KnowledgeBaseService:
         payload: KnowledgeItemVersionRequest,
         author: str = "system"
     ) -> Optional[KnowledgeItem]:
-        """Crea una nueva versión formal de una unidad, marcando la anterior como superseded."""
+        """Crea una nueva versión formal de una unidad, marcando la anterior como superseded y purgándola de Qdrant."""
         parent_item = self.get_item(item_id, organization_id)
         if not parent_item:
             return None
@@ -323,10 +456,12 @@ class KnowledgeBaseService:
         self.db.add(new_item)
         self.db.flush()
 
-        # Superseder versión anterior
+        # Superseder versión anterior y purgarla de Qdrant
         parent_item.status = "superseded"
         parent_item.is_active_for_reuse = False
         parent_item.superseded_by_id = new_item.id
+        self.vector_store.delete_item_vectors(parent_item.id)
+
         p_trace = list(parent_item.provenance_trace or [])
         p_trace.append({
             "action": "superseded_by_new_version",
@@ -771,8 +906,35 @@ class KnowledgeBaseService:
         )
 
     # =========================================================================
-    # MOTOR DE BÚSQUEDA Y RECUPERACIÓN CONTEXTUAL (RAG READINESS)
+    # MOTOR DE BÚSQUEDA Y RECUPERACIÓN CONTEXTUAL HÍBRIDA (QDRANT + FALLBACK SQL)
     # =========================================================================
+    def sync_hybrid_vector_store(
+        self,
+        organization_id: str,
+        project_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Sincroniza todos los ítems aprobados y activos hacia la colección de Qdrant."""
+        q = self.db.query(KnowledgeItem).filter(
+            KnowledgeItem.organization_id == organization_id,
+            KnowledgeItem.is_active_for_reuse.is_(True),
+            KnowledgeItem.status.in_(["validated", "approved_for_reuse"])
+        )
+        if project_id:
+            q = q.filter(or_(KnowledgeItem.project_id == project_id, KnowledgeItem.project_id.is_(None)))
+        items = q.all()
+        synced_count = 0
+        for it in items:
+            if it.chunks:
+                ok = self.vector_store.upsert_approved_chunks(organization_id, it.project_id, it.chunks, it)
+                if ok:
+                    synced_count += 1
+        return {
+            "success": True,
+            "is_qdrant_available": self.vector_store.is_available(),
+            "total_approved_items": len(items),
+            "synced_items": synced_count
+        }
+
     def search_knowledge(
         self,
         organization_id: str,
@@ -780,9 +942,56 @@ class KnowledgeBaseService:
     ) -> KnowledgeSearchResponse:
         """
         Recuperador contextual de conocimiento para el asistente.
-        Filtra por idoneidad (active_only excluye draft, rejected, superseded).
-        Calcula scoring de relevancia léxica y contextual.
+        Estrategia híbrida:
+        1. Intenta búsqueda vectorial en Qdrant sobre conocimiento aprobado si está disponible.
+        2. Fallback automático a scoring léxico ponderado SQL sin interrumpir al usuario.
         """
+        # 1. Intento de Búsqueda Vectorial Híbrida en Qdrant (Solo conocimiento aprobado)
+        if self.vector_store.is_available() and search_query.active_only:
+            try:
+                v_results = self.vector_store.hybrid_search(
+                    organization_id=organization_id,
+                    query_text=search_query.query,
+                    project_id=search_query.project_id,
+                    discipline=search_query.discipline,
+                    secondary_disciplines=search_query.secondary_disciplines,
+                    stage=search_query.stage,
+                    top_k=search_query.top_k
+                )
+                if v_results:
+                    result_items: List[KnowledgeSearchResultItem] = []
+                    for hit in v_results:
+                        item_id = hit["item_id"]
+                        db_item = self.db.query(KnowledgeItem).filter(KnowledgeItem.id == item_id).first()
+                        # Re-validación estricta de seguridad en SQL: no admitir statuses retirados/superseded
+                        if not db_item or not db_item.is_active_for_reuse or db_item.status in ["superseded", "archived", "withdrawn", "rejected", "draft", "inactive"]:
+                            continue
+
+                        result_items.append(KnowledgeSearchResultItem(
+                            item_id=db_item.id,
+                            chunk_id=hit.get("chunk_id"),
+                            title=db_item.title,
+                            domain=db_item.domain,
+                            item_type=db_item.item_type,
+                            discipline=db_item.discipline,
+                            stage=db_item.stage,
+                            status=db_item.status,
+                            is_active_for_reuse=db_item.is_active_for_reuse,
+                            relevance_score=hit.get("score", 0.95),
+                            snippet=hit.get("snippet") or (db_item.summary or db_item.content_text[:300]),
+                            provenance=hit.get("provenance", {}),
+                            tags=db_item.tags or []
+                        ))
+                    if result_items:
+                        return KnowledgeSearchResponse(
+                            query=search_query.query,
+                            total_matches=len(result_items),
+                            results=result_items
+                        )
+            except Exception as e:
+                logger.warning(f"Excepción en búsqueda Qdrant: {e}. Continuando con fallback SQL.")
+
+        # 2. Fallback Seguro: Scoring Léxico Ponderado en Base de Datos Relacional (SQL)
         q_text = search_query.query.strip().lower()
         terms = [t for t in re.split(r"\s+", q_text) if len(t) > 2]
 
@@ -794,14 +1003,29 @@ class KnowledgeBaseService:
         else:
             q = q.filter(KnowledgeItem.project_id.is_(None))
 
-        # Filtro estricto de gobernanza: solo reutilizable por defecto
+        # Filtro estricto de gobernanza: solo reutilizable por defecto y excluir superseded/archived/withdrawn/rejected/draft
         if search_query.active_only:
-            q = q.filter(KnowledgeItem.is_active_for_reuse.is_(True))
+            q = q.filter(
+                KnowledgeItem.is_active_for_reuse.is_(True),
+                KnowledgeItem.status.in_(["validated", "approved_for_reuse"]),
+                KnowledgeItem.status.notin_(["superseded", "archived", "withdrawn", "rejected", "draft", "inactive"])
+            )
 
         if search_query.domain:
             q = q.filter(KnowledgeItem.domain == search_query.domain)
-        if search_query.discipline:
-            q = q.filter(or_(KnowledgeItem.discipline == search_query.discipline, KnowledgeItem.discipline == "general"))
+
+        # Filtrado multidisciplinario (primary_discipline + secondary_disciplines + 'general')
+        target_disciplines = set()
+        if search_query.discipline and search_query.discipline != "general":
+            target_disciplines.add(search_query.discipline)
+        if search_query.secondary_disciplines:
+            for sd in search_query.secondary_disciplines:
+                if sd and sd != "general":
+                    target_disciplines.add(sd)
+
+        if target_disciplines:
+            q = q.filter(KnowledgeItem.discipline.in_(list(target_disciplines) + ["general"]))
+
         if search_query.stage:
             q = q.filter(or_(KnowledgeItem.stage == search_query.stage, KnowledgeItem.stage.is_(None)))
 
@@ -828,13 +1052,20 @@ class KnowledgeBaseService:
                 score += 1.5
 
             if score > 0 or not terms: # Si no hay términos de búsqueda o hizo match
-                # Encontrar el fragmento más relevante
+                # Encontrar el fragmento más relevante (preferir table_chunk o section_chunk)
                 best_snippet = item.summary or item.content_text[:300]
                 best_chunk_id = None
                 if item.chunks:
-                    best_chunk = item.chunks[0]
-                    best_snippet = best_chunk.chunk_text[:350]
-                    best_chunk_id = best_chunk.id
+                    # Priorizar chunks de tablas o secciones si coinciden
+                    for c in item.chunks:
+                        if terms and any(t in c.chunk_text.lower() for t in terms):
+                            best_snippet = c.chunk_text[:350]
+                            best_chunk_id = c.id
+                            break
+                    if not best_chunk_id:
+                        best_chunk = item.chunks[0]
+                        best_snippet = best_chunk.chunk_text[:350]
+                        best_chunk_id = best_chunk.id
 
                 final_score = round(min(1.0, (score / max(1.0, len(terms) * 4.0))), 3)
                 scored_results.append((final_score, item, best_snippet, best_chunk_id))

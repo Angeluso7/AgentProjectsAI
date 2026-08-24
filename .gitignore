@@ -17,12 +17,17 @@ data/raw/*
 data/interim/*
 data/processed/*
 data/exports/*
+data/evaluations/*
+data/rendered/*
 !data/**/.gitkeep
 storage/raw/*
 storage/rendered/*
 storage/crops/*
 storage/reports/*
 !storage/**/.gitkeep
+backend/data/
+backend/storage/
+backend/.pytest_cache/
 datasets/train/
 datasets/val/
 datasets/test/
@@ -30,4 +35,5 @@ models/checkpoints/
 models/trained/
 models/experiments/
 mlruns/
+
 

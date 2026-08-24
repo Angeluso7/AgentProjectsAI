@@ -2,9 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
-
-def test_ocr_general_and_rules_generation():
+def test_ocr_general_and_rules_generation(client, db_session):
     headers = {
         "x-organization-id": "org_ocr_rules_test",
         "x-user-id": "user_qa_qc"

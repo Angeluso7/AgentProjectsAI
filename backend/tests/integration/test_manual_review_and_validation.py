@@ -8,9 +8,7 @@ from app.db.models.intake_extractions import SourceExtraction, ExtractedItem, Ru
 from app.db.models.intake import SourceAsset
 from app.db.models.core import Organization
 
-client = TestClient(app)
-
-def test_manual_review_and_validation_flow():
+def test_manual_review_and_validation_flow(client, db_session):
     """
     Test completo del flujo de revisión y validación manual asistida:
     1. Crear sesión manual sin IA

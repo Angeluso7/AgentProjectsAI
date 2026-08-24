@@ -30,6 +30,7 @@ class Document(Base):
     sheets = relationship("DocumentSheet", back_populates="document", cascade="all, delete-orphan", order_by="DocumentSheet.sheet_number.asc()")
     extracted_tables = relationship("ExtractedTable", back_populates="document", cascade="all, delete-orphan")
     symbols = relationship("DetectedSymbol", back_populates="document", cascade="all, delete-orphan")
+    structural_nodes = relationship("DocumentStructuralNode", back_populates="document", cascade="all, delete-orphan")
 
 
 class DocumentSheet(Base):
@@ -37,7 +38,7 @@ class DocumentSheet(Base):
     __tablename__ = "document_sheets"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False)
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     
     sheet_number = Column(Integer, nullable=False) # 1-indexed
     sheet_code = Column(String(100), nullable=True) # e.g. "ARQ-01", "EST-102"
@@ -67,6 +68,7 @@ class DocumentSheet(Base):
     symbols = relationship("DetectedSymbol", back_populates="sheet", cascade="all, delete-orphan")
     evidences = relationship("VisualEvidence", back_populates="sheet", cascade="all, delete-orphan")
     title_block_extraction = relationship("TitleBlockExtraction", back_populates="sheet", uselist=False, cascade="all, delete-orphan")
+    structural_nodes = relationship("DocumentStructuralNode", back_populates="sheet")
 
 
 class SheetRegion(Base):
@@ -74,7 +76,7 @@ class SheetRegion(Base):
     __tablename__ = "sheet_regions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False)
+    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
     
     region_type = Column(String(50), nullable=False) # title_block, drawing_area, notes_area, legend_area, table_candidate
     polygon_points = Column(JSON, nullable=False) # [[x0,y0], [x1,y1], [x2,y2], ...] coordenadas normalizadas 0.0-1.0
@@ -133,7 +135,7 @@ class ExtractedText(Base):
     __tablename__ = "extracted_texts"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False)
+    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
     region_id = Column(String(36), ForeignKey("sheet_regions.id", ondelete="SET NULL"), nullable=True)
     
     text = Column(Text, nullable=False)
@@ -267,3 +269,30 @@ class VisualEvidence(Base):
 
     # Relaciones
     sheet = relationship("DocumentSheet", back_populates="evidences")
+
+
+class DocumentStructuralNode(Base):
+    """Nodo jerárquico/estructural extraído de documentos técnicos (secciones, tablas, notas, bloques DXF)."""
+    __tablename__ = "document_structural_nodes"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="SET NULL"), nullable=True, index=True)
+    
+    node_type = Column(String(30), nullable=False) # 'heading', 'paragraph', 'table', 'technical_note', 'dxf_block_summary', 'key_value'
+    hierarchy_path = Column(String(255), nullable=True) # ej. "/Line_Schedule/Area_100/Row_1" o "/ASME_B31.3/Cap_II/304.1"
+    level = Column(Integer, default=0, nullable=False) # 1=H1, 2=H2, 3=H3
+    title = Column(String(255), nullable=True)
+    content_text = Column(Text, nullable=False)
+    
+    # Payload estructurado para tablas, celdas o pares clave/valor
+    structured_payload = Column(JSON, default=dict, nullable=False)
+    
+    page_number = Column(Integer, nullable=True)
+    bbox_normalized = Column(JSON, nullable=True) # [x0, y0, x1, y1] en escala 0.0-1.0
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relaciones
+    document = relationship("Document", back_populates="structural_nodes")
+    sheet = relationship("DocumentSheet", back_populates="structural_nodes")
+

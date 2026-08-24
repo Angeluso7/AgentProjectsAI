@@ -3,11 +3,16 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.orm import Session
 from app.db.session import get_db
-from app.db.models.document_memory import Document
+from app.db.models.document_memory import Document, DocumentStructuralNode
 from app.db.repositories.document_repository import DocumentRepository
 from app.db.repositories.project_repository import ProjectRepository
-from app.schemas.document import DocumentRead, DocumentSheetRead, DocumentProcessRequest
+from app.schemas.document import (
+    DocumentRead, DocumentSheetRead, DocumentProcessRequest,
+    BatchUploadResponse, BatchFileResultItem,
+    DocumentStructuralNodeRead, CadEntitiesSummaryRead
+)
 from app.services.ingest.service import IngestService
+from app.services.cad.dxf_service import DxfService
 from app.core.deps import get_current_tenant, require_role, TenantContext
 
 router = APIRouter()
@@ -37,8 +42,7 @@ async def upload_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Carga un archivo PDF de plano técnico, extrae metadatos y ejecuta rasterizado de hojas."""
-    # Validar que el proyecto exista
+    """Carga un archivo (PDF, imagen técnica o documento entregable), extrae metadatos y ejecuta rasterizado si corresponde."""
     proj_repo = ProjectRepository(db)
     project = proj_repo.get_by_id(project_id)
     if not project:
@@ -47,7 +51,7 @@ async def upload_document(
     content = await file.read()
     ingest_svc = IngestService(db)
     try:
-        doc = ingest_svc.ingest_pdf(
+        doc = ingest_svc.ingest_file(
             project_id=project_id,
             filename=file.filename or "document.pdf",
             file_bytes=content,
@@ -60,6 +64,99 @@ async def upload_document(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error durante la ingesta: {str(e)}")
+
+
+@router.post("/batch-upload", response_model=BatchUploadResponse, status_code=status.HTTP_201_CREATED)
+async def batch_upload_documents(
+    project_id: str = Form(...),
+    version_id: Optional[str] = Form(None),
+    auto_process: bool = Form(True),
+    dpi: Optional[int] = Form(None),
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Carga por lotes de documentos y planos técnicos:
+    Procesa múltiples archivos registrando cada uno de forma individual dentro del proyecto.
+    Un fallo en un archivo individual no aborta la carga del resto del lote.
+    """
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id(project_id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    if not files:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No se enviaron archivos para la carga por lotes.")
+
+    ingest_svc = IngestService(db)
+    documents: List[Document] = []
+    results: List[BatchFileResultItem] = []
+    successful_count = 0
+    duplicated_count = 0
+    failed_count = 0
+
+    for upload_file in files:
+        filename = upload_file.filename or "unnamed_file"
+        try:
+            content = await upload_file.read()
+            if not content:
+                failed_count += 1
+                results.append(BatchFileResultItem(
+                    filename=filename,
+                    status="failed",
+                    error_message="El archivo está vacío."
+                ))
+                continue
+
+            file_hash = ingest_svc.calculate_file_hash(content)
+            existing = ingest_svc.repo.get_by_hash(file_hash)
+            is_duplicate = existing is not None
+
+            doc = ingest_svc.ingest_file(
+                project_id=project_id,
+                filename=filename,
+                file_bytes=content,
+                version_id=version_id,
+                auto_process=auto_process,
+                dpi=dpi
+            )
+
+            if is_duplicate:
+                duplicated_count += 1
+                status_label = "already_exists"
+            else:
+                successful_count += 1
+                status_label = "ready" if doc.status == "ready" else "uploaded"
+
+            documents.append(doc)
+            results.append(BatchFileResultItem(
+                filename=filename,
+                status=status_label,
+                document_id=doc.id,
+                file_size_bytes=len(content),
+                mime_type=doc.mime_type,
+                page_count=doc.page_count or 1,
+                sheets_count=len(doc.sheets) if doc.sheets else 0,
+                error_message=None
+            ))
+        except Exception as err:
+            failed_count += 1
+            results.append(BatchFileResultItem(
+                filename=filename,
+                status="failed",
+                error_message=str(err)
+            ))
+
+    return BatchUploadResponse(
+        project_id=project_id,
+        total_files=len(files),
+        successful_count=successful_count,
+        duplicated_count=duplicated_count,
+        failed_count=failed_count,
+        documents=documents,
+        results=results
+    )
+
 
 @router.get("/{document_id}", response_model=DocumentRead)
 def get_document(document_id: str, db: Session = Depends(get_db)):
@@ -155,6 +252,45 @@ def get_document_impact(
     if not impact:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No se pudo calcular el impacto del documento.")
     return impact
+
+@router.get("/{document_id}/structural-nodes", response_model=List[DocumentStructuralNodeRead])
+def get_document_structural_nodes(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """Retorna la jerarquía de secciones, tablas y notas extraídas por Docling/DXF."""
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+    
+    nodes = db.query(DocumentStructuralNode).filter(
+        DocumentStructuralNode.document_id == document_id
+    ).order_by(DocumentStructuralNode.page_number.asc(), DocumentStructuralNode.level.asc()).all()
+    return nodes
+
+@router.get("/{document_id}/cad-entities", response_model=CadEntitiesSummaryRead)
+def get_document_cad_entities(
+    document_id: str,
+    db: Session = Depends(get_db)
+):
+    """Retorna el resumen de entidades CAD (capas, bloques con atributos y textos) para un archivo DXF."""
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(document_id)
+    if not doc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado.")
+    
+    if not doc.filename.lower().endswith(".dxf"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El documento no es un archivo CAD DXF.")
+
+    if not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo binario DXF no encontrado en disco.")
+
+    with open(doc.file_path, "rb") as f:
+        file_bytes = f.read()
+
+    dxf_svc = DxfService()
+    return dxf_svc.parse_dxf_summary(file_bytes, doc.filename)
 
 @router.delete("/{document_id}")
 def delete_document(

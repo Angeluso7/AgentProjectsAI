@@ -18,8 +18,9 @@ import {
   ExtractedTableItem, ExtractedTableCellItem, DetectedSymbolItem,
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
-  PipelineStageRunItem
+  PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem
 } from '../types';
+
 
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
@@ -444,6 +445,30 @@ export const apiService = {
     });
     return res.data;
   },
+  batchUploadDocuments: async (
+    projectId: string,
+    files: File[],
+    versionId?: string,
+    onProgress?: (percent: number) => void
+  ): Promise<BatchUploadResponse> => {
+    const formData = new FormData();
+    formData.append('project_id', projectId);
+    if (versionId) formData.append('version_id', versionId);
+    files.forEach((file) => {
+      formData.append('files', file);
+    });
+    const res = await apiClient.post<BatchUploadResponse>('/documents/batch-upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return res.data;
+  },
+
 
 
   // OCR Espacial (Síncrono y Asíncrono)

@@ -11,6 +11,7 @@ from app.schemas.intake_extractions import (
     SourceExtractionRead, SourceExtractionDetailRead,
     ProcessWithAiRequest, AiWebResearchRequest, ManualExtractionCreateRequest,
     ExtractedItemCreate, ExtractedItemUpdate, ExtractedItemRead,
+    TechnicalInterpretationCandidateRead,
     ExtractionCommitRequest, ExtractionCommitResponse,
     DocumentOcrRequest, DocumentOcrResponse,
     GenerateRulesFromOcrRequest, GenerateRulesFromOcrResponse, GeneratedRuleItem
@@ -151,26 +152,53 @@ def get_extraction_detail(extraction_id: str, db: Session = Depends(get_db)):
 # 4. GESTIÓN DE ELEMENTOS EXTRAÍDOS (ITEMS)
 # =========================================================
 
+@router.get("/{extraction_id}/candidates", response_model=List[TechnicalInterpretationCandidateRead])
+def list_extraction_candidates(
+    extraction_id: str,
+    candidate_type: Optional[str] = Query(None, description="Filtrar por tipo canónico de candidato"),
+    review_status: Optional[str] = Query(None, description="Filtrar por estado de revisión"),
+    page_number: Optional[int] = Query(None, description="Filtrar por número de página"),
+    db: Session = Depends(get_db)
+):
+    """
+    Capa 2: Consulta filtrada de candidatos de interpretación técnica generados
+    (premise_candidate, rule_candidate, symbol_candidate, table_matrix_candidate,
+    equipment_image_candidate, diagram_candidate, example_candidate).
+    """
+    repo = IntakeExtractionRepository(db)
+    return repo.list_extracted_candidates(
+        extraction_id=extraction_id,
+        candidate_type=candidate_type,
+        review_status=review_status,
+        page_number=page_number
+    )
+
 @router.post("/{extraction_id}/items", response_model=ExtractedItemRead, status_code=status.HTTP_201_CREATED)
 def add_extracted_item(
     extraction_id: str,
     payload: ExtractedItemCreate,
     db: Session = Depends(get_db)
 ):
-    """Añade un elemento extraído manualmente o asistido desde el visor."""
+    """Añade un elemento o candidato extraído manualmente o asistido desde el visor."""
     repo = IntakeExtractionRepository(db)
     try:
         item = repo.add_extracted_item(
             extraction_id=extraction_id,
             item_type=payload.item_type,
+            candidate_type=payload.candidate_type,
             title=payload.title,
             code_or_number=payload.code_or_number,
             description=payload.description,
             content_text=payload.content_text,
+            derived_text=payload.derived_text,
             ocr_text=payload.ocr_text,
+            caption_or_context=payload.caption_or_context,
+            disclaimer_notes=payload.disclaimer_notes,
             crop_image_base64=payload.crop_image_base64,
             bbox_normalized=payload.bbox_normalized,
             page_number=payload.page_number,
+            evidence_references=payload.evidence_references,
+            technical_parameters=payload.technical_parameters,
             target_destination=payload.target_destination,
             review_status=payload.review_status,
             structured_matrix=payload.structured_matrix,
@@ -193,7 +221,7 @@ def update_extracted_item(
     payload: ExtractedItemUpdate,
     db: Session = Depends(get_db)
 ):
-    """Actualiza metadatos, clasificación, texto o estado de revisión de un elemento."""
+    """Actualiza metadatos, clasificación, texto o estado de revisión de un elemento / candidato."""
     repo = IntakeExtractionRepository(db)
     updated = repo.update_extracted_item(item_id, payload.model_dump(exclude_unset=True))
     if not updated:

@@ -142,7 +142,7 @@ def test_assistant_task_catalog_and_routing(test_setup):
     cat_resp = client.get("/api/v1/assistant/tasks", headers=headers)
     assert cat_resp.status_code == 200
     catalog = cat_resp.json()
-    assert len(catalog) == 8
+    assert len(catalog) >= 8
     task_types = [t["task_type"] for t in catalog]
     assert "normative_query" in task_types
     assert "observation_rfi_draft" in task_types

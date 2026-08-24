@@ -2,9 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from app.main import app
 
-client = TestClient(app)
-
-def test_rules_document_content_and_baseline_promotion_flow():
+def test_rules_document_content_and_baseline_promotion_flow(client, db_session):
     headers = {
         "x-organization-id": "org_normative_baseline_test",
         "x-user-id": "auditor_qa_qc"

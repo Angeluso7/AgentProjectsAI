@@ -103,9 +103,13 @@ class KnowledgeChunk(Base):
     
     chunk_index = Column(Integer, default=0, nullable=False)
     chunk_title = Column(String(200), nullable=True)
+    chunk_type = Column(String(50), default="general", nullable=False, index=True)
+    # section_chunk, table_chunk, technical_note, dxf_block_summary, general
+    hierarchy_path = Column(String(255), nullable=True) # ej. "/Line_Schedule/Area_100/Row_1"
     chunk_text = Column(Text, nullable=False)
     token_count = Column(Integer, default=0, nullable=False)
     
+    structured_data = Column(JSON, default=dict, nullable=False) # Datos tabulares o pares clave/valor
     metadata_payload = Column(JSON, default=dict) # Metadatos contextuales para el recuperador
     embedding_json = Column(JSON, nullable=True) # Array numérico serializado para RAG / embeddings
     

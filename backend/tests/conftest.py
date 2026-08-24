@@ -39,9 +39,9 @@ def db_session():
         db.close()
         Base.metadata.drop_all(bind=engine)
 
-@pytest.fixture(scope="function")
-def client(db_session):
-    """Cliente HTTP de prueba con inyección de sesión de BD en memoria."""
+@pytest.fixture(autouse=True)
+def auto_override_db(db_session):
+    """Garantiza que get_db siempre utilice la sesión SQLite en memoria."""
     def override_get_db():
         try:
             yield db_session
@@ -49,6 +49,12 @@ def client(db_session):
             pass
 
     app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
+
+@pytest.fixture(scope="function")
+def client(db_session):
+    """Cliente HTTP de prueba con inyección de sesión de BD en memoria."""
     with TestClient(app) as c:
         yield c
-    app.dependency_overrides.clear()
+
