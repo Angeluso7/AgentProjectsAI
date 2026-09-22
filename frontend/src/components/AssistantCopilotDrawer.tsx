@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles, Bot, Zap, ShieldCheck, AlertTriangle, CheckCircle2,
   XCircle, ChevronDown, ChevronUp, Database, ArrowRight, CornerDownRight,
@@ -24,6 +24,108 @@ interface AssistantCopilotDrawerProps {
   discipline?: string;
   onApplySuggestion?: (structuredOutput: any) => void;
 }
+
+const DarkSelect = ({ value, onChange, options, style, disabled = false }: any) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleOutsideClick);
+    }
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [isOpen]);
+
+  const selectedOption = options.find((o: any) => String(o.value) === String(value)) || options[0] || { label: 'Seleccionar...' };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', ...style }}>
+      <div 
+        onClick={() => !disabled && setIsOpen(!isOpen)}
+        style={{
+          background: '#090d16',
+          color: '#f8fafc',
+          border: '1px solid #334155',
+          borderRadius: '6px',
+          padding: '9px 12px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontSize: 'inherit',
+          opacity: disabled ? 0.6 : 1,
+          outline: isOpen ? '2px solid #38bdf8' : 'none',
+          userSelect: 'none'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontWeight: 500 }}>
+          {selectedOption.label}
+        </span>
+        <ChevronDown size={14} style={{ flexShrink: 0, marginLeft: '8px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', color: '#94a3b8' }} />
+      </div>
+      
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          marginTop: '4px',
+          background: '#090d16',
+          border: '1px solid #334155',
+          borderRadius: '6px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.85)',
+          zIndex: 1000,
+          maxHeight: '240px',
+          overflowY: 'auto'
+        }}>
+          {options.map((opt: any) => {
+            const isSelected = String(opt.value) === String(value);
+            return (
+              <div
+                key={opt.value}
+                onClick={() => {
+                  onChange(opt.value);
+                  setIsOpen(false);
+                }}
+                style={{
+                  padding: '9px 12px',
+                  cursor: 'pointer',
+                  background: isSelected ? '#1e293b' : 'transparent',
+                  color: isSelected ? '#38bdf8' : '#f8fafc',
+                  fontSize: 'inherit',
+                  display: 'flex',
+                  alignItems: 'center',
+                  fontWeight: isSelected ? 600 : 400,
+                  borderBottom: '1px solid #172033'
+                }}
+                onMouseEnter={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = '#131d33';
+                    e.currentTarget.style.color = '#ffffff';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isSelected) {
+                    e.currentTarget.style.background = 'transparent';
+                    e.currentTarget.style.color = '#f8fafc';
+                  }
+                }}
+              >
+                {opt.label}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const AssistantCopilotDrawer: React.FC<AssistantCopilotDrawerProps> = ({
   isOpen,
@@ -254,21 +356,21 @@ export const AssistantCopilotDrawer: React.FC<AssistantCopilotDrawerProps> = ({
               <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '6px', display: 'block' }}>
                 Tipo de Tarea Asistida
               </label>
-              <select
-                className="input"
+              <DarkSelect
                 style={{ width: '100%', fontSize: '13px' }}
                 value={taskType}
-                onChange={(e) => setTaskType(e.target.value as AssistantTaskType)}
-              >
-                <option value="normative_query">📖 Consulta Normativa Especializada (OGUC/NCh)</option>
-                <option value="rule_suggestion">⚙️ Sugerencia y Formulación de Reglas QA/QC</option>
-                <option value="completeness_assistance">📋 Asistencia de Completitud Documental & Gatekeeper</option>
-                <option value="document_classification">📑 Clasificación y Validación de Entregables</option>
-                <option value="review_support">🔍 Apoyo Contextual a Revisión Técnica (HITL)</option>
-                <option value="observation_rfi_draft">✍️ Borrador de Observación / RFI / Bloqueo</option>
-                <option value="finding_explanation">💡 Explicación Técnica de Hallazgos</option>
-                <option value="stage_synthesis">📊 Síntesis Ejecutiva de Corte de Etapa</option>
-              </select>
+                onChange={(val: any) => setTaskType(val as AssistantTaskType)}
+                options={[
+                  { value: "normative_query", label: "📖 Consulta Normativa Especializada (OGUC/NCh)" },
+                  { value: "rule_suggestion", label: "⚙️ Sugerencia y Formulación de Reglas QA/QC" },
+                  { value: "completeness_assistance", label: "📋 Asistencia de Completitud Documental & Gatekeeper" },
+                  { value: "document_classification", label: "📑 Clasificación y Validación de Entregables" },
+                  { value: "review_support", label: "🔍 Apoyo Contextual a Revisión Técnica (HITL)" },
+                  { value: "observation_rfi_draft", label: "✍️ Borrador de Observación / RFI / Bloqueo" },
+                  { value: "finding_explanation", label: "💡 Explicación Técnica de Hallazgos" },
+                  { value: "stage_synthesis", label: "📊 Síntesis Ejecutiva de Corte de Etapa" }
+                ]}
+              />
               {currentTaskMeta && (
                 <div style={{ fontSize: '11px', color: 'var(--text-dim)', marginTop: '4px' }}>
                   {currentTaskMeta.description} • <em>Default: Tier {currentTaskMeta.default_tier} ({currentTaskMeta.default_engine})</em>
@@ -309,17 +411,17 @@ export const AssistantCopilotDrawer: React.FC<AssistantCopilotDrawerProps> = ({
                 <label style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: '4px' }}>
                   Forzar Tier de Motor (Opcional):
                 </label>
-                <select
-                  className="input"
-                  style={{ width: '100%', fontSize: '11px', padding: '4px 8px' }}
+                <DarkSelect
+                  style={{ width: '100%', fontSize: '11px', padding: '0px' }} // padding handled internally
                   value={forceTier ?? ''}
-                  onChange={(e) => setForceTier(e.target.value ? Number(e.target.value) : undefined)}
-                >
-                  <option value="">Auto-Routing por Tiers (Recomendado)</option>
-                  <option value="1">Tier 1: Heurístico Local ($0.00)</option>
-                  <option value="2">Tier 2: Gemini 2.0 Flash</option>
-                  <option value="3">Tier 3: GPT-4o Premium</option>
-                </select>
+                  onChange={(val: any) => setForceTier(val ? Number(val) : undefined)}
+                  options={[
+                    { value: "", label: "Auto-Routing por Tiers (Recomendado)" },
+                    { value: "1", label: "Tier 1: Heurístico Local ($0.00)" },
+                    { value: "2", label: "Tier 2: Gemini 2.0 Flash" },
+                    { value: "3", label: "Tier 3: GPT-4o Premium" }
+                  ]}
+                />
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingTop: '16px' }}>

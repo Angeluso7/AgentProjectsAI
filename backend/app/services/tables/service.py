@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.db.models.document_memory import (
     DocumentSheet, SheetRegion, ExtractedTable, ExtractedTableCell, ExtractedText
 )
+from app.db.models.intake_extractions import StructuredSymbol
 from app.db.repositories.document_repository import DocumentRepository
 from app.db.repositories.operations_repository import OperationsRepository
 from app.services.tables.extractor import TableExtractor
@@ -25,7 +26,8 @@ class TableService:
         self,
         sheet_id: str,
         force_reprocess: bool = False,
-        region_id: Optional[str] = None
+        region_id: Optional[str] = None,
+        symbols: Optional[List[Any]] = None
     ) -> List[ExtractedTable]:
         sheet = self.doc_repo.get_sheet_by_id(sheet_id)
         if not sheet:
@@ -55,6 +57,27 @@ class TableService:
             layout_svc = LayoutService(self.db)
             regions = layout_svc.segment_sheet_layout(sheet_id=sheet_id, force_reprocess=False)
 
+        # Obtener símbolos existentes en la lámina para vincular con celdas tabulares
+        if symbols is None:
+            symbols = []
+            try:
+                from app.db.models.document_memory import DetectedSymbol
+                det_symbols = self.db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet_id).all()
+                symbols.extend(det_symbols)
+            except Exception as ex:
+                logger.warning(f"Aviso consultando DetectedSymbol para lámina {sheet_id}: {ex}")
+
+            try:
+                from app.db.models.intake_extractions import ExtractedItem
+                struct_symbols = self.db.query(StructuredSymbol).join(
+                    ExtractedItem, StructuredSymbol.extracted_item_id == ExtractedItem.id
+                ).filter(
+                    (ExtractedItem.source_asset_id == sheet_id) | (ExtractedItem.page_number == sheet.sheet_number)
+                ).all()
+                symbols.extend(struct_symbols)
+            except Exception as ex:
+                logger.warning(f"Aviso consultando StructuredSymbol para lámina {sheet_id}: {ex}")
+
         candidate_regions = [r for r in regions if r.region_type == "table_candidate"]
         if region_id:
             candidate_regions = [r for r in candidate_regions if r.id == region_id]
@@ -70,7 +93,8 @@ class TableService:
         for reg in candidate_regions:
             table_dto = extractor.extract_from_region(
                 region_bbox_norm=reg.bbox_normalized,
-                texts=texts
+                texts=texts,
+                symbols=symbols
             )
             if not table_dto:
                 continue
@@ -106,7 +130,7 @@ class TableService:
             self.db.commit()
             self.db.refresh(db_table)
 
-            # Persistir celdas individuales
+            # Persistir celdas individuales y actualizar linaje de símbolos
             for c in table_dto.cells:
                 db_cell = ExtractedTableCell(
                     table_id=db_table.id,
@@ -118,9 +142,22 @@ class TableService:
                     bbox=c.bbox,
                     bbox_normalized=c.bbox_normalized,
                     is_header=c.is_header,
-                    source_text_refs=c.source_text_refs
+                    source_text_refs=c.source_text_refs,
+                    cell_type=c.cell_type,
+                    symbol_id=c.symbol_id,
+                    has_symbol=c.has_symbol
                 )
                 self.db.add(db_cell)
+
+                if c.symbol_id:
+                    db_sym = self.db.query(StructuredSymbol).filter(StructuredSymbol.id == c.symbol_id).first()
+                    if db_sym:
+                        db_sym.source_table_id = db_table.id
+                        db_sym.row_index = c.row_index
+                        db_sym.col_index = c.column_index
+                        db_sym.cell_bbox = c.bbox_normalized
+                        db_sym.layout_context = "inside_table"
+
             self.db.commit()
 
             # Evaluación de Políticas de Confianza y ReviewTask

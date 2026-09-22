@@ -125,6 +125,13 @@ export const SourcesPage: React.FC = () => {
     loadSources();
     loadRemoteDisciplines();
     loadResearchQueries();
+
+    const params = new URLSearchParams(window.location.search);
+    const extId = params.get('extraction_id');
+    if (extId) {
+      setActiveExtractionId(extId);
+      setShowReviewModal(true);
+    }
   }, [typeFilter, approvalFilter, disciplineFilter]);
 
   const showToast = (msg: string) => {

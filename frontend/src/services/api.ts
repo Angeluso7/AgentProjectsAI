@@ -18,7 +18,8 @@ import {
   ExtractedTableItem, ExtractedTableCellItem, DetectedSymbolItem,
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
-  PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem
+  PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem,
+  ExtractedItem, ExtractionItemsSummaryStats, FieldProvenanceEntry
 } from '../types';
 
 
@@ -968,14 +969,84 @@ export const apiService = {
     const res = await apiClient.post('/intake/extractions/process-with-ai', payload);
     return res.data;
   },
-  processWebResearch: async (payload: {
+  searchWebSources: async (payload: {
     search_prompt: string;
     discipline?: string;
     document_type?: string;
     authority?: string;
+    max_results?: number;
+  }): Promise<any[]> => {
+    const res = await apiClient.post('/intake/extractions/search-web-sources', payload);
+    return res.data;
+  },
+  inspectManualUrl: async (payload: {
+    url: string;
+    discipline?: string;
+    document_type?: string;
+    authority?: string;
+    search_prompt?: string;
+    max_internal_links?: number;
+    project_id?: string;
+  }): Promise<{
+    submitted_url: string;
+    inspection_status: string;
+    message: string;
+    main_source?: any;
+    internal_links: any[];
+    validation_warnings: string[];
+    content_hash?: string;
+  }> => {
+    const res = await apiClient.post('/intake/extractions/inspect-manual-url', payload);
+    return res.data;
+  },
+  processManualUrl: async (payload: {
+    main_source: any;
+    selected_sublinks?: any[];
+    discipline?: string;
+    document_type?: string;
+    authority?: string;
+    project_id?: string;
+    search_prompt?: string;
+    type_limits?: Record<string, number>;
+    max_total?: number;
+    translate_to_spanish?: boolean;
+    translation?: {
+      enabled: boolean;
+      source_language: string;
+      target_language: string;
+      mode: string;
+    };
+  }): Promise<any> => {
+    const res = await apiClient.post('/intake/extractions/process-manual-url', payload);
+    return res.data;
+  },
+  processWebResearch: async (payload: {
+    search_prompt: string;
+    selected_sources: any[];
+    discipline?: string;
+    document_type?: string;
+    authority?: string;
     focus_areas?: string[];
+    type_limits?: Record<string, number>;
+    max_total?: number;
+    search_history_id?: string;
+    translate_to_spanish?: boolean;
+    translation?: {
+      enabled: boolean;
+      source_language: string;
+      target_language: string;
+      mode: string;
+    };
   }): Promise<any> => {
     const res = await apiClient.post('/intake/extractions/process-web-research', payload);
+    return res.data;
+  },
+  getWebSearchHistory: async (params?: { project_id?: string; discipline?: string; limit?: number }): Promise<any[]> => {
+    const res = await apiClient.get('/intake/extractions/search-history', { params });
+    return res.data;
+  },
+  getWebSearchHistoryDetail: async (historyId: string): Promise<any> => {
+    const res = await apiClient.get(`/intake/extractions/search-history/${historyId}`);
     return res.data;
   },
   createManualExtraction: async (payload: any): Promise<any> => {
@@ -1017,6 +1088,65 @@ export const apiService = {
     page_number?: number;
   }): Promise<{ rules: Array<{ code: string; title: string; statement: string; item_type: string; page_number: number }> }> => {
     const res = await apiClient.post('/intake/extractions/generate-rules-from-ocr', payload);
+    return res.data;
+  },
+  getItemContext: async (extractionId: string, itemId: string, pageNumber?: number, bbox?: number[] | string): Promise<any> => {
+    const params: Record<string, any> = {};
+    if (pageNumber !== undefined) params.page_number = pageNumber;
+    if (bbox !== undefined) params.bbox = typeof bbox === 'string' ? bbox : JSON.stringify(bbox);
+    const res = await apiClient.get(`/intake/extractions/${extractionId}/items/${itemId}/context`, { params });
+    return res.data;
+  },
+  enrichExtractedItem: async (extractionId: string, itemId: string, payload?: any): Promise<any> => {
+    const res = await apiClient.post(`/intake/extractions/${extractionId}/items/${itemId}/enrich`, payload || {});
+    return res.data;
+  },
+  enrichCandidate: async (payload: any): Promise<any> => {
+    const res = await apiClient.post('/intake/extractions/enrich-candidate', payload);
+    return res.data;
+  },
+  extractRegionOcr: async (extractionId: string, itemId: string, payload: { page_number: number; bbox: number[]; target_field?: string }): Promise<any> => {
+    const res = await apiClient.post(`/intake/extractions/${extractionId}/items/${itemId}/region-ocr`, payload);
+    return res.data;
+  },
+  splitExtractedItem: async (extractionId: string, itemId: string, payload: { bbox: number[]; title_hint?: string; discipline?: string; user_id?: string }): Promise<ExtractedItem> => {
+    const res = await apiClient.post<ExtractedItem>(`/intake/extractions/${extractionId}/items/${itemId}/split`, payload);
+    return res.data;
+  },
+  cropExtractedItem: async (extractionId: string, itemId: string, payload: { bbox: number[]; user_id?: string }): Promise<ExtractedItem> => {
+    const res = await apiClient.patch<ExtractedItem>(`/intake/extractions/${extractionId}/items/${itemId}/crop`, payload);
+    return res.data;
+  },
+  extractParagraphRules: async (payload: { text_content: string; discipline?: string; document_type?: string; page_number?: number; source_reference?: string }): Promise<{ total_paragraphs_detected: number; rules_candidates: any[] }> => {
+    const res = await apiClient.post<{ total_paragraphs_detected: number; rules_candidates: any[] }>('/intake/extractions/extract-paragraph-rules', payload);
+    return res.data;
+  },
+  getExtractionItems: async (extractionId: string, params?: {
+    item_type?: string;
+    completeness_status?: string;
+    review_status?: string;
+    discipline?: string;
+    source_origin?: string;
+    query?: string;
+  }): Promise<ExtractedItem[]> => {
+    const res = await apiClient.get<ExtractedItem[]>(`/intake/extractions/${extractionId}/items`, { params });
+    return res.data;
+  },
+  getExtractionStats: async (extractionId: string): Promise<ExtractionItemsSummaryStats> => {
+    const res = await apiClient.get<ExtractionItemsSummaryStats>(`/intake/extractions/${extractionId}/stats`);
+    return res.data;
+  },
+  acceptItemField: async (extractionId: string, itemId: string, payload: {
+    field_name: string;
+    accepted_value: string;
+    accepted_from?: string;
+    user_id?: string;
+  }): Promise<ExtractedItem> => {
+    const res = await apiClient.patch<ExtractedItem>(`/intake/extractions/${extractionId}/items/${itemId}/accept-field`, payload);
+    return res.data;
+  },
+  applyItemSuggestion: async (extractionId: string, itemId: string): Promise<any> => {
+    const res = await apiClient.post(`/intake/extractions/${extractionId}/items/${itemId}/apply-suggestion`);
     return res.data;
   },
 
@@ -1361,8 +1491,167 @@ export const apiService = {
       params: { project_id: projectId }
     });
     return res.data;
+  },
+
+  // =========================================================
+  // EXECUTIVE DASHBOARD & AGENT HEALTH
+  // =========================================================
+  getExecutiveDashboardSummary: async (projectId?: string): Promise<import('../types').ExecutiveDashboardSummary> => {
+    const res = await apiClient.get<import('../types').ExecutiveDashboardSummary>('/dashboard/executive-summary', {
+      params: { project_id: projectId }
+    });
+    return res.data;
+  },
+
+  // =========================================================
+  // LAS 4 MEMORIAS CONSOLE MANAGEMENT
+  // =========================================================
+  getMemoriesOverview: async (): Promise<import('../types').MemoriesOverviewResponse> => {
+    const res = await apiClient.get<import('../types').MemoriesOverviewResponse>('/memories/overview');
+    return res.data;
+  },
+
+  getMemoryRecords: async (
+    memoryType: string,
+    params?: { search?: string; discipline?: string; status?: string; page?: number; page_size?: number }
+  ): Promise<import('../types').MemoryRecordsListResponse> => {
+    const res = await apiClient.get<import('../types').MemoryRecordsListResponse>(`/memories/${memoryType}/records`, { params });
+    return res.data;
+  },
+
+  createMemoryRecord: async (
+    memoryType: string,
+    payload: import('../types').MemoryRecordCreateRequest
+  ): Promise<import('../types').MemoryRecordItem> => {
+    const res = await apiClient.post<import('../types').MemoryRecordItem>(`/memories/${memoryType}/records`, payload);
+    return res.data;
+  },
+
+  updateMemoryRecord: async (
+    memoryType: string,
+    recordId: string,
+    payload: import('../types').MemoryRecordUpdateRequest
+  ): Promise<import('../types').MemoryRecordItem> => {
+    const res = await apiClient.patch<import('../types').MemoryRecordItem>(`/memories/${memoryType}/records/${recordId}`, payload);
+    return res.data;
+  },
+
+  deleteMemoryRecord: async (
+    memoryType: string,
+    recordId: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.delete<{ success: boolean; message: string }>(`/memories/${memoryType}/records/${recordId}`);
+    return res.data;
+  },
+
+  checkMemoriesConsistency: async (): Promise<import('../types').MemoryConsistencyReport> => {
+    const res = await apiClient.get<import('../types').MemoryConsistencyReport>('/memories/cross-consistency-check');
+    return res.data;
+  },
+
+  runMemoriesMaintenance: async (
+    action: string,
+    memoryType?: string
+  ): Promise<import('../types').MemoryMaintenanceResult> => {
+    const res = await apiClient.post<import('../types').MemoryMaintenanceResult>('/memories/maintenance/run', {
+      action,
+      memory_type: memoryType
+    });
+    return res.data;
+  },
+
+  exportMemoriesData: async (): Promise<import('../types').MemoriesExportResponse> => {
+    const res = await apiClient.get<import('../types').MemoriesExportResponse>('/memories/export');
+    return res.data;
+  },
+
+  // =========================================================
+  // FASE 2: CURACIÓN HITL, DEDUPLICACIÓN Y CATÁLOGO CANÓNICO
+  // =========================================================
+
+  listCurationCandidates: async (params?: {
+    extraction_id?: string;
+    rule_document_id?: string;
+    family?: string;
+    render_mode?: string;
+    review_status?: string;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<import('../types').CandidateCurationDetail[]> => {
+    const res = await apiClient.get<import('../types').CandidateCurationDetail[]>('/symbols/curation-candidates', { params });
+    return res.data;
+  },
+
+  updateStructuredSymbol: async (
+    symbolId: string,
+    payload: import('../types').StructuredSymbolUpdateRequest
+  ): Promise<any> => {
+    const res = await apiClient.patch(`/symbols/structured/${symbolId}`, payload);
+    return res.data;
+  },
+
+  curateSymbolsBatch: async (
+    payload: import('../types').BatchCurateSymbolsRequest
+  ): Promise<import('../types').BatchCurateSymbolsResponse> => {
+    const res = await apiClient.post<import('../types').BatchCurateSymbolsResponse>('/symbols/curate', payload);
+    return res.data;
+  },
+
+  deduplicateSymbols: async (
+    payload: import('../types').DeduplicateSymbolsRequest
+  ): Promise<import('../types').DeduplicateSymbolsResponse> => {
+    const res = await apiClient.post<import('../types').DeduplicateSymbolsResponse>('/symbols/deduplicate', payload);
+    return res.data;
+  },
+
+  mergeSymbolVariant: async (
+    symbolId: string,
+    targetGroupId: string
+  ): Promise<{ success: boolean; message: string }> => {
+    const res = await apiClient.post('/symbols/variants/merge', {
+      symbol_id: symbolId,
+      target_group_id: targetGroupId
+    });
+    return res.data;
+  },
+
+  splitSymbolVariant: async (
+    symbolId: string
+  ): Promise<{ success: boolean; new_group_id: string; message: string }> => {
+    const res = await apiClient.post('/symbols/variants/split', { symbol_id: symbolId });
+    return res.data;
+  },
+
+  promoteSymbolToTemplate: async (payload: {
+    structured_symbol_id: string;
+    library_name?: string;
+    discipline?: string;
+    reviewer?: string;
+    user_notes?: string;
+  }): Promise<any> => {
+    const res = await apiClient.post('/symbols/promote-to-template', payload);
+    return res.data;
+  },
+
+  promoteSymbolsBatch: async (
+    payload: import('../types').BatchPromoteToTemplateRequest
+  ): Promise<import('../types').BatchPromoteToTemplateResponse> => {
+    const res = await apiClient.post<import('../types').BatchPromoteToTemplateResponse>('/symbols/promote-batch', payload);
+    return res.data;
+  },
+
+  getCanonicalSymbolCatalog: async (
+    libraryName: string = 'ISA-5.1 Piping Library',
+    discipline: string = 'piping'
+  ): Promise<import('../types').CanonicalCatalogResponse> => {
+    const res = await apiClient.get<import('../types').CanonicalCatalogResponse>('/symbols/canonical-catalog', {
+      params: { library_name: libraryName, discipline }
+    });
+    return res.data;
   }
 };
+
 
 
 

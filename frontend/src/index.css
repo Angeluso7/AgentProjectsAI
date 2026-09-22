@@ -255,3 +255,21 @@ code, pre, .font-mono {
 .overlay-box:hover {
   background: rgba(255, 255, 255, 0.08);
 }
+
+/* Forms, Inputs & Select Dropdowns */
+select, .input, textarea {
+  background-color: var(--bg-card, #0f172a);
+  color: var(--text-main, #f8fafc);
+  border: 1px solid var(--border-subtle, #334155);
+  border-radius: var(--radius-sm, 6px);
+}
+
+select:focus, .input:focus, textarea:focus {
+  outline: none;
+  border-color: var(--primary, #38bdf8);
+}
+
+select option {
+  background-color: #0b1120;
+  color: #f8fafc;
+}

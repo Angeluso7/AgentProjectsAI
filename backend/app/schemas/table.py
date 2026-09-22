@@ -16,6 +16,11 @@ class ExtractedTableCellRead(BaseModel):
     bbox_normalized: List[float]
     is_header: bool = False
     source_text_refs: List[str] = []
+    cell_type: str = "text_only" # text_only, symbol_only, mixed, empty
+    symbol_id: Optional[str] = None
+    has_symbol: bool = False
+    inner_drawing_bbox: Optional[List[float]] = None
+    crop_image_path: Optional[str] = None
     created_at: datetime
 
     class Config:
@@ -38,6 +43,10 @@ class ExtractedTableRead(BaseModel):
     source_version: str
     raw_structure: Dict[str, Any] = {}
     cells: Optional[List[ExtractedTableCellRead]] = None
+    has_symbols: bool = False
+    reading_orientation: str = "none" # row_major, col_major, mixed, undetermined, none
+    orientation_confidence: float = 1.0
+    orientation_reason: str = ""
     created_at: datetime
     updated_at: datetime
 

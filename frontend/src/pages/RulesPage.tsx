@@ -8,6 +8,7 @@ import {
   SquareCheck, ExternalLink, Award
 } from 'lucide-react';
 import { DocumentContentReviewModal } from '../components/DocumentContentReviewModal';
+import { SymbolCurationStudioModal } from '../components/SymbolCurationStudioModal';
 
 export const RulesPage: React.FC = () => {
   const [rules, setRules] = useState<RuleDefinitionItem[]>([]);
@@ -20,6 +21,7 @@ export const RulesPage: React.FC = () => {
   // Modal de visualización y confirmación de contenido estructurado
   const [selectedRuleDocId, setSelectedRuleDocId] = useState<string | null>(null);
   const [showContentModal, setShowContentModal] = useState(false);
+  const [selectedStudioDoc, setSelectedStudioDoc] = useState<RuleDocument | null>(null);
 
   useEffect(() => {
     loadRules();
@@ -268,9 +270,14 @@ export const RulesPage: React.FC = () => {
                     <td style={{ padding: '14px 16px' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '11px' }}>
                         <span style={{ color: '#38bdf8', fontWeight: 700 }}>{doc.rules_count} reglas validadas</span>
-                        <div style={{ display: 'flex', gap: '6px', color: 'var(--text-dim)', fontSize: '10px' }}>
+                        <div style={{ display: 'flex', gap: '6px', color: 'var(--text-dim)', fontSize: '10px', flexWrap: 'wrap' }}>
                           {doc.tables_count > 0 && <span>{doc.tables_count} tablas</span>}
                           {doc.images_count > 0 && <span>{doc.images_count} fig.</span>}
+                          {(doc.symbols_count ?? 0) > 0 && (
+                            <span style={{ color: '#c084fc', fontWeight: 600 }}>
+                              🔘 {doc.symbols_count} símb.
+                            </span>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -284,6 +291,28 @@ export const RulesPage: React.FC = () => {
                     <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center', flexWrap: 'wrap' }}>
                         
+                        {/* 0. BOTÓN "CURAR SÍMBOLOS" (Si el documento posee simbología identificada) */}
+                        {(doc.symbols_count ?? 0) > 0 && (
+                          <button
+                            className="btn btn-secondary"
+                            style={{
+                              padding: '5px 10px',
+                              fontSize: '11px',
+                              borderColor: '#a855f7',
+                              color: '#c084fc',
+                              fontWeight: 600,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            onClick={() => setSelectedStudioDoc(doc)}
+                            title="Abrir estudio de curación HITL para símbolos y leyendas de este documento"
+                          >
+                            <Sparkles size={13} color="#c084fc" />
+                            <span>Curar Símb.</span>
+                          </button>
+                        )}
+
                         {/* 1. BOTÓN "CONTENIDO" (Abre ventana emergente reutilizando lógica de Intake) */}
                         <button
                           className="btn btn-secondary"
@@ -447,6 +476,23 @@ export const RulesPage: React.FC = () => {
           loadRuleDocuments();
         }}
       />
+
+      {/* ESTUDIO DE CURACIÓN HITL DE SÍMBOLOS */}
+      {selectedStudioDoc && (
+        <SymbolCurationStudioModal
+          isOpen={!!selectedStudioDoc}
+          extractionId={selectedStudioDoc.source_extraction_id || null}
+          ruleDocumentId={selectedStudioDoc.id}
+          onClose={() => {
+            setSelectedStudioDoc(null);
+            loadRuleDocuments();
+          }}
+          onPromoted={() => {
+            setSelectedStudioDoc(null);
+            loadRuleDocuments();
+          }}
+        />
+      )}
     </div>
   );
 };

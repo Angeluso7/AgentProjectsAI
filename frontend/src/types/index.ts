@@ -1290,21 +1290,90 @@ export interface WebCitation {
   retrieved_at?: string;
 }
 
+export interface FieldProvenanceEntry {
+  original_raw?: string;
+  ocr_extracted?: string;
+  suggested_value?: string;
+  suggestion_source?: string;
+  suggestion_confidence?: number;
+  accepted_value?: string;
+  accepted_from?: 'original_raw' | 'ocr_extracted' | 'suggested_value' | 'manual_edited' | 'hybrid_edited' | string;
+  updated_by?: string;
+  updated_at?: string;
+}
+
+export interface ExtractionItemsSummaryStats {
+  total_items: number;
+  reviewed_count: number;
+  pending_count: number;
+  rejected_count: number;
+  complete_count: number;
+  partial_count: number;
+  missing_data_count: number;
+  web_suggested_count: number;
+  by_item_type: Record<string, number>;
+  by_completeness: Record<string, number>;
+  by_review_status: Record<string, number>;
+}
+
 export interface ExtractedItem {
   id: string;
   extraction_id: string;
   item_type: ExtractedItemType;
+  candidate_type?: string;
   title: string;
   code_or_number?: string;
   description?: string;
   content_text?: string;
+  derived_text?: string;
   ocr_text?: string;
+  caption_or_context?: string;
+  disclaimer_notes?: string;
   crop_image_path?: string;
   bbox_normalized: number[];
   page_number: number;
+  discipline?: string;
+  source_asset_id?: string;
+  parent_item_id?: string;
+  is_derived?: boolean;
+  split_mode?: string;
+  evidence_references?: string[];
+  technical_parameters?: Record<string, any>;
   target_destination: 'rules_engine' | 'knowledge_base' | 'both';
   review_status: 'draft' | 'editado' | 'por_confirmar' | 'validada' | 'eliminado' | 'to_confirm' | 'accepted' | 'rejected';
+  
+  // Deduplicación contra Motor de Reglas QA/QC
+  duplicate_status?: 'no_match' | 'exact_match_existing_rule' | 'likely_duplicate_existing_rule' | 'related_existing_rule' | string;
+  best_match_rule_id?: string;
+  best_match_rule_code?: string;
+  best_match_title?: string;
+  best_match_discipline?: string;
+  duplicate_reason?: string;
+  duplicate_confidence?: number;
+  blocked_from_acceptance?: boolean;
+
+  // Estado de Completitud y Enriquecimiento Asistido (Multimodal)
+  completeness_status?: 'complete' | 'partial' | 'missing_data' | 'web_suggested' | string;
+  enrichment_status?: 'not_enriched' | 'suggestion_found' | 'manual_completed' | string;
+  requires_validation?: boolean;
+  enriched_from_web?: boolean;
+  enrichment_method?: string;
+  match_confidence?: number;
+  suggested_title?: string;
+  suggested_description?: string;
+  suggested_function?: string;
+  suggested_source_url?: string;
+  suggested_source_label?: string;
+
+  // Trazabilidad y Linaje Granular por Campo (Field Provenance)
+  field_provenance?: Record<string, FieldProvenanceEntry>;
+
   structured_matrix?: Record<string, any>;
+  structured_table?: any;
+  structured_symbol?: any;
+  structured_equipment?: any;
+  structured_rule_premise?: any;
+
   validated_at?: string;
   validated_by?: string;
   source_origin: 'document' | 'web';
@@ -1312,8 +1381,127 @@ export interface ExtractedItem {
   item_nature: ItemNatureType;
   governance_note?: string;
   metadata_payload?: Record<string, any>;
+  source_fields?: Record<string, any>;
+  translated_fields?: Record<string, any>;
+  effective_fields?: Record<string, any>;
+  source_language?: string;
+  target_language?: string;
+  translation_status?: string;
+  presentation_language?: string;
+  occurrences?: SymbolOccurrenceItem[];
+  occurrences_count?: number;
+  reading_orientation?: string;
+  orientation?: string;
+  orientation_confidence?: number;
+  orientation_reason?: string;
+  inner_drawing_bbox?: number[];
+  requires_human_review?: boolean;
+  content_class?: string;
+  graphic_classification?: string;
+  grid_source?: string;
+  grid_confidence?: number;
+  physical_grid_detected?: boolean;
+  geometric_confidence?: number;
+  cell_bbox?: number[];
+  symbol_crop_bbox?: number[];
+  boundary_evidence?: Record<string, any>;
   created_at: string;
   updated_at: string;
+}
+
+export interface ItemContextResponse {
+  item_id: string;
+  extraction_id: string;
+  source_asset_id?: string;
+  source_title: string;
+  document_type: string;
+  discipline: string;
+  page_number: number;
+  total_pages: number;
+  bbox_normalized: number[];
+  crop_image_path?: string;
+  page_image_url?: string;
+  file_url?: string;
+  page_text_preview?: string;
+  item_type: string;
+  candidate_type?: string;
+  title: string;
+  code_or_number?: string;
+  description?: string;
+  content_text?: string;
+  ocr_text?: string;
+  caption_or_context?: string;
+  technical_parameters: Record<string, any>;
+  source_fields?: Record<string, any>;
+  translated_fields?: Record<string, any>;
+  effective_fields?: Record<string, any>;
+  source_language?: string;
+  target_language?: string;
+  translation_status?: string;
+  presentation_language?: string;
+  review_status: string;
+  completeness_status: string;
+  enrichment_status: string;
+  requires_validation: boolean;
+  enriched_from_web: boolean;
+  enrichment_method?: string;
+  match_confidence: number;
+  suggested_title?: string;
+  suggested_description?: string;
+  suggested_function?: string;
+  suggested_source_url?: string;
+  suggested_source_label?: string;
+  source_origin?: string;
+  source_reference?: string;
+  web_source_url?: string;
+  web_snapshot_url?: string;
+  dom_hint?: string;
+  duplicate_status?: string;
+  duplicate_reason?: string;
+}
+
+export interface CandidateEnrichmentRequest {
+  candidate_type?: string;
+  title?: string;
+  caption_or_context?: string;
+  ocr_text?: string;
+  discipline?: string;
+  page_number?: number;
+  document_title?: string;
+  force_web_search?: boolean;
+  presentation_language?: string;
+  source_language?: string;
+  target_language?: string;
+  source_fields?: Record<string, any>;
+  translated_fields?: Record<string, any>;
+  effective_fields?: Record<string, any>;
+}
+
+export interface CandidateEnrichmentResponse {
+  item_id?: string;
+  enrichment_status: 'suggestion_found' | 'manual_required' | 'not_enriched' | string;
+  completeness_status: 'complete' | 'partial' | 'missing_data' | 'web_suggested' | string;
+  match_confidence: number;
+  suggested_title?: string;
+  suggested_description?: string;
+  suggested_function?: string;
+  suggested_source_label?: string;
+  suggested_source_url?: string;
+  enrichment_method: string;
+  requires_validation: boolean;
+  enriched_from_web: boolean;
+  technical_properties: Record<string, any>;
+  message: string;
+  presentation_language?: string;
+  effective_fields?: Record<string, any>;
+}
+
+export interface RegionOcrResponse {
+  page_number: number;
+  bbox: number[];
+  extracted_text: string;
+  target_field: string;
+  confidence: number;
 }
 
 export interface SupportingKnowledgeItem {
@@ -1403,6 +1591,7 @@ export interface RuleDocument {
   rules_count: number;
   tables_count: number;
   images_count: number;
+  symbols_count?: number;
   metadata_info?: Record<string, any>;
   items?: RuleDocumentItem[];
   created_at: string;
@@ -1890,4 +2079,452 @@ export interface IngestionChannelSummaryResponseDTO {
 export type KnowledgeItemDTO = KnowledgeItemDetailDTO;
 export type RuleDefinition = RuleDefinitionItem;
 export type RuleFinding = RuleFindingItem;
+
+// =========================================================
+// EXECUTIVE DASHBOARD & AGENT GLOBAL HEALTH DTOs
+// =========================================================
+
+export interface EngineHealthItem {
+  engine_id: string;
+  name: string;
+  category: 'vision' | 'ocr' | 'llm' | 'rules' | 'web' | 'mlops' | string;
+  status: 'online' | 'degraded' | 'offline' | string;
+  latency_ms: number;
+  description: string;
+}
+
+export interface BackgroundJobsSummary {
+  queued: number;
+  running: number;
+  completed: number;
+  failed: number;
+  total: number;
+}
+
+export interface AgentGlobalHealth {
+  overall_status: 'healthy' | 'degraded' | 'critical' | string;
+  engines: EngineHealthItem[];
+  jobs_summary: BackgroundJobsSummary;
+  average_confidence: number;
+  knowledge_reuse_count: number;
+  precedents_applied_count: number;
+  duplicates_detected_count: number;
+  system_uptime: string;
+}
+
+export interface ProjectExecutiveMetrics {
+  project_id?: string;
+  project_code?: string;
+  project_name?: string;
+  client_name?: string;
+  discipline?: string;
+  stage?: string;
+  documents_total: number;
+  documents_processed: number;
+  sheets_total: number;
+  sheets_rasterized: number;
+  progress_percentage: number;
+  active_rules_count: number;
+  compliance_score: number;
+  findings_total: number;
+  findings_critical: number;
+  findings_high: number;
+  findings_medium: number;
+  findings_low: number;
+  findings_resolved: number;
+  findings_open: number;
+  pending_validations_count: number;
+  information_coverage_score: number;
+  maturity_stage?: string;
+  last_review_run?: {
+    id: string;
+    run_name: string;
+    status: string;
+    rules_applied_count: number;
+    findings_count: number;
+    execution_time_sec: number;
+    created_at?: string;
+  } | null;
+}
+
+export interface AgentActivityLog {
+  id: string;
+  timestamp: string;
+  activity_type: 'one_click_review' | 'extraction' | 'hitl_feedback' | 'web_search' | 'maintenance' | string;
+  title: string;
+  description: string;
+  severity: 'info' | 'warning' | 'success' | 'error' | string;
+  project_id?: string;
+  user_name?: string;
+}
+
+export interface ExecutiveAlert {
+  id: string;
+  alert_type: string;
+  title: string;
+  message: string;
+  severity: 'critical' | 'high' | 'medium' | 'info' | string;
+  action_label: string;
+  action_target_tab: string;
+  created_at: string;
+}
+
+export interface ExecutiveDashboardSummary {
+  timestamp: string;
+  project_metrics: ProjectExecutiveMetrics;
+  agent_health: AgentGlobalHealth;
+  recent_activities: AgentActivityLog[];
+  alerts_and_recommendations: ExecutiveAlert[];
+  quick_shortcuts: Array<{
+    id: string;
+    title: string;
+    description: string;
+    target_tab: string;
+    variant: 'primary' | 'secondary';
+  }>;
+}
+
+// =========================================================
+// LAS 4 MEMORIAS CONSOLE MANAGEMENT DTOs
+// =========================================================
+
+export interface MemoryOverviewDetail {
+  memory_type: 'document_memory' | 'normative_memory' | 'template_memory' | 'decision_memory';
+  name: string;
+  status: 'active' | 'synchronizing' | 'degraded' | string;
+  total_records: number;
+  secondary_count: number;
+  secondary_label: string;
+  last_updated?: string;
+  disciplines: string[];
+  pending_reviews_count: number;
+  consistency_score: number;
+  index_status: 'indexed' | 'pending_reindex' | 'stale' | string;
+  description: string;
+}
+
+export interface MemoriesOverviewResponse {
+  timestamp: string;
+  total_memories_count: number;
+  total_combined_records: number;
+  global_consistency_score: number;
+  memories: MemoryOverviewDetail[];
+}
+
+export interface MemoryRecordItem {
+  id: string;
+  memory_type: 'document_memory' | 'normative_memory' | 'template_memory' | 'decision_memory';
+  code_or_identifier: string;
+  title: string;
+  description?: string;
+  discipline: string;
+  category_or_nature: string;
+  status: 'active' | 'to_confirm' | 'obsolete' | 'archived' | 'draft' | string;
+  created_at: string;
+  updated_at?: string;
+  version_or_revision?: string;
+  confidence_score?: number;
+  metadata_payload: Record<string, any>;
+  relationships_count?: number;
+}
+
+export interface MemoryRecordsListResponse {
+  memory_type: string;
+  total_count: number;
+  page: number;
+  page_size: number;
+  records: MemoryRecordItem[];
+}
+
+export interface MemoryRecordCreateRequest {
+  memory_type: string;
+  code_or_identifier: string;
+  title: string;
+  description?: string;
+  discipline?: string;
+  category_or_nature?: string;
+  status?: string;
+  version_or_revision?: string;
+  metadata_payload?: Record<string, any>;
+}
+
+export interface MemoryRecordUpdateRequest {
+  title?: string;
+  description?: string;
+  discipline?: string;
+  category_or_nature?: string;
+  status?: string;
+  version_or_revision?: string;
+  metadata_payload?: Record<string, any>;
+}
+
+export interface MemoryConsistencyIssue {
+  id: string;
+  severity: 'critical' | 'warning' | 'info' | string;
+  memory_source: string;
+  issue_type: string;
+  title: string;
+  description: string;
+  affected_record_id: string;
+  suggested_action: string;
+  can_auto_fix: boolean;
+}
+
+export interface MemoryConsistencyReport {
+  generated_at: string;
+  total_checks_run: number;
+  issues_found_count: number;
+  critical_issues_count: number;
+  orphaned_elements_count: number;
+  consistency_health: 'healthy' | 'attention_needed' | 'critical' | string;
+  issues: MemoryConsistencyIssue[];
+}
+
+export interface MemoryMaintenanceResult {
+  executed_at: string;
+  action: string;
+  status: 'success' | 'completed_with_warnings' | 'failed' | string;
+  records_processed: number;
+  records_repaired_or_cleaned: number;
+  message: string;
+  details: Record<string, any>;
+}
+
+export interface MemoriesExportResponse {
+  exported_at: string;
+  version: string;
+  total_records: number;
+  document_memory: any[];
+  normative_memory: any[];
+  template_memory: any[];
+  decision_memory: any[];
+}
+
+// ============================================================================
+// FASE 2: CURACIÓN HITL, DEDUPLICACIÓN MULTI-FACTOR Y CATÁLOGO CANÓNICO
+// ============================================================================
+
+export interface SymbolOccurrenceItem {
+  occurrence_id?: string;
+  page_number: number;
+  sheet_id?: string;
+  bbox_normalized: number[];
+  cell_bbox?: number[];
+  inner_drawing_bbox?: number[];
+  source_document_id?: string;
+  crop_image_path?: string;
+  document_title?: string;
+  row_index?: number;
+  col_index?: number;
+  source_reference?: string;
+  reading_orientation?: string;
+  orientation?: string;
+  orientation_confidence?: number;
+  orientation_reason?: string;
+  title?: string;
+  is_primary?: boolean;
+}
+
+export interface ExtractedTableCell {
+  id?: string;
+  table_id: string;
+  row_index: number;
+  column_index: number;
+  text: string;
+  normalized_text?: string;
+  confidence: number;
+  bbox?: number[];
+  bbox_normalized?: number[];
+  is_header: boolean;
+  source_text_refs?: string[];
+  cell_type: 'text_cell' | 'symbol_cell' | 'mixed_cell' | 'empty_cell' | string;
+  symbol_id?: string;
+  has_symbol: boolean;
+  symbol_name?: string;
+  crop_image_path?: string;
+  inner_drawing_bbox?: number[];
+}
+
+export interface ExtractedTable {
+  id: string;
+  document_id: string;
+  sheet_id: string;
+  region_id?: string;
+  table_type: string;
+  title: string;
+  bbox?: number[];
+  bbox_normalized?: number[];
+  row_count: number;
+  column_count: number;
+  has_symbols?: boolean;
+  reading_orientation?: string;
+  orientation?: string;
+  orientation_confidence?: number;
+  orientation_reason?: string;
+  confidence: number;
+  extraction_status: string;
+  headers?: string[];
+  cells: ExtractedTableCell[];
+  raw_structure?: Record<string, any>;
+  created_at: string;
+}
+
+export interface CandidateCurationDetail {
+  id: string;
+  extracted_item_id: string;
+  symbol_name: string;
+  standard_family: string;
+  discipline: string;
+  category?: string;
+  crop_image_path?: string;
+  confidence_score: number;
+  source_render_mode: 'vector' | 'raster' | 'mixed' | string;
+  layout_context: string;
+  context_association_mode: string;
+  standard_reference?: string;
+  canonical_symbol_family: string;
+  visual_variant_group_id?: string;
+  estimated_physical_size_mm?: {
+    width_mm?: number;
+    height_mm?: number;
+    [key: string]: any;
+  };
+  reused_for_matching_count: number;
+  false_positive_count: number;
+  human_validation_notes?: string;
+  created_at: string;
+  document_title?: string;
+  document_id?: string;
+  extraction_id?: string;
+  page_number: number;
+  ocr_associated_text?: string;
+  review_status: 'pending' | 'accepted' | 'rejected' | 'flagged_false_positive' | string;
+  possible_matching_template?: {
+    template_id: string;
+    display_name: string;
+    symbol_class: string;
+    similarity: number;
+    library_name?: string;
+  };
+  // Linaje estructural tabla-fila-columna
+  source_table_id?: string;
+  row_index?: number;
+  col_index?: number;
+  cell_bbox?: number[];
+  row_bbox?: number[];
+  // Ocurrencias multipágina para navegación y foco en visor
+  occurrences?: SymbolOccurrenceItem[];
+}
+
+export interface StructuredSymbolUpdateRequest {
+  symbol_name?: string;
+  canonical_symbol_family?: string;
+  category?: string;
+  standard_reference?: string;
+  human_validation_notes?: string;
+  visual_variant_group_id?: string;
+  review_status?: string;
+}
+
+export interface BatchCurateSymbolsRequest {
+  symbol_ids: string[];
+  action: 'accept' | 'reject' | 'flag_false_positive' | 'update_family' | string;
+  canonical_symbol_family?: string;
+  standard_reference?: string;
+  notes?: string;
+  reviewer?: string;
+}
+
+export interface BatchCurateSymbolsResponse {
+  updated_count: number;
+  accepted_count: number;
+  rejected_count: number;
+  flagged_count: number;
+  message: string;
+}
+
+export interface DeduplicateSymbolsRequest {
+  extraction_id?: string;
+  discipline?: string;
+  canonical_symbol_family?: string;
+  visual_threshold?: number;
+  semantic_threshold?: number;
+}
+
+export interface VariantClusterItem {
+  symbol_id: string;
+  symbol_name: string;
+  canonical_symbol_family: string;
+  crop_image_path?: string;
+  confidence_score: number;
+  source_render_mode: string;
+  visual_similarity: number;
+  semantic_similarity: number;
+  combined_score: number;
+  is_canonical_representative: boolean;
+}
+
+export interface DeduplicationCluster {
+  group_id: string;
+  canonical_symbol_family: string;
+  canonical_name: string;
+  representative_id: string;
+  members_count: number;
+  members: VariantClusterItem[];
+}
+
+export interface DeduplicateSymbolsResponse {
+  total_evaluated: number;
+  clusters_count: number;
+  duplicates_detected: number;
+  clusters: DeduplicationCluster[];
+}
+
+export interface CanonicalTemplateItem {
+  id: string;
+  library_id: string;
+  symbol_class: string;
+  display_name: string;
+  aliases: string[];
+  image_template_path?: string;
+  vector_svg_path?: string;
+  approved_by?: string;
+  approved_at?: string;
+  source_structured_symbol_id?: string;
+  visual_variant_group_id?: string;
+  feature_descriptors?: Record<string, any>;
+  created_at: string;
+}
+
+export interface CanonicalCatalogResponse {
+  library_id: string;
+  library_name: string;
+  discipline: string;
+  standard_name?: string;
+  total_templates: number;
+  family_counts: Record<string, number>;
+  templates: CanonicalTemplateItem[];
+}
+
+export interface BatchPromoteToTemplateRequest {
+  structured_symbol_ids: string[];
+  library_name?: string;
+  discipline?: string;
+  reviewer?: string;
+  user_notes?: string;
+}
+
+export interface BatchPromoteToTemplateResponse {
+  promoted_count: number;
+  library_id: string;
+  library_name: string;
+  promoted_templates: Array<{
+    template_id: string;
+    display_name: string;
+    symbol_class: string;
+    visual_variant_group_id?: string;
+  }>;
+  message: string;
+}
+
 

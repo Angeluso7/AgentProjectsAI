@@ -843,6 +843,10 @@ export const DocumentManualViewerModal: React.FC<DocumentManualViewerModalProps>
   // Cambiar estado individual de un item
   const handleUpdateItemStatus = async (item: ExtractedItem, newStatus: 'por_confirmar' | 'validada' | 'eliminado') => {
     if (!activeSession) return;
+    if (newStatus === 'validada' && (item.blocked_from_acceptance || item.duplicate_status === 'exact_match_existing_rule')) {
+      alert(`La regla '${item.title}' ya existe en el Motor de Reglas QA/QC y no puede validarse.`);
+      return;
+    }
     try {
       if (newStatus === 'eliminado') {
         await apiService.deleteExtractedItem(activeSession.id, item.id);
@@ -853,8 +857,9 @@ export const DocumentManualViewerModal: React.FC<DocumentManualViewerModalProps>
         });
         setSessionItems((prev) => prev.map((it) => (it.id === item.id ? { ...it, review_status: newStatus } : it)));
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error actualizando estado del elemento:', e);
+      alert(e?.response?.data?.detail || 'Error al actualizar estado.');
     }
   };
 
@@ -1570,7 +1575,7 @@ export const DocumentManualViewerModal: React.FC<DocumentManualViewerModalProps>
               >
                 {imagePreviewUrl ? (
                   <img
-                    src={imagePreviewUrl}
+                    src={imagePreviewUrl.startsWith('http') || imagePreviewUrl.startsWith('data:') ? imagePreviewUrl : (imagePreviewUrl.startsWith('/') ? imagePreviewUrl : `/${imagePreviewUrl}`)}
                     alt="Recorte seleccionado"
                     className="max-h-full max-w-full object-contain rounded shadow"
                   />
@@ -2311,6 +2316,11 @@ export const DocumentManualViewerModal: React.FC<DocumentManualViewerModalProps>
                           <span className="text-xs font-bold text-slate-200 truncate">
                             {item.title}
                           </span>
+                          {(item.blocked_from_acceptance || item.duplicate_status === 'exact_match_existing_rule') && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-700">
+                              🚫 Ya existe en Motor QA/QC ({item.best_match_rule_code || 'Existente'})
+                            </span>
+                          )}
                           {item.code_or_number && (
                             <span style={{ backgroundColor: '#0f172a', borderColor: '#334155' }} className="font-mono text-[10px] px-1.5 py-0.5 rounded text-slate-400 border">
                               {item.code_or_number}
@@ -2364,13 +2374,20 @@ export const DocumentManualViewerModal: React.FC<DocumentManualViewerModalProps>
 
                         {/* 3. VALIDADA */}
                         <button
+                          disabled={item.blocked_from_acceptance || item.duplicate_status === 'exact_match_existing_rule'}
                           onClick={() => handleUpdateItemStatus(item, 'validada')}
                           className={`px-2 py-1 text-[11px] font-semibold rounded-lg flex items-center gap-1 transition-all ${
-                            item.review_status === 'validada' || item.review_status === 'accepted'
+                            item.blocked_from_acceptance || item.duplicate_status === 'exact_match_existing_rule'
+                              ? 'text-slate-600 bg-slate-900 border border-slate-800 cursor-not-allowed opacity-40'
+                              : item.review_status === 'validada' || item.review_status === 'accepted'
                               ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                               : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                           }`}
-                          title="Marcar como lista para incorporar"
+                          title={
+                            item.blocked_from_acceptance || item.duplicate_status === 'exact_match_existing_rule'
+                              ? 'Bloqueado: Ya existe en Motor de Reglas QA/QC'
+                              : 'Marcar como lista para incorporar'
+                          }
                         >
                           <Check className="w-3 h-3 text-emerald-400" />
                           <span>Validada</span>

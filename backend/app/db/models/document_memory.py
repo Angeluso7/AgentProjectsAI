@@ -211,6 +211,11 @@ class ExtractedTableCell(Base):
     is_header = Column(Boolean, default=False, nullable=False)
     source_text_refs = Column(JSON, default=list) # IDs de ExtractedText que alimentan la celda
     
+    # Soporte para celdas con simbología y contenido mixto
+    cell_type = Column(String(30), default="text_cell", nullable=False) # text_cell, symbol_cell, mixed_cell, empty_cell
+    symbol_id = Column(String(36), nullable=True) # ID de StructuredSymbol / ExtractedItem vinculado
+    has_symbol = Column(Boolean, default=False, nullable=False)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relaciones
@@ -241,6 +246,13 @@ class DetectedSymbol(Base):
     source_version = Column(String(30), default="v1.0", nullable=False)
     source_asset_template_id = Column(String(36), nullable=True)
     matched_library_entry_id = Column(String(36), ForeignKey("symbol_templates.id", ondelete="SET NULL"), nullable=True)
+    
+    # Auditoría de matching visual y geométrico determinista
+    match_score_visual = Column(Float, nullable=True)
+    match_rotation_deg = Column(Integer, nullable=True) # 0, 90, 180, 270
+    match_method = Column(String(50), nullable=True) # e.g. "ncc_hu_composite_v1"
+    match_evidence = Column(JSON, default=dict) # {"ncc_score": 0.91, "hu_score": 0.88, "rotation": 90}
+    algorithm_version = Column(String(20), default="v1.0")
     
     attributes = Column(JSON, default=dict) # {"orientation_deg": 90, "sahi_slice_id": "slice_01"}
     
@@ -280,7 +292,7 @@ class DocumentStructuralNode(Base):
     sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="SET NULL"), nullable=True, index=True)
     
     node_type = Column(String(30), nullable=False) # 'heading', 'paragraph', 'table', 'technical_note', 'dxf_block_summary', 'key_value'
-    hierarchy_path = Column(String(255), nullable=True) # ej. "/Line_Schedule/Area_100/Row_1" o "/ASME_B31.3/Cap_II/304.1"
+    hierarchy_path = Column(Text, nullable=True) # ej. "/Line_Schedule/Area_100/Row_1" o "/ASME_B31.3/Cap_II/304.1"
     level = Column(Integer, default=0, nullable=False) # 1=H1, 2=H2, 3=H3
     title = Column(String(255), nullable=True)
     content_text = Column(Text, nullable=False)

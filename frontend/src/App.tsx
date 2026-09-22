@@ -15,6 +15,7 @@ import { EvaluationPage } from './pages/EvaluationPage';
 import { AiEnginesPage } from './pages/AiEnginesPage';
 import { LoginPage } from './pages/LoginPage';
 import { ResetPasswordPage } from './pages/ResetPasswordPage';
+import { MemoriesConsolePage } from './pages/MemoriesConsolePage';
 import { Shield, RefreshCw } from 'lucide-react';
 import { ProjectProvider } from './context/ProjectContext';
 
@@ -139,7 +140,7 @@ export function App() {
           {currentTab === 'reports' && <ReportsPage key={refreshKey} />}
           {currentTab === 'evaluation' && <EvaluationPage key={refreshKey} />}
           {currentTab === 'knowledge' && <KnowledgePage key={refreshKey} />}
-          {currentTab === 'memories' && <DashboardPage key={refreshKey} />}
+          {currentTab === 'memories' && <MemoriesConsolePage key={refreshKey} />}
           {currentTab === 'mlops' && <KnowledgePage key={refreshKey} />}
         </div>
       </div>

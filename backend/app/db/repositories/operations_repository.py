@@ -27,9 +27,35 @@ class OperationsRepository:
         requested_by: str = "system",
         priority: int = 5,
         input_payload: Optional[Dict[str, Any]] = None,
-        max_retries: int = 3
+        max_retries: int = 3,
+        organization_id: Optional[str] = None
     ) -> ProcessingJob:
+        if not organization_id and project_id:
+            from app.db.models.core import Project
+            proj = self.db.query(Project).filter(Project.id == project_id).first()
+            if proj:
+                organization_id = proj.organization_id
+
+        if not organization_id and target_type == "sheet":
+            from app.db.models.document_memory import DocumentSheet, Document
+            sheet = self.db.query(DocumentSheet).filter(DocumentSheet.id == target_id).first()
+            if sheet and sheet.document_id:
+                doc = self.db.query(Document).filter(Document.id == sheet.document_id).first()
+                if doc:
+                    organization_id = doc.organization_id
+                    if not project_id:
+                        project_id = doc.project_id
+
+        if not organization_id:
+            from app.db.models.core import Organization
+            org = self.db.query(Organization).first()
+            if org:
+                organization_id = org.id
+            else:
+                organization_id = "default-org-uuid"
+
         job = ProcessingJob(
+            organization_id=organization_id,
             job_type=job_type,
             target_type=target_type,
             target_id=target_id,
@@ -150,16 +176,20 @@ class OperationsRepository:
         actor_type: str = "system",
         actor_id: Optional[str] = None
     ) -> JobEvent:
+        event_details = dict(details or {})
+        if actor_type:
+            event_details["actor_type"] = actor_type
+        if actor_id:
+            event_details["actor_id"] = actor_id
+
         event = JobEvent(
             job_id=job_id,
             event_type=event_type,
-            status_before=status_before,
-            status_after=status_after,
+            from_status=status_before,
+            to_status=status_after or "queued",
             stage=stage,
             message=message,
-            details=details or {},
-            actor_type=actor_type,
-            actor_id=actor_id
+            details=event_details
         )
         self.db.add(event)
         self.db.commit()
