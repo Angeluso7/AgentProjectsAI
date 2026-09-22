@@ -256,50 +256,76 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = set(inspector.get_table_names())
+
     # 8. Eliminar symbol_unknown_research_cases
-    op.drop_table('symbol_unknown_research_cases')
+    if 'symbol_unknown_research_cases' in existing_tables:
+        op.drop_table('symbol_unknown_research_cases')
 
-    # 7. Eliminar columnas agregadas a detected_symbols
-    op.drop_index('ix_detected_symbols_review_status', table_name='detected_symbols')
-    op.drop_index('ix_detected_symbols_matched_tmpl_id', table_name='detected_symbols')
-    op.drop_index('ix_detected_symbols_matching_status', table_name='detected_symbols')
-    op.drop_index('ix_detected_symbols_classification', table_name='detected_symbols')
-    op.drop_index('ix_detected_symbols_project_id', table_name='detected_symbols')
+    # 7. Eliminar columnas e índices agregados a detected_symbols
+    if 'detected_symbols' in existing_tables:
+        existing_indexes = {idx['name'] for idx in inspector.get_indexes('detected_symbols')}
+        for idx_name in [
+            'ix_detected_symbols_review_status',
+            'ix_detected_symbols_matched_tmpl_id',
+            'ix_detected_symbols_matching_status',
+            'ix_detected_symbols_classification',
+            'ix_detected_symbols_project_id'
+        ]:
+            if idx_name in existing_indexes:
+                op.drop_index(idx_name, table_name='detected_symbols')
 
-    for col in [
-        'detection_run_id', 'review_status', 'context_text', 'detected_tag_or_code',
-        'context_score', 'visual_score', 'topology_score', 'geometry_score', 'match_score',
-        'matched_template_version_id', 'matched_template_id', 'matching_status',
-        'geometric_confidence', 'geometric_evidence', 'classification', 'crop_image_hash',
-        'crop_image_path', 'symbol_crop_bbox', 'inner_drawing_bbox', 'cell_bbox',
-        'cell_id', 'table_id', 'project_document_id', 'project_id'
-    ]:
-        op.drop_column('detected_symbols', col)
+        existing_cols = {col['name'] for col in inspector.get_columns('detected_symbols')}
+        for col in [
+            'detection_run_id', 'review_status', 'context_text', 'detected_tag_or_code',
+            'context_score', 'visual_score', 'topology_score', 'geometry_score', 'match_score',
+            'matched_template_version_id', 'matched_template_id', 'matching_status',
+            'geometric_confidence', 'geometric_evidence', 'classification', 'crop_image_hash',
+            'crop_image_path', 'symbol_crop_bbox', 'inner_drawing_bbox', 'cell_bbox',
+            'cell_id', 'table_id', 'project_document_id', 'project_id'
+        ]:
+            if col in existing_cols:
+                op.drop_column('detected_symbols', col)
 
     # 6. Eliminar symbol_review_decisions
-    op.drop_table('symbol_review_decisions')
+    if 'symbol_review_decisions' in existing_tables:
+        op.drop_table('symbol_review_decisions')
 
     # 5. Eliminar symbol_source_evidences
-    op.drop_table('symbol_source_evidences')
+    if 'symbol_source_evidences' in existing_tables:
+        op.drop_table('symbol_source_evidences')
 
     # 4. Eliminar symbol_feature_relations
-    op.drop_table('symbol_feature_relations')
+    if 'symbol_feature_relations' in existing_tables:
+        op.drop_table('symbol_feature_relations')
 
     # 3. Eliminar symbol_geometric_features
-    op.drop_table('symbol_geometric_features')
+    if 'symbol_geometric_features' in existing_tables:
+        op.drop_table('symbol_geometric_features')
 
     # 2. Eliminar symbol_template_versions
-    op.drop_table('symbol_template_versions')
+    if 'symbol_template_versions' in existing_tables:
+        op.drop_table('symbol_template_versions')
 
     # 1. Eliminar columnas e índices de symbol_templates
-    op.drop_index('ix_symbol_templates_status', table_name='symbol_templates')
-    op.drop_index('ix_symbol_templates_discipline', table_name='symbol_templates')
-    op.drop_index('ix_symbol_templates_subcategory', table_name='symbol_templates')
-    op.drop_index('ix_symbol_templates_category', table_name='symbol_templates')
-    op.drop_index('ix_symbol_templates_canonical_code', table_name='symbol_templates')
+    if 'symbol_templates' in existing_tables:
+        tmpl_indexes = {idx['name'] for idx in inspector.get_indexes('symbol_templates')}
+        for idx_name in [
+            'ix_symbol_templates_status',
+            'ix_symbol_templates_discipline',
+            'ix_symbol_templates_subcategory',
+            'ix_symbol_templates_category',
+            'ix_symbol_templates_canonical_code'
+        ]:
+            if idx_name in tmpl_indexes:
+                op.drop_index(idx_name, table_name='symbol_templates')
 
-    for col in [
-        'updated_at', 'created_by', 'current_version_id', 'status', 'standard_reference',
-        'technical_function', 'discipline', 'subcategory', 'category', 'canonical_name', 'canonical_code'
-    ]:
-        op.drop_column('symbol_templates', col)
+        tmpl_cols = {col['name'] for col in inspector.get_columns('symbol_templates')}
+        for col in [
+            'updated_at', 'created_by', 'current_version_id', 'status', 'standard_reference',
+            'technical_function', 'discipline', 'subcategory', 'category', 'canonical_name', 'canonical_code'
+        ]:
+            if col in tmpl_cols:
+                op.drop_column('symbol_templates', col)
