@@ -31,9 +31,44 @@ class IngestService:
         self.docling_service = DoclingService()
         self.dxf_service = DxfService()
 
+    @staticmethod
+    def sanitize_filename(filename: str) -> str:
+        """Sanitiza el nombre de archivo eliminando secuencias de path traversal y caracteres no deseados."""
+        if not filename:
+            return "unnamed_document.pdf"
+        import re
+        clean = os.path.basename(filename.replace("\\", "/").strip())
+        clean = clean.replace("..", "").replace("\x00", "")
+        clean = re.sub(r'[^\w\s\.-]', '_', clean)
+        clean = clean.strip()
+        return clean or "unnamed_document.pdf"
+
+    def validate_file(self, filename: str, file_bytes: bytes, mime_type: Optional[str] = None):
+        """Valida que el archivo no esté vacío, no supere MAX_UPLOAD_SIZE_MB y su formato sea admitido."""
+        if not file_bytes or len(file_bytes) == 0:
+            raise ValueError(f"El archivo '{filename}' está vacío.")
+
+        max_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        if len(file_bytes) > max_bytes:
+            raise ValueError(
+                f"El archivo '{filename}' ({len(file_bytes) / (1024*1024):.2f} MB) excede el tamaño máximo permitido de {settings.MAX_UPLOAD_SIZE_MB} MB."
+            )
+
+        lower_name = filename.lower()
+        has_allowed_ext = any(lower_name.endswith(ext) for ext in settings.ALLOWED_EXTENSIONS)
+        if not has_allowed_ext:
+            if not file_bytes.startswith(b"%PDF-"):
+                raise ValueError(
+                    f"Tipo de archivo no permitido para '{filename}'. Formatos aceptados: {', '.join(settings.ALLOWED_EXTENSIONS[:8])}..."
+                )
+
     def calculate_file_hash(self, file_bytes: bytes) -> str:
-        """Calcula el hash SHA-256 del contenido binario de un archivo."""
-        return hashlib.sha256(file_bytes).hexdigest()
+        """Calcula el hash SHA-256 en chunks para prevenir sobrecarga de memoria."""
+        hasher = hashlib.sha256()
+        chunk_size = 65536
+        for i in range(0, len(file_bytes), chunk_size):
+            hasher.update(file_bytes[i:i + chunk_size])
+        return hasher.hexdigest()
 
     def _resolve_organization_id(self, project_id: str) -> str:
         from app.db.models.core import Project, Organization
@@ -59,23 +94,25 @@ class IngestService:
         file_bytes: bytes,
         version_id: Optional[str] = None,
         auto_process: bool = True,
-        dpi: Optional[int] = None
+        dpi: Optional[int] = None,
+        metadata_extra: Optional[Dict[str, Any]] = None
     ) -> Document:
         """Ingesta cualquier tipo de archivo técnico delegando según formato."""
-        if not file_bytes:
-            raise ValueError(f"El archivo '{filename}' está vacío.")
+        clean_filename = self.sanitize_filename(filename)
+        self.validate_file(clean_filename, file_bytes)
 
-        lower_name = (filename or "").lower()
+        lower_name = clean_filename.lower()
         
         # 1. Si es PDF o contiene encabezado PDF
         if lower_name.endswith(".pdf") or file_bytes.startswith(b"%PDF-"):
             return self.ingest_pdf(
                 project_id=project_id,
-                filename=filename,
+                filename=clean_filename,
                 file_bytes=file_bytes,
                 version_id=version_id,
                 auto_process=auto_process,
-                dpi=dpi
+                dpi=dpi,
+                metadata_extra=metadata_extra
             )
 
         # 2. Si es imagen raster (PNG, JPG, JPEG, WEBP, BMP, TIFF)
@@ -83,18 +120,20 @@ class IngestService:
         if lower_name.endswith(image_extensions):
             return self.ingest_image(
                 project_id=project_id,
-                filename=filename,
+                filename=clean_filename,
                 file_bytes=file_bytes,
                 version_id=version_id,
-                dpi=dpi
+                dpi=dpi,
+                metadata_extra=metadata_extra
             )
 
         # 3. Si es otro archivo técnico (CAD, DXF, DWG, DOCX, XLSX, TXT, CSV, etc.)
         return self.ingest_generic_doc(
             project_id=project_id,
-            filename=filename,
+            filename=clean_filename,
             file_bytes=file_bytes,
-            version_id=version_id
+            version_id=version_id,
+            metadata_extra=metadata_extra
         )
 
     def ingest_image(
@@ -103,7 +142,8 @@ class IngestService:
         filename: str,
         file_bytes: bytes,
         version_id: Optional[str] = None,
-        dpi: Optional[int] = None
+        dpi: Optional[int] = None,
+        metadata_extra: Optional[Dict[str, Any]] = None
     ) -> Document:
         """Ingesta una imagen de plano/croquis, creando una lámina lista para el visor."""
         file_hash = self.calculate_file_hash(file_bytes)
@@ -141,7 +181,8 @@ class IngestService:
             file_size_bytes=len(file_bytes),
             mime_type=mime_type,
             status="ready",
-            page_count=1
+            page_count=1,
+            metadata_info=metadata_extra or {}
         )
         self.db.add(doc)
         self.db.commit()
@@ -187,7 +228,8 @@ class IngestService:
         project_id: str,
         filename: str,
         file_bytes: bytes,
-        version_id: Optional[str] = None
+        version_id: Optional[str] = None,
+        metadata_extra: Optional[Dict[str, Any]] = None
     ) -> Document:
         """Ingesta un documento técnico no gráfico (CAD, especificación, cálculo)."""
         file_hash = self.calculate_file_hash(file_bytes)
@@ -233,7 +275,8 @@ class IngestService:
             file_size_bytes=len(file_bytes),
             mime_type=mime_type,
             status="ready",
-            page_count=1
+            page_count=1,
+            metadata_info=metadata_extra or {}
         )
         self.db.add(doc)
         self.db.commit()
@@ -264,7 +307,8 @@ class IngestService:
         file_bytes: bytes,
         version_id: Optional[str] = None,
         auto_process: bool = True,
-        dpi: Optional[int] = None
+        dpi: Optional[int] = None,
+        metadata_extra: Optional[Dict[str, Any]] = None
     ) -> Document:
         """Ingesta un archivo PDF: valida contenido, guarda en disco, registra en BD y opcionalmente procesa."""
         if not file_bytes:
@@ -303,7 +347,8 @@ class IngestService:
             file_size_bytes=len(file_bytes),
             mime_type="application/pdf",
             status="uploaded",
-            page_count=1
+            page_count=1,
+            metadata_info=metadata_extra or {}
         )
         self.db.add(doc)
         self.db.commit()
@@ -312,7 +357,15 @@ class IngestService:
 
         # Disparar procesamiento / rasterizado síncrono si está habilitado
         if auto_process:
-            return self.process_document(doc.id, dpi=dpi)
+            try:
+                return self.process_document(doc.id, dpi=dpi)
+            except Exception as e:
+                logger.error(f"Error procesando documento {doc.id} tras ingesta: {e}")
+                doc.status = "failed"
+                doc.error_message = str(e)
+                self.db.commit()
+                self.db.refresh(doc)
+                return doc
 
         return doc
 
@@ -410,10 +463,13 @@ class IngestService:
 
             # Extracción estructural de secciones y tablas con Docling
             try:
-                nodes = self.docling_service.extract_structural_nodes(file_bytes, doc.filename, doc.id)
-                if nodes:
-                    self.db.add_all(nodes)
-                    self.db.commit()
+                if os.path.exists(doc.file_path):
+                    with open(doc.file_path, "rb") as f:
+                        raw_bytes = f.read()
+                    nodes = self.docling_service.extract_structural_nodes(raw_bytes, doc.filename, doc.id)
+                    if nodes:
+                        self.db.add_all(nodes)
+                        self.db.commit()
             except Exception as e:
                 logger.warning(f"Extracción de secciones/tablas PDF falló para '{doc.filename}': {e}")
 
@@ -423,5 +479,6 @@ class IngestService:
         except Exception as e:
             logger.error(f"Error procesando documento {doc.filename}: {e}", exc_info=True)
             doc.status = "failed"
+            doc.error_message = str(e)
             self.db.commit()
             raise e

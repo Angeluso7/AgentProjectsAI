@@ -1,13 +1,14 @@
 import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, status
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.db.models.document_memory import Document, DocumentStructuralNode
 from app.db.repositories.document_repository import DocumentRepository
 from app.db.repositories.project_repository import ProjectRepository
 from app.schemas.document import (
-    DocumentRead, DocumentSheetRead, DocumentProcessRequest,
+    DocumentRead, DocumentUploadResponse, DocumentSheetRead, DocumentProcessRequest,
     BatchUploadResponse, BatchFileResultItem,
     DocumentStructuralNodeRead, CadEntitiesSummaryRead
 )
@@ -33,23 +34,64 @@ def list_documents(
     return query.order_by(Document.created_at.desc()).all()
 
 
-@router.post("/upload", response_model=DocumentRead, status_code=status.HTTP_201_CREATED)
+@router.post("/upload", response_model=DocumentUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_document(
     project_id: str = Form(...),
+    file: UploadFile = File(...),
     version_id: Optional[str] = Form(None),
+    discipline: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None),
+    evidence_classification: Optional[str] = Form(None),
+    execution_mode: Optional[str] = Form(None),
+    metadata_json: Optional[str] = Form(None),
     auto_process: bool = Form(True),
     dpi: Optional[int] = Form(None),
-    file: UploadFile = File(...),
     db: Session = Depends(get_db)
 ):
-    """Carga un archivo (PDF, imagen técnica o documento entregable), extrae metadatos y ejecuta rasterizado si corresponde."""
+    """
+    Carga un archivo técnico (PDF, imagen, CAD, especificación):
+    Valida tipo y tamaño, calcula hash SHA-256 en chunks, persiste en volumen y BD,
+    y ejecuta rasterizado / extracción estructural según corresponda.
+    """
     proj_repo = ProjectRepository(db)
     project = proj_repo.get_by_id(project_id)
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
 
+    if not file or not file.filename:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "code": "UPLOAD_VALIDATION_ERROR",
+                "message": "Archivo no enviado o nombre de archivo vacío.",
+                "detail": "Archivo no enviado o nombre de archivo vacío.",
+                "details": {"field": "file", "reason": "No se recibió archivo válido."}
+            }
+        )
+
     content = await file.read()
     ingest_svc = IngestService(db)
+
+    # Procesar metadatos adicionales
+    meta_extra: dict = {}
+    if metadata_json:
+        try:
+            import json
+            parsed = json.loads(metadata_json)
+            if isinstance(parsed, dict):
+                meta_extra.update(parsed)
+        except Exception:
+            meta_extra["raw_metadata"] = metadata_json
+
+    if discipline:
+        meta_extra["discipline"] = discipline
+    if document_type:
+        meta_extra["document_type"] = document_type
+    if evidence_classification:
+        meta_extra["evidence_classification"] = evidence_classification
+    if execution_mode:
+        meta_extra["execution_mode"] = execution_mode
+
     try:
         doc = ingest_svc.ingest_file(
             project_id=project_id,
@@ -57,13 +99,55 @@ async def upload_document(
             file_bytes=content,
             version_id=version_id,
             auto_process=auto_process,
-            dpi=dpi
+            dpi=dpi,
+            metadata_extra=meta_extra
         )
-        return doc
+
+        warnings = []
+        if doc.status == "failed" and doc.error_message:
+            warnings.append(f"Procesamiento falló: {doc.error_message}")
+
+        return DocumentUploadResponse(
+            document_id=doc.id,
+            id=doc.id,
+            filename=doc.filename,
+            content_type=doc.mime_type,
+            mime_type=doc.mime_type,
+            size_bytes=doc.file_size_bytes,
+            file_size_bytes=doc.file_size_bytes,
+            sha256=doc.file_hash_sha256,
+            file_hash_sha256=doc.file_hash_sha256,
+            storage_status="stored",
+            processing_status=doc.status,
+            status=doc.status,
+            upload_timestamp=doc.created_at,
+            created_at=doc.created_at,
+            project_id=doc.project_id,
+            discipline=discipline,
+            document_type=document_type,
+            evidence_classification=evidence_classification,
+            execution_mode=execution_mode,
+            warnings=warnings,
+            page_count=doc.page_count or 1,
+            sheets=doc.sheets or [],
+            error_message=doc.error_message
+        )
     except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+        err_msg = str(ve)
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "code": "UPLOAD_VALIDATION_ERROR",
+                "message": err_msg,
+                "detail": err_msg,
+                "details": {"field": "file", "reason": err_msg}
+            }
+        )
     except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error durante la ingesta: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Error durante la ingesta: {str(e)}"
+        )
 
 
 @router.post("/batch-upload", response_model=BatchUploadResponse, status_code=status.HTTP_201_CREATED)

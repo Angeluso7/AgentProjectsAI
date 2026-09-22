@@ -44,6 +44,28 @@ class Settings(BaseSettings):
     THUMBNAIL_RENDER_DPI: int = Field(default=72, validation_alias="THUMBNAIL_RENDER_DPI")
     UNCERTAINTY_MIN_CONF: float = 0.35
     UNCERTAINTY_MAX_CONF: float = 0.70
+
+    # Límites de Carga y Extensiones Permitidas
+    UPLOAD_DIR: str = Field(default="./data/raw", validation_alias="UPLOAD_DIR")
+    STORAGE_ROOT: str = Field(default="./data", validation_alias="STORAGE_ROOT")
+    MAX_UPLOAD_SIZE_MB: int = Field(default=100, validation_alias="MAX_UPLOAD_SIZE_MB")
+    ALLOWED_DOCUMENT_TYPES: List[str] = [
+        "blueprint_pdf", "p_and_id", "isometric", "civil_structural",
+        "datasheet", "specification", "technical_standard", "general"
+    ]
+    ALLOWED_EXTENSIONS: List[str] = [
+        ".pdf", ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tiff",
+        ".dxf", ".dwg", ".docx", ".doc", ".xlsx", ".xls", ".txt", ".csv", ".zip"
+    ]
+    ALLOWED_MIME_TYPES: List[str] = [
+        "application/pdf", "image/png", "image/jpeg", "image/webp", "image/bmp", "image/tiff",
+        "application/acad", "application/dxf", "application/x-dwg",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/msword",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+        "text/plain", "text/csv", "application/zip", "application/octet-stream"
+    ]
     
     class Config:
         env_file = ".env"

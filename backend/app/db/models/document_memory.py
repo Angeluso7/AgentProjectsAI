@@ -19,10 +19,13 @@ class Document(Base):
     file_size_bytes = Column(Integer, nullable=False)
     mime_type = Column(String(100), default="application/pdf", nullable=False)
     page_count = Column(Integer, default=1, nullable=False)
-    status = Column(String(30), default="uploaded") # uploaded, processing, ready, error
+    status = Column(String(30), default="uploaded") # uploaded, processing, ready, failed, archived
+    error_message = Column(Text, nullable=True)
+    metadata_info = Column(JSON, default=dict, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    processed_at = Column(DateTime, nullable=True)
 
     # Relaciones
     project = relationship("Project", back_populates="documents")

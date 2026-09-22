@@ -144,6 +144,39 @@ class DocumentRead(DocumentBase):
     class Config:
         from_attributes = True
 
+class DocumentUploadResponse(BaseModel):
+    document_id: str
+    id: str
+    filename: str
+    content_type: str
+    mime_type: str
+    size_bytes: int
+    file_size_bytes: int
+    sha256: str
+    file_hash_sha256: str
+    storage_status: str = "stored"
+    processing_status: str = "uploaded"
+    status: str = "uploaded"
+    upload_timestamp: datetime
+    created_at: datetime
+    project_id: str
+    discipline: Optional[str] = None
+    document_type: Optional[str] = None
+    evidence_classification: Optional[str] = None
+    execution_mode: Optional[str] = None
+    warnings: List[str] = []
+    page_count: int = 1
+    sheets: List[DocumentSheetRead] = []
+    error_message: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class UploadValidationErrorResponse(BaseModel):
+    code: str = "UPLOAD_VALIDATION_ERROR"
+    message: str
+    details: Dict[str, Any]
+
 class DocumentProcessRequest(BaseModel):
     dpi: Optional[int] = Field(default=None, description="DPI para rasterizado (opcional, usa DEFAULT_RENDER_DPI por defecto)")
 
