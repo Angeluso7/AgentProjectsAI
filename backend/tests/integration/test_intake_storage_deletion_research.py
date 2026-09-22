@@ -71,7 +71,15 @@ def test_intake_file_storage_lifecycle_and_research():
         "discipline": "Estructuras",
         "document_type": "norma",
         "authority": "INN",
-        "focus_areas": ["deriva de piso", "espectro de diseño", "suelos tipo D"]
+        "focus_areas": ["deriva de piso", "espectro de diseño", "suelos tipo D"],
+        "selected_sources": [
+            {
+                "url": "https://example.com/sismica",
+                "title": "Criterios Sísmicos",
+                "snippet": "NCh433 detallada",
+                "domain": "example.com"
+            }
+        ]
     }
     web_resp = client.post("/api/v1/intake/extractions/process-web-research", json=web_payload)
     assert web_resp.status_code in [200, 201], f"Error en web research: {web_resp.text}"

@@ -134,7 +134,15 @@ def test_intake_ai_and_manual_extractions_and_rules_flow(client: TestClient, db_
         "discipline": "Arquitectura",
         "document_type": "norma",
         "authority": "MINVU / Web Research",
-        "focus_areas": ["accesibilidad", "rampas", "ancho_pasillos"]
+        "focus_areas": ["accesibilidad", "rampas", "ancho_pasillos"],
+        "selected_sources": [
+            {
+                "url": "https://example.com/accesibilidad",
+                "title": "Accesibilidad Residencial",
+                "snippet": "Criterios de diseño",
+                "domain": "example.com"
+            }
+        ]
     }
     web_res = client.post("/api/v1/intake/extractions/process-web-research", headers=headers, json=web_payload)
     assert web_res.status_code == 201

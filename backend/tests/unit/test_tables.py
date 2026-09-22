@@ -13,9 +13,12 @@ def test_extract_window_schedule_table(client, db_session):
         "name": "Proyecto Para Test Tablas",
         "discipline": "architecture"
     })
-    project_id = proj_res.json()["id"]
+    proj_data = proj_res.json()
+    project_id = proj_data["id"]
+    org_id = proj_data.get("organization_id") or "default-org-uuid"
 
     doc = Document(
+        organization_id=org_id,
         project_id=project_id,
         filename="plano_con_cuadro_vanos.pdf",
         file_path="dummy_table_path.pdf",
@@ -120,9 +123,12 @@ def test_extract_incomplete_table_generates_review_task(client, db_session):
         "name": "Proyecto Tabla Incompleta",
         "discipline": "architecture"
     })
-    project_id = proj_res.json()["id"]
+    proj_data = proj_res.json()
+    project_id = proj_data["id"]
+    org_id = proj_data.get("organization_id") or "default-org-uuid"
 
     doc = Document(
+        organization_id=org_id,
         project_id=project_id,
         filename="plano_incompleto.pdf",
         file_path="dummy_path.pdf",

@@ -18,16 +18,28 @@ from app.db.session import Base
 import app.db.models
 
 # URL de conexión para rol de aplicación no privilegiado (app_user)
-APP_USER_DB_URL = os.getenv(
-    "POSTGRES_APP_USER_URL",
-    "postgresql+psycopg://app_user:app_user_dev_pass@127.0.0.1:5433/planreview_test"
-)
+def get_postgres_urls():
+    if os.getenv("POSTGRES_MIGRATOR_URL") and os.getenv("POSTGRES_APP_USER_URL"):
+        return os.getenv("POSTGRES_MIGRATOR_URL"), os.getenv("POSTGRES_APP_USER_URL")
+    
+    # Probar candidatos (host local vs nombre de contenedor en docker network)
+    candidates = [
+        ("postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@plan_review_postgres_test:5432/planreview_test",
+         "postgresql+psycopg://app_user:app_user_dev_pass@plan_review_postgres_test:5432/planreview_test"),
+        ("postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@127.0.0.1:5433/planreview_test",
+         "postgresql+psycopg://app_user:app_user_dev_pass@127.0.0.1:5433/planreview_test"),
+    ]
+    for migrator_url, app_user_url in candidates:
+        try:
+            eng = create_engine(migrator_url, connect_args={"connect_timeout": 2})
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return migrator_url, app_user_url
+        except Exception:
+            continue
+    return candidates[1]
 
-# URL de conexión de administración/migrador (solo para setup/teardown de fixtures)
-MIGRATOR_DB_URL = os.getenv(
-    "POSTGRES_MIGRATOR_URL",
-    "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@127.0.0.1:5433/planreview_test"
-)
+MIGRATOR_DB_URL, APP_USER_DB_URL = get_postgres_urls()
 
 def is_postgres_available() -> bool:
     """Verifica si el servicio PostgreSQL de pruebas está accesible."""
