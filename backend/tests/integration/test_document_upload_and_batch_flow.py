@@ -305,3 +305,162 @@ def test_downstream_integrity_sheet_image_and_metadata(client: TestClient, db_se
     assert img_res.status_code == 200
     assert img_res.headers["content-type"] == "image/png"
     assert len(img_res.content) > 100 # Contenido PNG binario real
+
+
+def test_upload_explicit_api_contract_and_persistence(client: TestClient, db_session: Session):
+    """Escenario E: Validación estricta del contrato de API de upload (Sección 4 del procedimiento)."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    pdf_bytes = _create_dummy_pdf_bytes("Plano Contrato P&ID 001")
+    filename = "PID-001.pdf"
+    files = {"file": (filename, pdf_bytes, "application/pdf")}
+    data = {
+        "project_id": project_id,
+        "discipline": "piping",
+        "document_type": "p_and_id",
+        "evidence_classification": "sandbox",
+        "execution_mode": "sandbox",
+        "metadata_json": '{"author": "Ingeniero Auditor", "plant": "Refinería Norte"}',
+        "auto_process": "true"
+    }
+
+    res = client.post("/api/v1/documents/upload", headers=headers, data=data, files=files)
+    assert res.status_code == 201, f"Error en upload: {res.text}"
+    body = res.json()
+
+    # Campos obligatorios del contrato explícito
+    assert "document_id" in body and body["document_id"]
+    assert body["filename"] == "PID-001.pdf"
+    assert body["content_type"] == "application/pdf"
+    assert body["size_bytes"] == len(pdf_bytes)
+    assert "sha256" in body and len(body["sha256"]) == 64
+    assert body["storage_status"] == "stored"
+    assert body["processing_status"] in ["ready", "uploaded"]
+    assert "upload_timestamp" in body
+    assert body["project_id"] == project_id
+    assert "warnings" in body and isinstance(body["warnings"], list)
+
+    # Compatibilidad con campos de UI
+    assert body["id"] == body["document_id"]
+    assert body["status"] == body["processing_status"]
+
+    # Comprobar existencia física en almacenamiento
+    from app.core.settings import settings
+    expected_path = os.path.join(settings.RAW_DOCUMENTS_DIR, f"{body['sha256']}_{filename}")
+    assert os.path.exists(expected_path), f"El archivo no fue persistido en disco: {expected_path}"
+    with open(expected_path, "rb") as f:
+        stored_bytes = f.read()
+    assert stored_bytes == pdf_bytes
+
+    # Comprobar registro en BD
+    from app.db.models.document_memory import Document
+    db_doc = db_session.query(Document).filter(Document.id == body["document_id"]).first()
+    assert db_doc is not None
+    assert db_doc.file_hash_sha256 == body["sha256"]
+    assert db_doc.file_size_bytes == len(pdf_bytes)
+    assert db_doc.project_id == project_id
+
+
+def test_upload_validation_error_empty_file(client: TestClient, db_session: Session):
+    """Escenario F1: Archivo vacío devuelve formato consistente UPLOAD_VALIDATION_ERROR."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    files = {"file": ("empty_blueprint.pdf", b"", "application/pdf")}
+    data = {"project_id": project_id}
+
+    res = client.post("/api/v1/documents/upload", headers=headers, data=data, files=files)
+    assert res.status_code == 400
+    body = res.json()
+    assert body["code"] == "UPLOAD_VALIDATION_ERROR"
+    assert "vacío" in body["message"].lower()
+    assert body["details"]["field"] == "file"
+
+
+def test_upload_validation_error_disallowed_extension(client: TestClient, db_session: Session):
+    """Escenario F2: Archivo ejecutable no permitido devuelve UPLOAD_VALIDATION_ERROR."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    files = {"file": ("malicious_payload.exe", b"MZ\x90\x00executable_bytes", "application/x-msdownload")}
+    data = {"project_id": project_id}
+
+    res = client.post("/api/v1/documents/upload", headers=headers, data=data, files=files)
+    assert res.status_code == 400
+    body = res.json()
+    assert body["code"] == "UPLOAD_VALIDATION_ERROR"
+    assert "no permitido" in body["message"].lower()
+
+
+def test_upload_validation_error_oversized_file(client: TestClient, db_session: Session, monkeypatch):
+    """Escenario F3: Archivo que excede el límite máximo devuelve UPLOAD_VALIDATION_ERROR."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    from app.core.settings import settings
+    # Reducir temporalmente el límite para prueba a 1 MB
+    monkeypatch.setattr(settings, "MAX_UPLOAD_SIZE_MB", 1)
+
+    # 1.5 MB de datos
+    big_bytes = b"%PDF-" + b"0" * (int(1.5 * 1024 * 1024))
+    files = {"file": ("oversized_drawing.pdf", big_bytes, "application/pdf")}
+    data = {"project_id": project_id}
+
+    res = client.post("/api/v1/documents/upload", headers=headers, data=data, files=files)
+    assert res.status_code == 400
+    body = res.json()
+    assert body["code"] == "UPLOAD_VALIDATION_ERROR"
+    assert "excede el tamaño máximo" in body["message"].lower()
+
+
+def test_upload_path_traversal_sanitization(client: TestClient, db_session: Session):
+    """Escenario G: Sanitización contra ataques de path traversal."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    pdf_bytes = _create_dummy_pdf_bytes("Sanitization Test")
+    malicious_name = "../../../etc/passwd.pdf"
+    files = {"file": (malicious_name, pdf_bytes, "application/pdf")}
+    data = {"project_id": project_id}
+
+    res = client.post("/api/v1/documents/upload", headers=headers, data=data, files=files)
+    assert res.status_code == 201
+    body = res.json()
+    assert ".." not in body["filename"]
+    assert "/" not in body["filename"]
+    assert "\\" not in body["filename"]
+    assert body["filename"] == "passwd.pdf"
+
+
+def test_reprocess_failed_document_retains_id(client: TestClient, db_session: Session):
+    """Escenario H: Reintento de procesamiento conserva el mismo document_id sin volver a subir."""
+    ctx = _get_test_context(client, db_session)
+    headers = ctx["headers"]
+    project_id = ctx["project"].id
+
+    # Cargar documento con auto_process=False
+    pdf_bytes = _create_dummy_pdf_bytes("Plano para reprocesar")
+    files = {"file": ("plano_reproceso.pdf", pdf_bytes, "application/pdf")}
+    res = client.post(
+        "/api/v1/documents/upload",
+        headers=headers,
+        data={"project_id": project_id, "auto_process": "false"},
+        files=files
+    )
+    assert res.status_code == 201
+    doc_id = res.json()["document_id"]
+
+    # Invocar endpoint de procesamiento manual / reintento
+    process_res = client.post(f"/api/v1/documents/{doc_id}/process", headers=headers, json={"dpi": 150})
+    assert process_res.status_code == 200
+    doc_data = process_res.json()
+    assert doc_data["id"] == doc_id
+    assert doc_data["status"] == "ready"
+    assert len(doc_data["sheets"]) == 1
+
