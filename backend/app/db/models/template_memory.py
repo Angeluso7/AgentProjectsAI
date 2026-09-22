@@ -45,15 +45,31 @@ class SymbolTemplate(Base):
     __tablename__ = "symbol_templates"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    library_id = Column(String(36), ForeignKey("symbol_libraries.id", ondelete="CASCADE"), nullable=False)
+    library_id = Column(String(36), ForeignKey("symbol_libraries.id", ondelete="CASCADE"), nullable=True)
     
-    symbol_class = Column(String(100), index=True, nullable=False) # e.g. "door_single_swing_90", "outlet_grounded"
+    symbol_class = Column(String(100), index=True, nullable=False) # e.g. "door_single_swing_90", "outlet_grounded", "control_valve"
     display_name = Column(String(150), nullable=False)
     aliases = Column(JSON, default=list) # ["P1", "P-01", "Puerta de Paso"]
     
-    image_template_path = Column(String(500), nullable=True) # PNG con fondo transparente
+    image_template_path = Column(String(500), nullable=True) # PNG con fondo transparente / crop original
+    normalized_mask_path = Column(String(500), nullable=True) # PNG binarizado cuadrado 128x128
+    mask_hash = Column(String(64), nullable=True) # SHA-256 de la máscara binaria
     vector_svg_path = Column(String(500), nullable=True)
-    feature_descriptors = Column(JSON, default=dict) # ORB/SIFT/Embedding descriptor
+    
+    # Descriptores de forma y momentos geométricos
+    hu_moments = Column(JSON, default=list) # 7 Momentos de Hu invariantes a rotación/escala
+    contour_signature = Column(JSON, default=list) # Perfil radial de 128 puntos
+    canonical_width_mm = Column(Float, nullable=True)
+    canonical_height_mm = Column(Float, nullable=True)
+    aspect_ratio = Column(Float, nullable=True)
+    primitive_signature = Column(JSON, default=dict) # Conteo de arcos, círculos, líneas
+    
+    # Configuración de detección y scoping
+    rotation_invariance_mode = Column(String(30), default="orthogonal_4_rotations") # orthogonal_4_rotations (0, 90, 180, 270) o free_rotation
+    is_active_for_detection = Column(Boolean, default=True, nullable=False, index=True)
+    organization_id = Column(String(36), nullable=True, index=True)
+    
+    feature_descriptors = Column(JSON, default=dict) # ORB/SIFT/Embedding descriptor legado
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

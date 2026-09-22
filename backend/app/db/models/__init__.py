@@ -31,7 +31,8 @@ from app.db.models.active_learning import (
     ManualAnnotation, KnowledgeLibraryEntry, ActiveLearningPromotion
 )
 from app.db.models.intake_extractions import (
-    SourceExtraction, ExtractedItem, RuleDocument, RuleDocumentItem
+    SourceExtraction, ExtractedItem, RuleDocument, RuleDocumentItem,
+    StructuredTable, StructuredSymbol, StructuredEquipment, StructuredRulePremise
 )
 from app.db.models.research import (
     ResearchQuery, ResearchResult, ResearchSource, ResearchItem
@@ -54,9 +55,13 @@ from app.db.models.maturity import (
 from app.db.models.acquisition import (
     InformationAcquisitionRequest
 )
+from app.db.models.translations import (
+    Translation
+)
 
 __all__ = [
     "Base",
+    "Translation",
     "InformationAcquisitionRequest",
     "ProjectMaturityProfile",
     "AssistantInteraction",
@@ -127,5 +132,9 @@ __all__ = [
     "ExtractedItem",
     "RuleDocument",
     "RuleDocumentItem",
+    "StructuredTable",
+    "StructuredSymbol",
+    "StructuredEquipment",
+    "StructuredRulePremise",
 ]
 
