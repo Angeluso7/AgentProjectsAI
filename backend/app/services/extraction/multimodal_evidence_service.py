@@ -72,6 +72,12 @@ class MultimodalEvidenceService:
                 document_id=document_id
             )
             for node in nodes:
+                # Sanitización de seguridad final antes de consultar y persistir
+                if node.title and len(node.title) > 200:
+                    node.title = node.title[:197].rsplit(" ", 1)[0] + "..."
+                if node.hierarchy_path and len(node.hierarchy_path) > 220:
+                    node.hierarchy_path = node.hierarchy_path[:215].rstrip("_/")
+
                 # Persistir en BD si no existe aún
                 existing = self.db.query(DocumentStructuralNode).filter(
                     DocumentStructuralNode.document_id == document_id,
@@ -98,7 +104,7 @@ class MultimodalEvidenceService:
                 }
                 evidence_payload["structural_nodes"].append(node_dict)
 
-                # Si es tabla, catalogarla en tables
+                # Catalogar en sub-listas especializadas de evidencia
                 if node.node_type == "table":
                     evidence_payload["tables"].append({
                         "node_id": node_id,
@@ -106,6 +112,69 @@ class MultimodalEvidenceService:
                         "headers": node.structured_payload.get("headers", []),
                         "rows": node.structured_payload.get("rows", []),
                         "row_count": node.structured_payload.get("row_count", 0),
+                        "crop_image_path": node.structured_payload.get("crop_image_path"),
+                        "markdown_repr": node.structured_payload.get("markdown_repr"),
+                        "bbox_normalized": node.bbox_normalized,
+                        "page_number": node.page_number,
+                        "extracted_symbols": node.structured_payload.get("extracted_symbols", []),
+                        "has_symbols": node.structured_payload.get("has_symbols", bool(node.structured_payload.get("extracted_symbols"))),
+                        "reading_orientation": node.structured_payload.get("reading_orientation"),
+                        "orientation": node.structured_payload.get("orientation") or node.structured_payload.get("reading_orientation"),
+                        "orientation_confidence": node.structured_payload.get("orientation_confidence", 1.0),
+                        "orientation_reason": node.structured_payload.get("orientation_reason", ""),
+                    })
+                elif node.node_type == "symbol":
+                    if "symbols" not in evidence_payload:
+                        evidence_payload["symbols"] = []
+                    evidence_payload["symbols"].append({
+                        "node_id": node_id,
+                        "title": node.title,
+                        "content_text": node.content_text,
+                        "crop_image_path": node.structured_payload.get("crop_image_path"),
+                        "caption_or_context": node.structured_payload.get("caption_or_context") or node.content_text,
+                        "bbox_normalized": node.bbox_normalized,
+                        "page_number": node.page_number,
+                        "canonical_symbol_family": node.structured_payload.get("canonical_symbol_family"),
+                        "standard_reference": node.structured_payload.get("standard_reference"),
+                        "discipline": node.structured_payload.get("discipline"),
+                        "category": node.structured_payload.get("category"),
+                        "technical_function": node.structured_payload.get("technical_function"),
+                        "source_table_id": node.structured_payload.get("source_table_id"),
+                        "row_index": node.structured_payload.get("row_index"),
+                        "col_index": node.structured_payload.get("col_index"),
+                        "cell_bbox": node.structured_payload.get("cell_bbox"),
+                        "row_bbox": node.structured_payload.get("row_bbox"),
+                        "needs_visual_crop": node.structured_payload.get("needs_visual_crop", False),
+                        "crop_error_reason": node.structured_payload.get("crop_error_reason"),
+                        "inner_drawing_bbox": node.structured_payload.get("inner_drawing_bbox"),
+                        "reading_orientation": node.structured_payload.get("reading_orientation"),
+                        "orientation": node.structured_payload.get("orientation") or node.structured_payload.get("reading_orientation"),
+                        "orientation_confidence": node.structured_payload.get("orientation_confidence", 1.0),
+                        "orientation_reason": node.structured_payload.get("orientation_reason", ""),
+                        "requires_human_review": node.structured_payload.get("requires_human_review", False),
+                    })
+                elif node.node_type == "figure":
+                    if "figures" not in evidence_payload:
+                        evidence_payload["figures"] = []
+                    evidence_payload["figures"].append({
+                        "node_id": node_id,
+                        "title": node.title,
+                        "content_text": node.content_text,
+                        "crop_image_path": node.structured_payload.get("crop_image_path"),
+                        "caption_or_context": node.structured_payload.get("caption_or_context"),
+                        "bbox_normalized": node.bbox_normalized,
+                        "page_number": node.page_number
+                    })
+                elif node.node_type == "image":
+                    if "images" not in evidence_payload:
+                        evidence_payload["images"] = []
+                    evidence_payload["images"].append({
+                        "node_id": node_id,
+                        "title": node.title,
+                        "content_text": node.content_text,
+                        "crop_image_path": node.structured_payload.get("crop_image_path"),
+                        "caption_or_context": node.structured_payload.get("caption_or_context"),
+                        "bbox_normalized": node.bbox_normalized,
                         "page_number": node.page_number
                     })
 
@@ -145,3 +214,4 @@ class MultimodalEvidenceService:
 
         self.db.commit()
         return evidence_payload
+
