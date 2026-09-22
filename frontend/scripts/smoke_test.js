@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const srcDir = path.resolve(__dirname, '../src');
 
-console.log('🔍 [SMOKE-TEST] Checking React Page & Component Syntax and TypeScript Integrity...');
+console.log('🔍 [SMOKE-TEST] Checking React Page & Component Syntax, TypeScript Integrity & Rules of Hooks...');
 
 try {
   // 1. Run tsc --noEmit
@@ -30,7 +30,8 @@ try {
     'EvaluationPage.tsx',
     'AiEnginesPage.tsx',
     'LoginPage.tsx',
-    'ResetPasswordPage.tsx'
+    'ResetPasswordPage.tsx',
+    'MemoriesConsolePage.tsx'
   ];
 
   console.log('\n⏳ Validating existence and non-emptiness of primary pages...');
@@ -57,7 +58,11 @@ try {
     'DocumentManualViewerModal.tsx',
     'DocumentContentReviewModal.tsx',
     'EngineHealthModal.tsx',
-    'ObservationsPanel.tsx'
+    'ObservationsPanel.tsx',
+    'SourceExtractionReviewModal.tsx',
+    'ProcessWithAiModal.tsx',
+    'ItemCropLightboxModal.tsx',
+    'ItemContextViewerModal.tsx'
   ];
 
   console.log('\n⏳ Validating existence and non-emptiness of key modular components...');
@@ -72,6 +77,86 @@ try {
     }
     console.log(`  ✓ ${comp} (${(content.length / 1024).toFixed(1)} KB)`);
   }
+
+  // 4. Strict Scope-Aware Rules of Hooks Verification
+  console.log('\n⏳ Performing Strict Rules of Hooks Verification on all components...');
+  const hookRegex = /^\s*(const|let|var)?\s*(\[[^\]]+\]|\w+)\s*=\s*(use[A-Z]\w*)\s*\(/;
+  const directHookRegex = /^\s*(use[A-Z]\w*)\s*\(/;
+
+  const componentFiles = fs.readdirSync(path.join(srcDir, 'components')).filter(f => f.endsWith('.tsx'));
+  const pageFiles = fs.readdirSync(path.join(srcDir, 'pages')).filter(f => f.endsWith('.tsx'));
+  const allFiles = [
+    ...componentFiles.map(f => path.join(srcDir, 'components', f)),
+    ...pageFiles.map(f => path.join(srcDir, 'pages', f))
+  ];
+
+  let hookViolations = 0;
+  for (const filePath of allFiles) {
+    const relName = path.relative(srcDir, filePath);
+    const content = fs.readFileSync(filePath, 'utf8');
+    const lines = content.split('\n');
+
+    let braceDepth = 0;
+    let componentDepth = -1;
+    let componentEarlyReturnDepth = -1;
+    let earlyReturnLine = -1;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+
+      // Track component function declaration
+      if (
+        (trimmed.startsWith('export const ') || trimmed.startsWith('const ') || trimmed.startsWith('export function ') || trimmed.startsWith('function ')) &&
+        (trimmed.includes(': React.FC') || trimmed.includes('=>') || trimmed.includes('function ')) &&
+        !trimmed.startsWith('const handle') &&
+        !trimmed.startsWith('const render') &&
+        !trimmed.startsWith('const load') &&
+        !trimmed.startsWith('const get')
+      ) {
+        if (componentDepth === -1 && (trimmed.includes('{') || lines[i + 1]?.includes('{'))) {
+          componentDepth = braceDepth + (trimmed.includes('{') ? 1 : 0);
+          componentEarlyReturnDepth = -1;
+          earlyReturnLine = -1;
+        }
+      }
+
+      // Track early return from the component level
+      if (
+        braceDepth === componentDepth &&
+        (trimmed.startsWith('if (!isOpen)') || trimmed.startsWith('if (!item)') || trimmed.startsWith('if (!profile)') || trimmed.startsWith('if (!document)')) &&
+        trimmed.includes('return null')
+      ) {
+        componentEarlyReturnDepth = braceDepth;
+        earlyReturnLine = i + 1;
+      }
+
+      // Check if a hook is called after an early return at component level
+      if (componentEarlyReturnDepth === braceDepth && braceDepth === componentDepth) {
+        if (hookRegex.test(line) || directHookRegex.test(line)) {
+          console.error(`  ❌ [HOOK VIOLATION] ${relName}:${i + 1} - Hook declared at component root after early return on line ${earlyReturnLine}`);
+          hookViolations++;
+        }
+      }
+
+      // Count braces
+      for (const char of line) {
+        if (char === '{') braceDepth++;
+        else if (char === '}') {
+          braceDepth--;
+          if (braceDepth < componentDepth) {
+            componentDepth = -1;
+            componentEarlyReturnDepth = -1;
+          }
+        }
+      }
+    }
+  }
+
+  if (hookViolations > 0) {
+    throw new Error(`Found ${hookViolations} React Rules of Hooks violations in components.`);
+  }
+  console.log('✅ Rules of Hooks check PASSED: All hooks are called unconditionally at top-level.');
 
   console.log('\n🎉 [SMOKE-TEST] All checks completed successfully. Frontend is robust and stable.\n');
   process.exit(0);

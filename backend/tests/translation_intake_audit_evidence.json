@@ -1,0 +1,51 @@
+{
+  "timestamp": "2026-09-15T23:54:18.615933",
+  "title": "Auditoría de Traducción Integrada y Resiliencia React",
+  "scenarios": {
+    "spanish_document": {
+      "source_language_configured": "auto",
+      "source_language_detected": "es",
+      "target_language": "es",
+      "translation_status": "not_required",
+      "llm_calls_made": 0,
+      "session_id": "74a36fe9-a915-488f-9851-42bda50e2edf",
+      "items_count": 1,
+      "sample_items": [
+        {
+          "item_id": "048827b4-48c6-4aff-9058-c3118962a8d9",
+          "title_original": "OGUC Capítulo 4 - Evacuación",
+          "translation_status": "not_required",
+          "translated_fields": {
+            "title": "OGUC Capítulo 4 - Evacuación",
+            "description": "Artículo 4.2.4: Las puertas de escape de los recintos de reunión deben abrir en el sentido de la evacuación. El ancho mínimo libre no será inferior a 0.90 metros.",
+            "content_text": "Artículo 4.2.4: Las puertas de escape de los recintos de reunión deben abrir en el sentido de la evacuación. El ancho mínimo libre no será inferior a 0.90 metros."
+          },
+          "destination": "rules_engine"
+        }
+      ]
+    },
+    "english_document": {
+      "source_language_configured": "auto",
+      "source_language_detected": "en",
+      "target_language": "es",
+      "translation_status": "completed",
+      "session_id": "3175cf92-0ddb-440a-ac74-26e231698ea0",
+      "items_count": 1,
+      "sample_items": [
+        {
+          "item_id": "d4ed7eed-b9e0-42f8-a8e8-c6449213eedf",
+          "title_original": "ANSI/ISA-5.1-2009 Instrumentation Standard",
+          "content_original": "Standard ANSI/ISA-5.1-2009 Instrumentation Symbols and Identification. Section 5.2 specifies that control valve actuators and fail-safe positions must be indicated on all P&ID diagrams with standard geometric bubble identifiers.",
+          "translation_status": "completed",
+          "translated_fields": {
+            "title": "ANSI/ISA-5.1-2009 Instrumentation Standard",
+            "description": "Standard ANSI/ISA-5.1-2009 Instrumentation Symbols and Identification. Sección 5.2 specifies that Válvula de control actuators and fail-safe positions must be indicated on all P&ID diagrams with standard geometric bubble iden",
+            "content_text": "Standard ANSI/ISA-5.1-2009 Instrumentation Symbols and Identification. Sección 5.2 specifies that Válvula de control actuators and fail-safe positions must be indicated on all P&ID diagrams with standard geometric bubble identifiers."
+          },
+          "item_type": "rule"
+        }
+      ],
+      "symbols_created_from_text": 0
+    }
+  }
+}

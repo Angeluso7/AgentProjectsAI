@@ -1,7 +1,7 @@
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, HTTPException, Body
 from pydantic import BaseModel
-from app.services.engines.registry import engine_registry, EngineDefinition
+from app.services.engines.registry import engine_registry, EngineDefinition, TaskAIPolicy
 
 router = APIRouter()
 
@@ -13,6 +13,38 @@ class UpdateEngineConfigRequest(BaseModel):
 
 class UpdateCredentialsRequest(BaseModel):
     credentials: Dict[str, str]
+
+class UpdateTaskPolicyRequest(BaseModel):
+    active_mode: Optional[str] = None
+    fallback_criteria: Optional[str] = None
+    escalation_conditions: Optional[str] = None
+
+@router.get("/policies", response_model=List[TaskAIPolicy])
+def list_task_ai_policies():
+    """Retorna la matriz de políticas de IA definidas por tarea técnica (opción gratuita, opción paga, fallback y escalamiento)."""
+    return engine_registry.list_task_policies()
+
+@router.get("/policies/{task_id}", response_model=TaskAIPolicy)
+def get_task_ai_policy(task_id: str):
+    """Obtiene la política de IA para una tarea específica."""
+    policy = engine_registry.get_task_policy(task_id)
+    if not policy:
+        raise HTTPException(status_code=404, detail=f"Política para tarea '{task_id}' no encontrada.")
+    return policy
+
+@router.put("/policies/{task_id}", response_model=TaskAIPolicy)
+def update_task_ai_policy(task_id: str, req: UpdateTaskPolicyRequest):
+    """Actualiza el modo activo o criterios de escalamiento/fallback para una tarea técnica."""
+    try:
+        updated = engine_registry.update_task_policy(
+            task_id=task_id,
+            active_mode=req.active_mode,
+            fallback_criteria=req.fallback_criteria,
+            escalation_conditions=req.escalation_conditions
+        )
+        return updated
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 @router.get("/", response_model=List[EngineDefinition])
 def list_all_engines(category: Optional[str] = None):

@@ -8,6 +8,20 @@ from app.core.logging import logger
 
 CONFIG_FILE_PATH = os.path.join(settings.BASE_DIR, "data", "config", "ai_engines_config.json")
 
+class TaskAIPolicy(BaseModel):
+    """Política de IA definida a nivel de tarea especializada (no como preferencia única global)."""
+    task_id: str                      # ocr, tables, symbols, reasoning, qa_qc_rules
+    task_name: str                    # Nombre descriptivo de la tarea
+    free_default_engine_id: str       # Motor gratuito por defecto
+    free_default_name: str            # Nombre legible del motor gratuito
+    paid_enabled_engine_id: str       # Motor pago disponible
+    paid_enabled_name: str            # Nombre legible del motor pago
+    fallback_criteria: str            # Criterio de fallback determinístico
+    escalation_conditions: str        # Condiciones de escalamiento a opción paga / avanzada
+    active_mode: str = "free_default" # free_default, paid_enabled, auto_escalate
+    last_evaluated_tier: str = "gratis"
+
+
 class EngineDefinition(BaseModel):
     id: str
     category: str  # ocr, symbols, layout, tables, embeddings, llm, rules
@@ -28,6 +42,7 @@ class EngineDefinition(BaseModel):
     latency_ms: Optional[float] = None
     last_tested: Optional[str] = None
     last_error: Optional[str] = None
+
 
 class EngineRegistry:
     """Registro y orquestador central de motores de IA y pipelines."""
@@ -354,8 +369,72 @@ class EngineRegistry:
         }
     ]
 
+    _DEFAULT_TASK_POLICIES: List[Dict[str, Any]] = [
+        {
+            "task_id": "ocr",
+            "task_name": "OCR y Reconocimiento de Capa de Texto",
+            "free_default_engine_id": "vector_pdf",
+            "free_default_name": "PyMuPDF Vectorial Nativo / Tesseract PSM 11 (Local)",
+            "paid_enabled_engine_id": "google_vision_ocr",
+            "paid_enabled_name": "Google Cloud Vision Document Text Detection",
+            "fallback_criteria": "Planos escaneados sin capa de texto vectorial o tasa de confianza de caracteres < 85%.",
+            "escalation_conditions": "Sellos municipales manuscritos, firmas no vectoriales, viñetas con distorsión angular o documentos normativos críticos.",
+            "active_mode": "free_default",
+            "last_evaluated_tier": "gratis"
+        },
+        {
+            "task_id": "tables",
+            "task_name": "Extracción y Rejilla de Tablas Técnicas",
+            "free_default_engine_id": "table_extractor_spatial",
+            "free_default_name": "TableExtractor Espacial Híbrido + PyMuPDF / OpenCV (Local Determinístico)",
+            "paid_enabled_engine_id": "azure_form_recognizer",
+            "paid_enabled_name": "Azure AI Document Intelligence / AWS Textract Table Analysis",
+            "fallback_criteria": "Tablas sin bordes perimetrales continuos, celdas combinadas irregulares o confianza de rejilla < 70%.",
+            "escalation_conditions": "Matrices normativas multipágina anidadas, cuadros de superficies con spans complejos y alto riesgo legal/financiero.",
+            "active_mode": "free_default",
+            "last_evaluated_tier": "gratis"
+        },
+        {
+            "task_id": "symbols",
+            "task_name": "Detección y Recorte de Símbolos en Celdas y Leyendas",
+            "free_default_engine_id": "cell_visual_inspector",
+            "free_default_name": "Table-Cell Visual Inspector B/N + OpenCV Componentes Conexos + PyMuPDF",
+            "paid_enabled_engine_id": "yolo_sahi_hybrid",
+            "paid_enabled_name": "YOLOv8 SAHI Sliced Inference + Vision LLM",
+            "fallback_criteria": "Tinta gráfica ambigua (< 12 píxeles oscuros o relación de aspecto anómala) o ausencia de coincidencia ontológica.",
+            "escalation_conditions": "Simbología de instrumentación no estándar ISA/ASME, trazos superpuestos con tuberías de fondo o tags no catalogados.",
+            "active_mode": "free_default",
+            "last_evaluated_tier": "gratis"
+        },
+        {
+            "task_id": "reasoning",
+            "task_name": "Inferencia Técnica y Resolución Semántica",
+            "free_default_engine_id": "deepseek_r1_local",
+            "free_default_name": "DeepSeek-R1 / Qwen2.5-14B Local (Ollama)",
+            "paid_enabled_engine_id": "gpt4o_cloud",
+            "paid_enabled_name": "OpenAI GPT-4o / Claude 3.5 Sonnet / Gemini 1.5 Pro",
+            "fallback_criteria": "Servicio local de inferencia no disponible, ventana de contexto > 16.000 tokens o latencia de respuesta > 30s.",
+            "escalation_conditions": "Contradicciones normativas complejas (ej. OGUC Art. 4.3.7 sectorización vs evacuación), arbitraje de auditoría o disputas de cumplimiento legal.",
+            "active_mode": "free_default",
+            "last_evaluated_tier": "gratis"
+        },
+        {
+            "task_id": "qa_qc_rules",
+            "task_name": "Verificación de Reglas Normativas QA/QC",
+            "free_default_engine_id": "deterministic_rule_engine",
+            "free_default_name": "Motor Determinístico Python Matemático (Cero Alucinación)",
+            "paid_enabled_engine_id": "llm_rule_verifier",
+            "paid_enabled_name": "Verificador Aumentado por LLM Multimodal",
+            "fallback_criteria": "Enunciado normativo redactado en lenguaje natural ambiguo sin parámetros numéricos inmediatos.",
+            "escalation_conditions": "Discrepancias entre ordenanzas municipales y normas nacionales chilenas (NCh) que exijan interpretación jurídica combinada.",
+            "active_mode": "free_default",
+            "last_evaluated_tier": "gratis"
+        }
+    ]
+
     def __init__(self):
         self._engines: Dict[str, Dict[str, EngineDefinition]] = {}
+        self._task_policies: Dict[str, TaskAIPolicy] = {}
         self._load_registry()
 
     def _load_registry(self) -> None:
@@ -365,21 +444,24 @@ class EngineRegistry:
         for cat in categories:
             self._engines[cat] = {}
 
-        # Cargar valores por defecto
+        # Cargar valores por defecto de motores
         for d in self._DEFAULT_ENGINES:
             eng = EngineDefinition(**d)
-            # Validar si tiene credenciales en variables de entorno
             if eng.required_credentials:
                 has_all = all(bool(os.getenv(k)) for k in eng.required_credentials)
                 eng.has_credentials = has_all
             self._engines[eng.category][eng.id] = eng
+
+        # Cargar valores por defecto de políticas por tarea
+        for p in self._DEFAULT_TASK_POLICIES:
+            self._task_policies[p["task_id"]] = TaskAIPolicy(**p)
 
         # Cargar sobrescrituras de configuración guardadas
         if os.path.exists(CONFIG_FILE_PATH):
             try:
                 with open(CONFIG_FILE_PATH, "r", encoding="utf-8") as f:
                     saved_data = json.load(f)
-                    for cat, engines_dict in saved_data.items():
+                    for cat, engines_dict in saved_data.get("engines", saved_data).items():
                         if cat in self._engines:
                             for eng_id, overrides in engines_dict.items():
                                 if eng_id in self._engines[cat]:
@@ -390,6 +472,18 @@ class EngineRegistry:
                                         current.parameters.update(overrides["parameters"])
                                     if "status" in overrides:
                                         current.status = overrides["status"]
+
+                    saved_policies = saved_data.get("task_policies", {})
+                    for tid, p_data in saved_policies.items():
+                        if tid in self._task_policies:
+                            pol = self._task_policies[tid]
+                            if "active_mode" in p_data:
+                                pol.active_mode = p_data["active_mode"]
+                                pol.last_evaluated_tier = "pago" if pol.active_mode == "paid_enabled" else "gratis"
+                            if "fallback_criteria" in p_data:
+                                pol.fallback_criteria = p_data["fallback_criteria"]
+                            if "escalation_conditions" in p_data:
+                                pol.escalation_conditions = p_data["escalation_conditions"]
             except Exception as e:
                 logger.warning(f"Error cargando archivo de configuración de motores: {e}")
 
@@ -397,18 +491,33 @@ class EngineRegistry:
         """Persiste la configuración de motores seleccionados y parámetros en disco."""
         try:
             os.makedirs(os.path.dirname(CONFIG_FILE_PATH), exist_ok=True)
-            export_data: Dict[str, Dict[str, Any]] = {}
+            export_engines: Dict[str, Dict[str, Any]] = {}
             for cat, engines_dict in self._engines.items():
-                export_data[cat] = {}
+                export_engines[cat] = {}
                 for eng_id, eng in engines_dict.items():
-                    export_data[cat][eng_id] = {
+                    export_engines[cat][eng_id] = {
                         "is_active": eng.is_active,
                         "status": eng.status,
                         "parameters": eng.parameters
                     }
+
+            export_policies: Dict[str, Any] = {}
+            for tid, pol in self._task_policies.items():
+                export_policies[tid] = {
+                    "active_mode": pol.active_mode,
+                    "fallback_criteria": pol.fallback_criteria,
+                    "escalation_conditions": pol.escalation_conditions,
+                    "last_evaluated_tier": pol.last_evaluated_tier
+                }
+
+            full_export = {
+                "engines": export_engines,
+                "task_policies": export_policies
+            }
+
             with open(CONFIG_FILE_PATH, "w", encoding="utf-8") as f:
-                json.dump(export_data, f, indent=2, ensure_ascii=False)
-            logger.info("Configuración de motores de IA guardada exitosamente.")
+                json.dump(full_export, f, indent=2, ensure_ascii=False)
+            logger.info("Configuración de motores y políticas de IA guardada exitosamente.")
         except Exception as e:
             logger.error(f"Error al guardar configuración de motores: {e}")
 
@@ -542,6 +651,42 @@ class EngineRegistry:
             "last_tested": eng.last_tested,
             "error": err_msg
         }
+
+    def list_task_policies(self) -> List[TaskAIPolicy]:
+        """Lista las políticas de IA configuradas para cada tarea técnica especializada."""
+        return list(self._task_policies.values())
+
+    def get_task_policy(self, task_id: str) -> Optional[TaskAIPolicy]:
+        """Obtiene la política de IA para una tarea técnica específica."""
+        return self._task_policies.get(task_id)
+
+    def update_task_policy(
+        self,
+        task_id: str,
+        active_mode: Optional[str] = None,
+        fallback_criteria: Optional[str] = None,
+        escalation_conditions: Optional[str] = None
+    ) -> TaskAIPolicy:
+        """Actualiza el modo o condiciones de la política de IA para una tarea técnica."""
+        policy = self._task_policies.get(task_id)
+        if not policy:
+            raise ValueError(f"Tarea técnica '{task_id}' no encontrada en la matriz de políticas.")
+
+        if active_mode:
+            if active_mode not in ["free_default", "paid_enabled", "auto_escalate"]:
+                raise ValueError(f"Modo '{active_mode}' inválido. Use 'free_default', 'paid_enabled' o 'auto_escalate'.")
+            policy.active_mode = active_mode
+            policy.last_evaluated_tier = "pago" if active_mode == "paid_enabled" else "gratis"
+
+        if fallback_criteria:
+            policy.fallback_criteria = fallback_criteria
+        if escalation_conditions:
+            policy.escalation_conditions = escalation_conditions
+
+        self._save_registry()
+        logger.info(f"Política de IA para tarea '{task_id}' actualizada a modo '{policy.active_mode}'.")
+        return policy
+
 
 # Instancia Singleton
 engine_registry = EngineRegistry()

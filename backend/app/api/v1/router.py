@@ -4,10 +4,11 @@ from app.api.v1.endpoints import (
     projects, documents, ocr, layout, tables, symbols, intake, knowledge, review_runs, findings,
     memories, rules, review, training, reports, exports, evaluations, engines, annotations,
     intake_extractions, completeness, observations, consolidated_reports, assistant,
-    maturity, acquisition
+    maturity, acquisition, dashboard, translations
 )
 
 api_router = APIRouter()
+api_router.include_router(dashboard.router, prefix="/dashboard", tags=["dashboard"])
 
 # 0. Identidad, Autenticación y Organizaciones (Fase 3)
 api_router.include_router(auth.router, prefix="/auth", tags=["auth"])
@@ -22,6 +23,7 @@ api_router.include_router(consolidated_reports.router, prefix="/reports/consolid
 api_router.include_router(assistant.router, prefix="/assistant", tags=["assistant"])
 api_router.include_router(maturity.router, prefix="", tags=["maturity"])
 api_router.include_router(acquisition.router, prefix="/acquisition", tags=["acquisition"])
+api_router.include_router(translations.router, prefix="/translations", tags=["translations"])
 
 # 1. Operaciones, Jobs Asíncronos y Pipelines
 

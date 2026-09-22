@@ -251,3 +251,115 @@ def run_live_engines_test(db: Session = Depends(get_db)):
         _LAST_ENGINE_AUDIT["embeddings"] = {"status": "ERROR", "latency_ms": 0, "timestamp": ts, "error": str(e)}
 
     return get_engine_health(db)
+
+
+@router.get("/db-check-0019")
+def verify_migration_0019(db: Session = Depends(get_db)):
+    """Verifica en vivo que la migración 0019 esté aplicada en la base de datos real."""
+    import uuid
+    from sqlalchemy import inspect
+    from app.db.models.intake import SourceAsset
+    from app.db.models.intake_extractions import SourceExtraction, ExtractedItem, StructuredSymbol
+    from app.db.models.core import Organization
+
+    inspector = inspect(db.bind)
+    cols = [c["name"] for c in inspector.get_columns("structured_symbols")]
+
+    required_new_cols = [
+        "source_render_mode",
+        "layout_context",
+        "context_association_mode",
+        "standard_reference",
+        "canonical_symbol_family",
+        "visual_variant_group_id",
+        "estimated_physical_size_mm",
+        "reused_for_matching_count",
+        "false_positive_count",
+        "human_validation_notes"
+    ]
+
+    missing = [c for c in required_new_cols if c not in cols]
+    if missing:
+        return {
+            "status": "error",
+            "message": f"Faltan columnas de migración 0019: {missing}",
+            "existing_columns": cols
+        }
+
+    # Prueba de inserción real
+    org = db.query(Organization).first()
+    if not org:
+        org = Organization(id=str(uuid.uuid4()), name="Test Org 0019", slug="test-org-0019")
+        db.add(org)
+        db.commit()
+
+    test_ext = SourceExtraction(
+        id=str(uuid.uuid4()),
+        organization_id=org.id,
+        title="Test Ingestion 0019",
+        document_type="norma",
+        discipline="piping"
+    )
+    db.add(test_ext)
+
+    test_item = ExtractedItem(
+        id=str(uuid.uuid4()),
+        extraction_id=test_ext.id,
+        item_type="symbol",
+        candidate_type="symbol_candidate",
+        title="Válvula de Compuerta Bridada",
+        discipline="piping",
+        source_origin="document"
+    )
+    db.add(test_item)
+
+    test_sym = StructuredSymbol(
+        id=str(uuid.uuid4()),
+        extracted_item_id=test_item.id,
+        symbol_name="Válvula de Compuerta Bridada",
+        standard_family="ISA-5.1",
+        discipline="piping",
+        category="valves",
+        source_render_mode="vector",
+        layout_context="inside_table",
+        context_association_mode="row_band",
+        standard_reference="Norma ISA S5.1 / ASME B16.34",
+        canonical_symbol_family="valves",
+        visual_variant_group_id=str(uuid.uuid4()),
+        estimated_physical_size_mm={"width_mm": 7.5, "height_mm": 6.8, "aspect_ratio": 1.10, "stroke_density": 0.16},
+        reused_for_matching_count=0,
+        false_positive_count=0,
+        human_validation_notes="Verificación exitosa de Fase 1"
+    )
+    db.add(test_sym)
+    db.commit()
+
+    # Releer de la base de datos
+    saved_sym = db.query(StructuredSymbol).filter(StructuredSymbol.id == test_sym.id).first()
+    retrieved_data = {
+        "id": saved_sym.id,
+        "symbol_name": saved_sym.symbol_name,
+        "source_render_mode": saved_sym.source_render_mode,
+        "layout_context": saved_sym.layout_context,
+        "context_association_mode": saved_sym.context_association_mode,
+        "standard_reference": saved_sym.standard_reference,
+        "canonical_symbol_family": saved_sym.canonical_symbol_family,
+        "estimated_physical_size_mm": saved_sym.estimated_physical_size_mm,
+        "reused_for_matching_count": saved_sym.reused_for_matching_count,
+        "false_positive_count": saved_sym.false_positive_count,
+        "human_validation_notes": saved_sym.human_validation_notes
+    }
+
+    # Limpieza
+    db.delete(test_sym)
+    db.delete(test_item)
+    db.delete(test_ext)
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": "Migración 0019 verificada con éxito: columnas presentes e inserción/lectura real validada.",
+        "verified_columns": required_new_cols,
+        "all_table_columns": cols,
+        "sample_retrieved_data": retrieved_data
+    }
