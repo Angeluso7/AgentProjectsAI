@@ -176,21 +176,27 @@ def match_occurrence(
 def list_symbol_occurrences(
     project_id: Optional[str] = Query(None, description="Filtra por ID de proyecto"),
     document_id: Optional[str] = Query(None, description="Filtra por documento de proyecto"),
-    matching_status: Optional[str] = Query(None, description="matched, ambiguous, unknown_symbol, rejected, unconfirmed"),
+    matching_status: Optional[str] = Query(None, description="matched, ambiguous, unknown_symbol, not_applicable, unmatched"),
     canonical_family: Optional[str] = Query(None, description="Filtra por familia canónica detectada"),
+    record_kind: Optional[str] = Query("occurrence", description="occurrence, candidate o all"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
 ):
     """
     Lista las ocurrencias de símbolos detectadas en documentos de proyectos,
-    incluyendo su estado de matching y scores multi-etapa.
+    filtrando candidatos no validados por defecto y suministrando metadatos completos de navegación contextual.
     """
     query = db.query(DetectedSymbol)
+    if record_kind and record_kind != "all":
+        query = query.filter(DetectedSymbol.record_kind == record_kind)
     if project_id:
         query = query.filter(DetectedSymbol.project_id == project_id)
     if document_id:
-        query = query.filter(DetectedSymbol.project_document_id == document_id)
+        query = query.filter(
+            (DetectedSymbol.project_document_id == document_id) |
+            (DetectedSymbol.document_id == document_id)
+        )
     if matching_status:
         query = query.filter(DetectedSymbol.matching_status == matching_status)
     if canonical_family:
@@ -199,33 +205,103 @@ def list_symbol_occurrences(
     total = query.count()
     items = query.order_by(DetectedSymbol.created_at.desc()).offset(offset).limit(limit).all()
 
+    response_items = []
+    for item in items:
+        sheet = item.sheet
+        page_num = sheet.sheet_number if sheet and sheet.sheet_number else 1
+        sheet_name = (sheet.title or sheet.sheet_code) if sheet else None
+        sheet_code = sheet.sheet_code if sheet else None
+
+        tmpl = item.matched_template
+        ver = item.matched_template_version
+        ev = ver.source_evidence if ver else None
+        is_sandbox = bool(tmpl and tmpl.status in ("sandbox", "test_only", "draft"))
+
+        response_items.append({
+            "id": str(item.id),
+            "record_kind": item.record_kind,
+            "environment": item.environment,
+            "classification": item.classification,
+            "matching_status": item.matching_status,
+            "matched_template_id": item.matched_template_id,
+            "matched_template_version_id": item.matched_template_version_id,
+            "canonical_code": tmpl.canonical_code if tmpl else item.detected_tag_or_code,
+            "canonical_name": tmpl.canonical_name if tmpl else None,
+            "template_status": tmpl.status if tmpl else None,
+            "is_sandbox_or_test_only": is_sandbox,
+            "evidence_kind": ev.evidence_kind if ev else None,
+            "document_id": item.document_id,
+            "project_document_id": item.project_document_id,
+            "project_id": item.project_id,
+            "sheet_id": item.sheet_id,
+            "page_number": page_num,
+            "sheet_name": sheet_name,
+            "sheet_code": sheet_code,
+            "table_id": item.table_id,
+            "cell_id": item.cell_id,
+            "bbox": item.bbox or [],
+            "bbox_normalized": item.bbox_normalized or [],
+            "cell_bbox": item.cell_bbox,
+            "inner_drawing_bbox": item.inner_drawing_bbox,
+            "symbol_crop_bbox": item.symbol_crop_bbox,
+            "crop_image_path": item.crop_image_path,
+            "crop_image_hash": item.crop_image_hash,
+            "geometric_evidence": item.geometric_evidence,
+            "geometric_confidence": item.geometric_confidence,
+            "match_score": item.match_score,
+            "geometry_score": item.geometry_score,
+            "topology_score": item.topology_score,
+            "visual_score": item.visual_score,
+            "context_score": item.context_score,
+            "detected_tag_or_code": item.detected_tag_or_code,
+            "context_text": item.context_text,
+            "review_status": item.review_status,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+            "context_navigation": {
+                "document_id": item.document_id,
+                "sheet_id": item.sheet_id,
+                "page_number": page_num,
+                "sheet_name": sheet_name,
+                "bbox": item.bbox,
+                "bbox_normalized": item.bbox_normalized,
+                "table_id": item.table_id,
+                "cell_id": item.cell_id,
+            },
+        })
+
     return {
         "total": total,
-        "items": [
-            {
-                "id": str(item.id),
-                "project_id": item.project_id,
-                "project_document_id": item.project_document_id,
-                "classification": item.classification,
-                "geometric_evidence": item.geometric_evidence,
-                "geometric_confidence": item.geometric_confidence,
-                "matching_status": item.matching_status,
-                "matched_template_id": item.matched_template_id,
-                "matched_template_version_id": item.matched_template_version_id,
-                "match_score": item.match_score,
-                "geometry_score": item.geometry_score,
-                "topology_score": item.topology_score,
-                "visual_score": item.visual_score,
-                "context_score": item.context_score,
-                "detected_tag_or_code": item.detected_tag_or_code,
-                "crop_image_path": item.crop_image_path,
-                "crop_image_hash": item.crop_image_hash,
-                "review_status": item.review_status,
-                "created_at": item.created_at.isoformat() if item.created_at else None,
-            }
-            for item in items
-        ],
+        "items": response_items,
     }
+
+
+@router.post("/templates/versions/{version_id}/approve-production")
+def approve_template_version_for_production(
+    version_id: str,
+    reviewer_id: str = Query(..., description="ID del revisor HITL"),
+    rationale: str = Query(..., description="Justificación técnica de aprobación"),
+    db: Session = Depends(get_db),
+):
+    """
+    Gobernanza HITL: Aprueba una versión de plantilla para uso productivo.
+    Rechaza activación si la evidencia es sintética o incompleta.
+    """
+    service = CanonicalPipingCatalogService(db)
+    try:
+        ver = service.approve_template_version_for_production(
+            version_id=version_id,
+            reviewer_id=reviewer_id,
+            rationale=rationale
+        )
+        return {
+            "version_id": ver.id,
+            "approval_status": ver.approval_status,
+            "template_status": ver.template.status if ver.template else "active",
+            "message": "Versión de plantilla aprobada formalmente para producción."
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 
 
 @router.post("/decisions", response_model=SymbolReviewDecisionResponse)

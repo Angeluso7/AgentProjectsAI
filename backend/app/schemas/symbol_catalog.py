@@ -146,15 +146,66 @@ class MatchOccurrenceRequest(BaseModel):
     project_document_id: Optional[str] = None
     sheet_id: Optional[str] = None
     page_number: int = 1
+    execution_mode: str = "production" # production, sandbox
 
 
 class MatchOccurrenceResponse(BaseModel):
     occurrence_id: Optional[str] = None
+    record_kind: str = "occurrence"
+    environment: str = "production"
     matching_status: str # matched, ambiguous, unknown_symbol, not_applicable
     best_match: Optional[ProgressiveMatchResult] = None
     candidate_matches: List[ProgressiveMatchResult] = Field(default_factory=list)
     rejection_reason: Optional[str] = None
     research_case_id: Optional[str] = None
+    is_sandbox_or_test_only: bool = False
+    warning: Optional[str] = None
+
+
+class OccurrenceItemDetail(BaseModel):
+    id: str
+    record_kind: str = "occurrence" # candidate, occurrence
+    environment: str = "production" # production, sandbox
+    classification: str = "symbol"
+    matching_status: str = "unmatched"
+    matched_template_id: Optional[str] = None
+    matched_template_version_id: Optional[str] = None
+    canonical_code: Optional[str] = None
+    canonical_name: Optional[str] = None
+    template_status: Optional[str] = None
+    is_sandbox_or_test_only: bool = False
+    evidence_kind: Optional[str] = None
+    document_id: Optional[str] = None
+    sheet_id: Optional[str] = None
+    page_number: int = 1
+    sheet_name: Optional[str] = None
+    sheet_code: Optional[str] = None
+    table_id: Optional[str] = None
+    cell_id: Optional[str] = None
+    bbox: List[float] = Field(default_factory=list)
+    bbox_normalized: List[float] = Field(default_factory=list)
+    cell_bbox: Optional[List[float]] = None
+    inner_drawing_bbox: Optional[List[float]] = None
+    symbol_crop_bbox: Optional[List[float]] = None
+    crop_image_path: Optional[str] = None
+    crop_image_hash: Optional[str] = None
+    geometric_evidence: bool = True
+    geometric_confidence: float = 1.0
+    match_score: Optional[float] = None
+    geometry_score: Optional[float] = None
+    topology_score: Optional[float] = None
+    visual_score: Optional[float] = None
+    context_score: Optional[float] = None
+    context_text: Optional[str] = None
+    detected_tag_or_code: Optional[str] = None
+    review_status: str = "unreviewed"
+    created_at: Optional[datetime] = None
+    context_navigation: Dict[str, Any] = Field(default_factory=dict)
+
+
+class OccurrenceListResponse(BaseModel):
+    total: int
+    items: List[OccurrenceItemDetail] = Field(default_factory=list)
 
 
 class SymbolReviewDecisionRequest(BaseModel):

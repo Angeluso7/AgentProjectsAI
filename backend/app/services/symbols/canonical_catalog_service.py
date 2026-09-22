@@ -233,14 +233,20 @@ class CanonicalPipingCatalogService:
         category: Optional[str] = None,
         context_text: Optional[str] = None,
         detected_tag: Optional[str] = None,
-        organization_id: Optional[str] = None
+        organization_id: Optional[str] = None,
+        execution_mode: str = "production"
     ) -> Dict[str, Any]:
         """
-        Ejecuta el matching determinista progresivo:
+        Ejecuta el matching determinista progresivo multi-etapa:
         Etapa 1: Filtro preliminar de primitivas y aspecto -> geometric_score (0.35)
         Etapa 2: Topología y relaciones espaciales -> topology_score (0.20)
         Etapa 3: Correlación cruzada normalizada y Hu Moments -> visual_score (0.35)
         Etapa 4: Desempate contextual por tag/descripción -> context_score (0.10)
+
+        Gobernanza de Modos:
+        - production: solo plantillas con status == 'active', versiones approval_status == 'approved'
+          y evidencia 'real_authorized' o 'redacted_real'. Plantillas 'sandbox'/'test_only' son ignoradas.
+        - sandbox: permite evaluar plantillas en estado 'sandbox' / 'test_only'.
         """
         if not os.path.exists(crop_image_path):
             return {
@@ -265,10 +271,30 @@ class CanonicalPipingCatalogService:
         cand_ar = float(cand_features.get("aspect_ratio") or 1.0)
         cand_density = float(cand_features.get("density") or 0.2)
 
-        # Consultar plantillas activas de catálogo que posean versiones aprobadas
-        query = self.db.query(SymbolTemplate).filter(
-            (SymbolTemplate.status == "active") | (SymbolTemplate.is_active_for_detection == True)
-        )
+        # Detección de contaminación severa por líneas de borde de tabla/grilla
+        edge_thickness = 2
+        h_m, w_m = cand_mask.shape[:2]
+        top_dens = float(np.count_nonzero(cand_mask[:edge_thickness, :] > 0)) / max(1, w_m * edge_thickness)
+        bottom_dens = float(np.count_nonzero(cand_mask[-edge_thickness:, :] > 0)) / max(1, w_m * edge_thickness)
+        left_dens = float(np.count_nonzero(cand_mask[:, :edge_thickness] > 0)) / max(1, h_m * edge_thickness)
+        right_dens = float(np.count_nonzero(cand_mask[:, -edge_thickness:] > 0)) / max(1, h_m * edge_thickness)
+        has_border_contamination = max(top_dens, bottom_dens, left_dens, right_dens) > 0.65
+
+        # Detección de falso positivo topológico (dos triángulos desconectados sin vértice central común)
+        center_region = cand_mask[h_m // 3 : 2 * h_m // 3, w_m // 3 : 2 * w_m // 3]
+        center_density = float(np.count_nonzero(center_region > 0)) / max(1, center_region.size)
+        lacks_central_junction = center_density < 0.015
+
+        # Consultar plantillas según modo de ejecución
+        query = self.db.query(SymbolTemplate)
+        if execution_mode == "production":
+            query = query.filter(SymbolTemplate.status == "active")
+        else: # sandbox
+            query = query.filter(
+                (SymbolTemplate.status.in_(["active", "sandbox", "test_only"])) |
+                (SymbolTemplate.is_active_for_detection == True)
+            )
+
         if discipline:
             query = query.filter(SymbolTemplate.discipline == discipline)
         if category:
@@ -280,36 +306,48 @@ class CanonicalPipingCatalogService:
                 "matching_status": "unknown_symbol",
                 "best_match": None,
                 "matches": [],
-                "rejection_reason": "No hay plantillas activas registradas en el catálogo para esta disciplina."
+                "rejection_reason": f"No hay plantillas elegibles registradas en el catálogo para modo {execution_mode} y disciplina {discipline}."
             }
 
         scored_candidates: List[Dict[str, Any]] = []
 
         for tmpl in templates:
-            versions = self.db.query(SymbolTemplateVersion).filter(
-                SymbolTemplateVersion.symbol_template_id == tmpl.id,
-                SymbolTemplateVersion.approval_status == "approved"
-            ).order_by(SymbolTemplateVersion.version_number.desc()).all()
-
-            if not versions:
-                version_id = tmpl.id
-                policy = getattr(tmpl, "rotation_invariance_mode", None) or "rotation_equivalent_180"
-                tmpl_hu = np.array(tmpl.hu_moments or [0.0] * 7, dtype=np.float32)
-                tmpl_ar = float(tmpl.aspect_ratio or 1.0)
-                mask_path = tmpl.normalized_mask_path
+            v_query = self.db.query(SymbolTemplateVersion).filter(
+                SymbolTemplateVersion.symbol_template_id == tmpl.id
+            )
+            if execution_mode == "production":
+                v_query = v_query.filter(SymbolTemplateVersion.approval_status == "approved")
             else:
-                top_ver = versions[0]
-                version_id = top_ver.id
-                policy = top_ver.orientation_policy or "rotation_equivalent_180"
-                tmpl_hu = np.array(top_ver.perceptual_signature.get("hu_moments") or tmpl.hu_moments or [0.0] * 7, dtype=np.float32)
-                tmpl_ar = float(top_ver.geometric_signature.get("aspect_ratio") or tmpl.aspect_ratio or 1.0)
-                mask_path = top_ver.canonical_crop_path or tmpl.normalized_mask_path
+                v_query = v_query.filter(
+                    SymbolTemplateVersion.approval_status.in_(["approved", "sandbox_approved", "test_only"])
+                )
+
+            eligible_versions = []
+            for v in v_query.order_by(SymbolTemplateVersion.version_number.desc()).all():
+                if execution_mode == "production":
+                    # En modo productivo, comprobar incondicionalmente evidencia autorizada
+                    ev = v.source_evidence
+                    if not ev or ev.evidence_kind == "synthetic":
+                        continue
+                eligible_versions.append(v)
+
+            if not eligible_versions:
+                continue
+
+            top_ver = eligible_versions[0]
+            version_id = top_ver.id
+            policy = top_ver.orientation_policy or "rotation_equivalent_180"
+            tmpl_hu = np.array(top_ver.perceptual_signature.get("hu_moments") or tmpl.hu_moments or [0.0] * 7, dtype=np.float32)
+            tmpl_ar = float(top_ver.geometric_signature.get("aspect_ratio") or tmpl.aspect_ratio or 1.0)
+            mask_path = top_ver.canonical_crop_path or tmpl.normalized_mask_path
 
             # ETAPA 1: SCORE GEOMÉTRICO (0.35)
             ar_diff = abs(cand_ar - tmpl_ar) / max(0.1, tmpl_ar)
             ar_score = max(0.0, 1.0 - ar_diff)
             density_score = max(0.0, 1.0 - abs(cand_density - 0.22) * 2.5)
             geometric_score = round(0.60 * ar_score + 0.40 * density_score, 4)
+            if has_border_contamination:
+                geometric_score = min(geometric_score, 0.35)
 
             # ETAPA 2: SCORE TOPOLÓGICO (0.20)
             half_w = cand_mask.shape[1] // 2
@@ -330,6 +368,12 @@ class CanonicalPipingCatalogService:
 
             topology_symmetry = max(topology_symmetry_h, topology_symmetry_v)
             topology_score = round(min(1.0, topology_symmetry * 1.5), 4)
+
+            # Penalización severa para falso positivo sin unión en vértice
+            if lacks_central_junction:
+                topology_score = min(topology_score, 0.25)
+            if has_border_contamination:
+                topology_score = min(topology_score, 0.30)
 
             # ETAPA 3: SIMILITUD VISUAL (0.35) - Hu Moments + Rotaciones permitidas
             allowed_rots = self.get_rotations_for_policy(policy)
@@ -373,6 +417,8 @@ class CanonicalPipingCatalogService:
             hu_score = max(0.0, 1.0 - min(1.0, hu_dist * 5.0))
 
             visual_score = round(0.70 * best_visual_ncc + 0.30 * hu_score, 4)
+            if has_border_contamination:
+                visual_score = min(visual_score, 0.35)
 
             # ETAPA 4: DESEMPATE CONTEXTUAL (0.10)
             context_score = 0.0
@@ -423,7 +469,7 @@ class CanonicalPipingCatalogService:
                 "matching_status": "unknown_symbol",
                 "best_match": None,
                 "matches": [],
-                "rejection_reason": "Ninguna plantilla cumplió los filtros geométricos preliminares."
+                "rejection_reason": f"Ninguna plantilla aprobada cumplió los filtros geométricos preliminares para modo {execution_mode}."
             }
 
         best = scored_candidates[0]
@@ -459,7 +505,7 @@ class CanonicalPipingCatalogService:
             "matching_status": matching_status,
             "best_match": best,
             "matches": scored_candidates[:5],
-            "rejection_reason": None if matching_status != "unknown_symbol" else "Puntuación de coincidencia por debajo del umbral mínimo."
+            "rejection_reason": None if matching_status != "unknown_symbol" else "Puntuación de coincidencia por debajo del umbral mínimo o falta de plantilla activa autorizada."
         }
 
     # ------------------------------------------------------------------------
@@ -467,7 +513,7 @@ class CanonicalPipingCatalogService:
     # ------------------------------------------------------------------------
     def match_occurrence(
         self,
-        payload_or_id: Any,
+        payload_or_id: Any = None,
         **kwargs
     ) -> MatchOccurrenceResponse:
         """
@@ -478,9 +524,11 @@ class CanonicalPipingCatalogService:
         elif isinstance(payload_or_id, dict):
             payload = MatchOccurrenceRequest(**payload_or_id)
         else:
-            occ_id = str(payload_or_id) if payload_or_id else kwargs.get("occurrence_id")
-            payload = MatchOccurrenceRequest(occurrence_id=occ_id, **kwargs)
+            kw = dict(kwargs)
+            occ_id = str(payload_or_id) if payload_or_id else kw.pop("occurrence_id", None)
+            payload = MatchOccurrenceRequest(occurrence_id=occ_id, **kw)
 
+        execution_mode = getattr(payload, "execution_mode", "production") or "production"
         occ = None
         crop_path = payload.crop_image_path
         context_text = payload.context_text
@@ -493,22 +541,31 @@ class CanonicalPipingCatalogService:
                 context_text = occ.context_text or context_text
                 detected_tag = occ.detected_tag_or_code or detected_tag
 
-                # Validar precondiciones estrictas
+                # Validar precondiciones estrictas: Candidato vs Ocurrencia
                 is_valid, reason = self.validate_matching_preconditions(occ)
                 if not is_valid:
+                    occ.record_kind = "candidate"
                     occ.matching_status = "not_applicable"
+                    occ.environment = execution_mode
                     self.db.commit()
                     return MatchOccurrenceResponse(
                         occurrence_id=str(occ.id),
+                        record_kind="candidate",
+                        environment=execution_mode,
                         matching_status="not_applicable",
                         best_match=None,
                         candidate_matches=[],
                         rejection_reason=reason
                     )
+                else:
+                    occ.record_kind = "occurrence"
+                    occ.environment = execution_mode
 
         if not crop_path or not os.path.exists(crop_path):
             return MatchOccurrenceResponse(
                 occurrence_id=str(occ.id) if occ else None,
+                record_kind="candidate" if not occ or not occ.has_real_geometry else "occurrence",
+                environment=execution_mode,
                 matching_status="not_applicable",
                 best_match=None,
                 candidate_matches=[],
@@ -519,7 +576,8 @@ class CanonicalPipingCatalogService:
             crop_image_path=crop_path,
             discipline=payload.discipline,
             context_text=context_text,
-            detected_tag=detected_tag
+            detected_tag=detected_tag,
+            execution_mode=execution_mode
         )
 
         status_str = match_res["matching_status"]
@@ -557,10 +615,28 @@ class CanonicalPipingCatalogService:
                 matching_verdict=m.get("matching_verdict", "rejected")
             ))
 
+        # Invariante de Gobernanza: En modo producción, un match solo es válido si la plantilla es 'active' y versión 'approved'
+        is_sandbox_template = False
+        warning_msg = None
+        if best_match_dto:
+            matched_tmpl = self.db.query(SymbolTemplate).filter(SymbolTemplate.id == best_match_dto.template_id).first()
+            matched_v = self.db.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == best_match_dto.version_id).first()
+            if matched_tmpl and matched_tmpl.status in ("sandbox", "test_only", "draft"):
+                is_sandbox_template = True
+                if execution_mode == "production":
+                    # Prohibido activar match productivo contra plantilla no productiva
+                    status_str = "not_applicable"
+                    best_match_dto.matching_verdict = "rejected"
+                    warning_msg = "Match productivo denegado: la plantilla coincide pero no posee estatus activo/aprobado de producción."
+                else:
+                    warning_msg = "Aviso: Match ejecutado en entorno sandbox con plantilla no productiva (test_only/sandbox)."
+
         research_case_id = None
-        # Actualizar DetectedSymbol si existe
+        # Actualizar DetectedSymbol/SymbolOccurrence si existe
         if occ:
             occ.matching_status = status_str
+            occ.record_kind = "occurrence"
+            occ.environment = execution_mode
             if best_match_dto and status_str == "matched":
                 occ.matched_template_id = best_match_dto.template_id
                 occ.matched_template_version_id = best_match_dto.version_id
@@ -570,12 +646,29 @@ class CanonicalPipingCatalogService:
                 occ.visual_score = best_match_dto.visual_score
                 occ.context_score = best_match_dto.context_score
                 occ.detected_tag_or_code = best_match_dto.canonical_code
+            elif status_str == "ambiguous":
+                # Registrar decisión de revisión para desempate HITL
+                rev_decision = SymbolReviewDecision(
+                    subject_type="occurrence",
+                    subject_id=str(occ.id),
+                    decision="needs_review",
+                    reviewer_id="system_ambiguity_detector",
+                    rationale=f"Empate técnico entre candidatos dentro del margen de ambigüedad ({AMBIGUITY_MARGIN*100:.1f}%). Requiere revisión HITL.",
+                    evidence_snapshot={
+                        "best_match": best_match_dto.dict() if best_match_dto else None,
+                        "candidate_matches": [m.dict() for m in matches_dto[:2]]
+                    }
+                )
+                self.db.add(rev_decision)
             elif status_str == "unknown_symbol":
-                # Registrar o vincular a SymbolUnknownResearchCase
+                # Registrar formalmente caso de investigación para símbolo geométrico desconocido
                 rc = SymbolUnknownResearchCase(
                     symbol_occurrence_id=str(occ.id),
                     status="unknown",
-                    research_notes=f"Geometría válida sin match canónico en disciplina {payload.discipline}."
+                    search_query=f"Unknown piping symbol in {payload.discipline}",
+                    proposed_name="SYM-UNKNOWN-001",
+                    proposed_standard_reference="PIP PNC00001 / ISA-5.1",
+                    research_notes=f"SYM-UNKNOWN-001: Geometría real válida detectada sin coincidencia en catálogo canónico activo ({payload.discipline})."
                 )
                 self.db.add(rc)
                 self.db.flush()
@@ -585,11 +678,15 @@ class CanonicalPipingCatalogService:
 
         return MatchOccurrenceResponse(
             occurrence_id=str(occ.id) if occ else None,
+            record_kind="occurrence" if (occ and occ.has_real_geometry) else "candidate",
+            environment=execution_mode,
             matching_status=status_str,
             best_match=best_match_dto,
             candidate_matches=matches_dto,
             rejection_reason=match_res.get("rejection_reason"),
-            research_case_id=research_case_id
+            research_case_id=research_case_id,
+            is_sandbox_or_test_only=is_sandbox_template,
+            warning=warning_msg
         )
 
     # ------------------------------------------------------------------------
@@ -654,7 +751,25 @@ class CanonicalPipingCatalogService:
         if not crop_path or not os.path.exists(crop_path):
             raise ValueError(f"El símbolo candidato no cuenta con recorte físico válido en {crop_path}")
 
-        # 1. Buscar o crear SymbolTemplate
+        # 1. Aplicar Política de Gobernanza de Evidencia y Estados
+        if evidence_kind == "synthetic":
+            # REGLA: Si la evidencia es sintética, NO puede ser 'active' ni 'approved' para producción.
+            template_status = "sandbox"
+            version_approval_status = "sandbox_approved"
+            source_kind = "synthetic_fixture"
+        elif evidence_kind in ("real_authorized", "redacted_real"):
+            # REGLA: Evidencia real debe ser íntegra y trazable
+            if not crop_hash:
+                raise ValueError("Governance Violation: Missing crop image hash in source evidence.")
+            if not reviewer_id:
+                raise ValueError("Governance Violation: HITL Reviewer ID is required for approving real authorized template.")
+            template_status = "active"
+            version_approval_status = "approved"
+            source_kind = "normative_document" if evidence_kind == "real_authorized" else "project_legend"
+        else:
+            raise ValueError(f"Governance Violation: Tipo de evidencia desconocido '{evidence_kind}'.")
+
+        # Buscar o crear SymbolTemplate
         tmpl = self.db.query(SymbolTemplate).filter(
             (SymbolTemplate.canonical_code == canonical_code) |
             (SymbolTemplate.symbol_class == subcategory)
@@ -672,7 +787,7 @@ class CanonicalPipingCatalogService:
                 technical_function=technical_function,
                 standard_reference=standard_reference,
                 aliases=[canonical_name, canonical_code, sym.symbol_name],
-                status="active",
+                status=template_status,
                 created_by=reviewer_id
             )
             self.db.add(tmpl)
@@ -680,7 +795,7 @@ class CanonicalPipingCatalogService:
         else:
             tmpl.canonical_code = canonical_code
             tmpl.canonical_name = canonical_name
-            tmpl.status = "active"
+            tmpl.status = template_status
             tmpl.is_active_for_detection = True
 
         # 2. Normalizar imagen y calcular hash del crop
@@ -711,8 +826,8 @@ class CanonicalPipingCatalogService:
         version = SymbolTemplateVersion(
             symbol_template_id=tmpl.id,
             version_number=next_ver_num,
-            approval_status="approved",
-            source_kind="project_legend" if evidence_kind != "synthetic" else "approved_manual_capture",
+            approval_status=version_approval_status,
+            source_kind=source_kind,
             canonical_crop_path=crop_path,
             canonical_crop_hash=crop_hash,
             normalized_representation={"mask_path": mask_path, "size": [128, 128]},
@@ -732,8 +847,8 @@ class CanonicalPipingCatalogService:
                 "topology_min": MIN_TOPOLOGY_THRESHOLD,
                 "ambiguity_margin": AMBIGUITY_MARGIN
             },
-            approved_by=reviewer_id,
-            approved_at=datetime.utcnow(),
+            approved_by=reviewer_id if version_approval_status == "approved" else None,
+            approved_at=datetime.utcnow() if version_approval_status == "approved" else None,
             notes=notes
         )
         self.db.add(version)
@@ -809,9 +924,9 @@ class CanonicalPipingCatalogService:
             subject_id=sym.id,
             decision="create_template",
             reviewer_id=reviewer_id,
-            rationale=f"Promovido a plantilla canónica {canonical_code} por {reviewer_id}. {notes or ''}".strip(),
-            evidence_snapshot={"crop_path": crop_path, "crop_hash": crop_hash},
-            new_state={"canonical_code": canonical_code, "version": next_ver_num}
+            rationale=f"Promovido a plantilla ({evidence_kind}, status={template_status}) por {reviewer_id}. {notes or ''}".strip(),
+            evidence_snapshot={"crop_path": crop_path, "crop_hash": crop_hash, "evidence_kind": evidence_kind},
+            new_state={"canonical_code": canonical_code, "version": next_ver_num, "status": template_status}
         )
         self.db.add(decision)
 
@@ -823,9 +938,73 @@ class CanonicalPipingCatalogService:
             version_id=version.id,
             version_number=next_ver_num,
             features_extracted=features_created,
-            status="active",
-            message=f"Símbolo promovido exitosamente como {canonical_code} versión {next_ver_num}."
+            status=template_status,
+            message=f"Símbolo promovido exitosamente como {canonical_code} versión {next_ver_num} (status={template_status})."
         )
+
+    def approve_template_version_for_production(
+        self,
+        version_id: str,
+        reviewer_id: str,
+        rationale: str
+    ) -> SymbolTemplateVersion:
+        """
+        Gobernanza HITL: Aprueba una versión de plantilla para uso productivo.
+        Reglas obligatorias:
+        - Si toda la evidencia es 'synthetic', RECHAZAR la activación productiva.
+        - Requiere evidencia 'real_authorized' o 'redacted_real'.
+        - Dicha evidencia debe contener hash de documento o crop, número de página >= 1, bbox y crop existente.
+        - Requiere decisión HITL explícita.
+        """
+        ver = self.db.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == version_id).first()
+        if not ver:
+            raise ValueError(f"No se encontró SymbolTemplateVersion con id {version_id}")
+
+        evidence = ver.source_evidence
+        if not evidence or evidence.evidence_kind == "synthetic":
+            raise ValueError("Governance Violation: Cannot approve a template version backed solely by synthetic evidence for production. Must remain 'test_only' or 'sandbox'.")
+
+        if evidence.evidence_kind not in ("real_authorized", "redacted_real"):
+            raise ValueError(f"Governance Violation: Invalid evidence kind '{evidence.evidence_kind}'. Must be 'real_authorized' or 'redacted_real'.")
+
+        if not evidence.crop_image_hash and not evidence.source_document_hash:
+            raise ValueError("Governance Violation: Incomplete evidence. Missing crop or document hash.")
+
+        if not evidence.page_number or evidence.page_number < 1:
+            raise ValueError("Governance Violation: Incomplete evidence. Invalid page number.")
+
+        if not evidence.bbox_normalized or len(evidence.bbox_normalized) != 4:
+            raise ValueError("Governance Violation: Incomplete evidence. Missing normalized bbox.")
+
+        if not evidence.crop_image_path or not os.path.exists(evidence.crop_image_path):
+            raise ValueError("Governance Violation: Incomplete evidence. Physical crop file not found on disk.")
+
+        if not reviewer_id or not reviewer_id.strip():
+            raise ValueError("Governance Violation: HITL Reviewer ID is required for approving a production template version.")
+
+        ver.approval_status = "approved"
+        ver.approved_by = reviewer_id
+        ver.approved_at = datetime.utcnow()
+
+        if ver.template:
+            ver.template.status = "active"
+
+        rev = SymbolReviewDecision(
+            subject_type="template_version",
+            subject_id=ver.id,
+            decision="approve",
+            reviewer_id=reviewer_id,
+            rationale=rationale,
+            evidence_snapshot={
+                "evidence_kind": evidence.evidence_kind,
+                "crop_hash": evidence.crop_image_hash,
+                "document_hash": evidence.source_document_hash
+            },
+            new_state={"approval_status": "approved", "template_status": "active"}
+        )
+        self.db.add(rev)
+        self.db.commit()
+        return ver
 
     # ------------------------------------------------------------------------
     # 8. REGISTRO FORMAL DE DECISIÓN HITL

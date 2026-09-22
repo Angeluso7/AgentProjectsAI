@@ -210,11 +210,12 @@ def test_promote_candidate_to_canonical_with_explicit_evidence(client: TestClien
     assert tmpl is not None
     assert tmpl.canonical_code == "PIP-VALVE-GATE"
     assert tmpl.is_active_for_detection is True
+    assert tmpl.status == "sandbox"
 
     version = db_session.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == data["version_id"]).first()
     assert version is not None
     assert version.orientation_policy == "rotation_equivalent_180"
-    assert version.approval_status == "approved"
+    assert version.approval_status == "sandbox_approved"
     assert len(version.geometric_features) >= 3
     assert version.source_evidence is not None
     assert version.source_evidence.evidence_kind == "synthetic"
@@ -313,6 +314,17 @@ def test_positive_progressive_matching_gate_valve_with_orientation_policy(client
     )
     db_session.add(version)
     tmpl.current_version_id = version.id
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="real_authorized",
+        source_standard_or_project="PIP PNC00001",
+        crop_image_path=tmpl_crop_path,
+        crop_image_hash=tmpl_hash,
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(evidence)
     db_session.commit()
 
     # 2. Ocurrencia rotada 180°
@@ -388,6 +400,17 @@ def test_negative_matching_and_unknown_symbol_research_case(client: TestClient, 
     )
     db_session.add(version)
     tmpl.current_version_id = version.id
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="real_authorized",
+        source_standard_or_project="PIP PNC00001",
+        crop_image_path=tmpl_crop_path,
+        crop_image_hash="dummy_hash_neg",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(evidence)
     db_session.commit()
 
     check_img = _draw_synthetic_check_valve_image()
@@ -455,6 +478,17 @@ def test_context_never_rescues_insufficient_geometry(client: TestClient, db_sess
     )
     db_session.add(version)
     tmpl.current_version_id = version.id
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="real_authorized",
+        source_standard_or_project="PIP PNC00001",
+        crop_image_path=tmpl_crop_path,
+        crop_image_hash="dummy_hash_resc",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(evidence)
     db_session.commit()
 
     # Imagen incompatible (Check) con texto perfecto de Gate Valve
@@ -582,6 +616,7 @@ def test_query_canonical_templates_and_occurrences_endpoints(client: TestClient,
 
     # 3. GET /occurrences
     occ = _create_detected_symbol(db_session, crop_path=tmpl_crop_path)
+    occ.record_kind = "occurrence"
     occ.matching_status = "matched"
     occ.detected_tag_or_code = "PIP-VALVE-GATE"
     db_session.commit()
@@ -591,6 +626,11 @@ def test_query_canonical_templates_and_occurrences_endpoints(client: TestClient,
     occ_data = resp.json()
     assert occ_data["total"] >= 1
     assert any(item["id"] == str(occ.id) for item in occ_data["items"])
+    # Verificar que entrega metadatos de navegación contextual
+    first_item = next(item for item in occ_data["items"] if item["id"] == str(occ.id))
+    assert "context_navigation" in first_item
+    assert first_item["context_navigation"]["document_id"] is not None
+    assert first_item["page_number"] >= 1
 
     # 4. GET /research-cases
     rc = SymbolUnknownResearchCase(
@@ -631,4 +671,447 @@ def test_symbol_template_not_promoted_to_rule_definition(db_session: Session):
     # Verificar que el catálogo de plantillas está completamente disjunto de las reglas normativas
     rule = db_session.query(RuleDefinition).filter(RuleDefinition.code == tmpl.canonical_code).first()
     assert rule is None, "Violación: Un SymbolTemplate fue catalogado erróneamente como RuleDefinition."
+
+
+# ====================================================================
+# NUEVAS PRUEBAS: GOBERNANZA, CANDIDATO VS OCURRENCIA, Y MATCHING
+# ====================================================================
+
+def test_governance_synthetic_fixture_cannot_activate_production_template(client: TestClient, db_session: Session, synthetic_temp_dir):
+    """
+    Política de Gobernanza (Sección A):
+    Si toda la evidencia de una plantilla es 'synthetic':
+    - NO puede quedar 'active' ni su versión como 'approved' para producción.
+    - Debe quedar 'sandbox' / 'sandbox_approved' o 'test_only'.
+    - Intentar aprobarla como productiva debe lanzar violación de gobernanza.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-TEST",
+        canonical_name="Gate Valve Synthetic Test",
+        display_name="Gate Valve Synthetic Test",
+        symbol_class="gate_valve",
+        status="sandbox"
+    )
+    db_session.add(tmpl)
+
+    crop_img = _draw_synthetic_gate_valve_image(0)
+    crop_path = os.path.join(synthetic_temp_dir, "synthetic_only.png")
+    cv2.imwrite(crop_path, crop_img)
+
+    version = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="sandbox_approved",
+        canonical_crop_path=crop_path
+    )
+    db_session.add(version)
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="synthetic",
+        crop_image_path=crop_path,
+        crop_image_hash="hash_synth_123",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(evidence)
+    db_session.commit()
+
+    # Intentar forzar aprobación productiva debe ser bloqueado
+    with pytest.raises(ValueError, match="Governance Violation: Cannot approve a template version backed solely by synthetic evidence"):
+        service.approve_template_version_for_production(
+            version_id=version.id,
+            reviewer_id="auditor_lead",
+            rationale="Intento no permitido de activar sintético en producción"
+        )
+
+
+def test_governance_real_authorized_evidence_with_hitl_approves_production(db_session: Session, synthetic_temp_dir):
+    """
+    Política de Gobernanza (Sección A):
+    Una plantilla solo puede ser aprobada y activada como productiva si posee evidencia
+    'real_authorized' o 'redacted_real' con hash, página, bbox, crop físico y decisión HITL.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-REAL",
+        canonical_name="Gate Valve Real Standard",
+        display_name="Gate Valve Real Standard",
+        symbol_class="gate_valve",
+        status="sandbox"
+    )
+    db_session.add(tmpl)
+
+    crop_img = _draw_synthetic_gate_valve_image(0)
+    crop_path = os.path.join(synthetic_temp_dir, "real_authorized_crop.png")
+    cv2.imwrite(crop_path, crop_img)
+    crop_hash = hashlib.sha256(open(crop_path, "rb").read()).hexdigest()
+
+    version = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="pending_review",
+        canonical_crop_path=crop_path
+    )
+    db_session.add(version)
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="real_authorized",
+        source_standard_or_project="PIP PNC00001 Rev 2024",
+        source_document_hash="sha256_standard_pdf_doc_hash_valid",
+        crop_image_path=crop_path,
+        crop_image_hash=crop_hash,
+        page_number=12,
+        bbox_normalized=[0.15, 0.25, 0.85, 0.85]
+    )
+    db_session.add(evidence)
+    db_session.commit()
+
+    # Aprobación formal HITL
+    approved_ver = service.approve_template_version_for_production(
+        version_id=version.id,
+        reviewer_id="lead_hitl_engineer",
+        rationale="Evidencia documental autorizada PIP PNC00001 verificada conforme a especificación técnica."
+    )
+
+    assert approved_ver.approval_status == "approved"
+    assert approved_ver.approved_by == "lead_hitl_engineer"
+    assert tmpl.status == "active"
+
+    # Verificar registro inmutable en SymbolReviewDecision
+    decision = db_session.query(SymbolReviewDecision).filter(
+        SymbolReviewDecision.subject_id == version.id,
+        SymbolReviewDecision.decision == "approve"
+    ).first()
+    assert decision is not None
+    assert decision.reviewer_id == "lead_hitl_engineer"
+
+
+def test_governance_incomplete_evidence_blocks_approval(db_session: Session, synthetic_temp_dir):
+    """
+    Política de Gobernanza (Sección A):
+    Evidencia incompleta (ej. sin hash, página inválida, o sin bbox) rechaza la aprobación.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-INCOMPLETE",
+        canonical_name="Gate Valve Incomplete",
+        display_name="Gate Valve Incomplete",
+        symbol_class="gate_valve",
+        status="draft"
+    )
+    db_session.add(tmpl)
+
+    crop_path = os.path.join(synthetic_temp_dir, "crop_incomplete.png")
+    cv2.imwrite(crop_path, _draw_synthetic_gate_valve_image(0))
+
+    version = SymbolTemplateVersion(id=str(uuid.uuid4()), symbol_template_id=tmpl.id, approval_status="pending_review")
+    db_session.add(version)
+
+    # Evidencia sin hashes ni bbox
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="real_authorized",
+        page_number=0, # Inválido
+        bbox_normalized=[], # Inválido
+        crop_image_path=crop_path
+    )
+    db_session.add(evidence)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="Governance Violation: Incomplete evidence"):
+        service.approve_template_version_for_production(
+            version_id=version.id,
+            reviewer_id="auditor",
+            rationale="Debe fallar por evidencia incompleta"
+        )
+
+
+def test_candidate_vs_occurrence_differentiation(db_session: Session, synthetic_temp_dir):
+    """
+    Candidato vs Ocurrencia (Sección B):
+    - Elemento sin precondiciones geométricas (ej. texto OCR o clasificación != 'symbol')
+      se mantiene estrictamente como 'candidate' con matching_status='not_applicable'.
+    - Elemento con precondiciones satisfechas transiciona a 'occurrence'.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    valid_crop = os.path.join(synthetic_temp_dir, "cand_vs_occ_crop.png")
+    cv2.imwrite(valid_crop, _draw_synthetic_gate_valve_image(0))
+
+    # 1. Candidato clasificado como figura
+    cand_fig = _create_detected_symbol(
+        db_session,
+        crop_path=valid_crop,
+        classification="figure"
+    )
+    cand_fig.record_kind = "candidate"
+    db_session.commit()
+
+    resp_fig = service.match_occurrence(occurrence_id=str(cand_fig.id), discipline="piping")
+    assert resp_fig.matching_status == "not_applicable"
+    assert resp_fig.record_kind == "candidate"
+
+    # Verificar que en BD sigue como candidate
+    db_session.refresh(cand_fig)
+    assert cand_fig.record_kind == "candidate"
+    assert not cand_fig.is_occurrence
+
+    # 2. Ocurrencia válida
+    occ_valid = _create_detected_symbol(
+        db_session,
+        crop_path=valid_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.92,
+        classification="symbol"
+    )
+    db_session.commit()
+
+    resp_valid = service.match_occurrence(
+        occurrence_id=str(occ_valid.id),
+        discipline="piping",
+        execution_mode="sandbox"
+    )
+    assert resp_valid.record_kind == "occurrence"
+    db_session.refresh(occ_valid)
+    assert occ_valid.record_kind == "occurrence"
+    assert occ_valid.is_occurrence
+
+
+def test_ocr_text_without_geometry_generates_zero_occurrences(db_session: Session, synthetic_temp_dir):
+    """
+    Prueba Obligatoria (Sección B):
+    Texto OCR 'gate valve' sin geometría visual válida no genera candidato válido ni ocurrencia.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    dummy_crop = os.path.join(synthetic_temp_dir, "ocr_no_geom.png")
+    cv2.imwrite(dummy_crop, np.ones((60, 60, 3), dtype=np.uint8) * 255)
+
+    doc, sheet = _create_test_document_and_sheet(db_session)
+    ocr_element = DetectedSymbol(
+        id=str(uuid.uuid4()),
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="valve",
+        bbox=[100, 100, 160, 160],
+        bbox_normalized=[0.1, 0.1, 0.16, 0.16],
+        confidence=0.99,
+        geometric_evidence=False, # Sin geometría
+        geometric_confidence=0.10,
+        classification="not_symbol",
+        inner_drawing_bbox=None,
+        symbol_crop_bbox=None,
+        crop_image_path=dummy_crop,
+        context_text="gate valve high pressure shutoff",
+        record_kind="candidate",
+        matching_status="unconfirmed"
+    )
+    db_session.add(ocr_element)
+    db_session.commit()
+
+    res = service.match_occurrence(occurrence_id=str(ocr_element.id), discipline="piping")
+    assert res.matching_status == "not_applicable"
+    assert res.best_match is None
+    db_session.refresh(ocr_element)
+    assert ocr_element.record_kind == "candidate"
+    assert not ocr_element.is_occurrence
+
+
+def test_production_matching_against_test_only_template_yields_not_applicable(db_session: Session, synthetic_temp_dir):
+    """
+    Prueba Obligatoria (Sección B y E):
+    Matching en modo 'production' contra una plantilla en 'sandbox' o 'test_only'
+    devuelve 'not_applicable' o 'unknown_symbol', NUNCA 'matched'.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl_crop = os.path.join(synthetic_temp_dir, "tmpl_sandbox_only.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-SANDBOX",
+        canonical_name="Gate Valve Sandbox",
+        display_name="Gate Valve Sandbox",
+        symbol_class="gate_valve",
+        discipline="piping",
+        status="sandbox" # No productiva
+    )
+    db_session.add(tmpl)
+
+    version = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="sandbox_approved",
+        canonical_crop_path=tmpl_crop,
+        orientation_policy="rotation_equivalent_180"
+    )
+    db_session.add(version)
+
+    evidence = SymbolSourceEvidence(
+        symbol_template_version_id=version.id,
+        evidence_kind="synthetic", # Sintética
+        crop_image_path=tmpl_crop,
+        crop_image_hash="hash_synth_test",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(evidence)
+    db_session.commit()
+
+    # Ocurrencia con geometría idéntica
+    cand_path = os.path.join(synthetic_temp_dir, "cand_for_sandbox.png")
+    cv2.imwrite(cand_path, _draw_synthetic_gate_valve_image(0))
+    occ = _create_detected_symbol(db_session, crop_path=cand_path, geometric_evidence=True, geometric_confidence=0.95)
+    db_session.commit()
+
+    # 1. Matching en MODO PRODUCCIÓN: Debe ser denegado / unknown
+    resp_prod = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="production"
+    )
+    assert resp_prod.matching_status != "matched", "Violación: Se produjo match productivo contra plantilla sandbox."
+    assert resp_prod.matching_status in ("not_applicable", "unknown_symbol")
+
+    # 2. Matching en MODO SANDBOX: Permitido con aviso
+    resp_sandbox = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="sandbox"
+    )
+    assert resp_sandbox.matching_status == "matched"
+    assert resp_sandbox.is_sandbox_or_test_only is True
+    assert resp_sandbox.warning is not None
+
+
+def test_false_positive_disconnected_triangles_rejected(db_session: Session, synthetic_temp_dir):
+    """
+    Falsos Positivos (Sección E):
+    Dos triángulos que no forman la topología de válvula (sin vértice central común)
+    son penalizados fuertemente y rechazados.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    # Crear dos triángulos separados por un espacio vacío central
+    img_false = np.ones((80, 80, 3), dtype=np.uint8) * 255
+    pts_left = np.array([[10, 30], [10, 60], [25, 45]], np.int32)
+    pts_right = np.array([[70, 30], [70, 60], [55, 45]], np.int32)
+    cv2.fillPoly(img_false, [pts_left], (30, 30, 30))
+    cv2.fillPoly(img_false, [pts_right], (30, 30, 30))
+
+    false_path = os.path.join(synthetic_temp_dir, "disconnected_triangles.png")
+    cv2.imwrite(false_path, img_false)
+
+    # Crear plantilla Gate Valve
+    tmpl_crop = os.path.join(synthetic_temp_dir, "tmpl_gate_valve_fp.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        status="active",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(id=str(uuid.uuid4()), symbol_template_id=tmpl.id, approval_status="approved", canonical_crop_path=tmpl_crop)
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(symbol_template_version_id=ver.id, evidence_kind="real_authorized", crop_image_path=tmpl_crop, crop_image_hash="h1", page_number=1, bbox_normalized=[0,0,1,1])
+    db_session.add(ev)
+    db_session.commit()
+
+    occ = _create_detected_symbol(db_session, crop_path=false_path, geometric_evidence=True, geometric_confidence=0.85)
+    db_session.commit()
+
+    res = service.match_occurrence(occurrence_id=str(occ.id), discipline="piping", execution_mode="production")
+    assert res.matching_status != "matched"
+    assert res.matching_status in ("unknown_symbol", "not_applicable")
+
+
+def test_false_positive_table_border_contamination_rejected(db_session: Session, synthetic_temp_dir):
+    """
+    Falsos Positivos (Sección E):
+    Crop con bordes densos de grilla/tabla es detectado como contaminado y penalizado.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    img_contaminated = _draw_synthetic_gate_valve_image(0)
+    # Contaminar los bordes superior e izquierdo con línea continua de tabla
+    img_contaminated[0:3, :] = 0
+    img_contaminated[:, 0:3] = 0
+
+    contam_path = os.path.join(synthetic_temp_dir, "contaminated_crop.png")
+    cv2.imwrite(contam_path, img_contaminated)
+
+    tmpl_crop = os.path.join(synthetic_temp_dir, "tmpl_clean.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        status="active",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(id=str(uuid.uuid4()), symbol_template_id=tmpl.id, approval_status="approved", canonical_crop_path=tmpl_crop)
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(symbol_template_version_id=ver.id, evidence_kind="real_authorized", crop_image_path=tmpl_crop, crop_image_hash="h_clean", page_number=1, bbox_normalized=[0,0,1,1])
+    db_session.add(ev)
+    db_session.commit()
+
+    occ = _create_detected_symbol(db_session, crop_path=contam_path, geometric_evidence=True, geometric_confidence=0.90)
+    db_session.commit()
+
+    res = service.match_occurrence(occurrence_id=str(occ.id), discipline="piping", execution_mode="production")
+    assert res.matching_status != "matched"
+
+
+def test_unknown_symbol_with_valid_geometry_creates_finding_and_research_case(db_session: Session, synthetic_temp_dir):
+    """
+    Símbolo Desconocido (Sección E):
+    Símbolo con evidencia geométrica válida sin match canónico crea SymbolUnknownResearchCase
+    con referencia a SYM-UNKNOWN-001 y NUNCA se auto-promueve automáticamente a plantilla.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    # Forma poligonal geométrica desconocida
+    img_unk = np.ones((80, 80, 3), dtype=np.uint8) * 255
+    cv2.circle(img_unk, (40, 40), 20, (30, 30, 30), 2)
+    cv2.line(img_unk, (20, 20), (60, 60), (30, 30, 30), 2)
+    unk_path = os.path.join(synthetic_temp_dir, "unknown_valid_geom.png")
+    cv2.imwrite(unk_path, img_unk)
+
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=unk_path,
+        geometric_evidence=True,
+        geometric_confidence=0.94,
+        classification="symbol"
+    )
+    db_session.commit()
+
+    res = service.match_occurrence(occurrence_id=str(occ.id), discipline="piping", execution_mode="production")
+    assert res.matching_status == "unknown_symbol"
+    assert res.research_case_id is not None
+
+    rc = db_session.query(SymbolUnknownResearchCase).filter(
+        SymbolUnknownResearchCase.id == res.research_case_id
+    ).first()
+    assert rc is not None
+    assert rc.status == "unknown"
+    assert "SYM-UNKNOWN-001" in rc.research_notes
+
+    # Verificar que NO se creó automáticamente una plantilla
+    templates_count = db_session.query(SymbolTemplate).filter(
+        SymbolTemplate.canonical_name == "SYM-UNKNOWN-001"
+    ).count()
+    assert templates_count == 0, "Violación: Un símbolo desconocido fue auto-promovido a plantilla sin decisión HITL."
+
 

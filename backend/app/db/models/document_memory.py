@@ -264,6 +264,8 @@ class DetectedSymbol(Base):
     symbol_crop_bbox = Column(JSON, nullable=True)
     crop_image_path = Column(String(500), nullable=True)
     crop_image_hash = Column(String(64), nullable=True)
+    record_kind = Column(String(30), default="candidate", nullable=False, index=True) # candidate, occurrence
+    environment = Column(String(30), default="production", nullable=False, index=True) # production, sandbox
     classification = Column(String(40), default="symbol", nullable=False, index=True) # symbol, figure, table_graphic, not_symbol, requires_human_review
     geometric_evidence = Column(Boolean, default=True, nullable=False)
     geometric_confidence = Column(Float, default=1.0, nullable=False)
@@ -289,6 +291,11 @@ class DetectedSymbol(Base):
     def has_real_geometry(self) -> bool:
         """Propiedad derivada obligatoria: no crea una segunda fuente de verdad independiente."""
         return bool(self.geometric_evidence and (self.geometric_confidence or 0.0) >= 0.70)
+
+    @property
+    def is_occurrence(self) -> bool:
+        """Indica si el registro es formalmente una ocurrencia reconocida y no solo un candidato sin validar."""
+        return self.record_kind == "occurrence"
 
     # Relaciones
     document = relationship("Document", back_populates="symbols")

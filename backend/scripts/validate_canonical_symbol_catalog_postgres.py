@@ -9,6 +9,9 @@ import sys
 import uuid
 import hashlib
 import subprocess
+import tempfile
+import cv2
+import numpy as np
 from datetime import datetime
 
 # Add backend directory to sys.path
@@ -32,6 +35,7 @@ from app.db.models.symbol_catalog import (
 )
 from app.db.models.template_memory import SymbolTemplate, SymbolLibrary
 from app.db.models.document_memory import DetectedSymbol, DocumentSheet, Document
+from app.services.symbols.canonical_catalog_service import CanonicalPipingCatalogService
 
 
 def run_cmd(cmd, cwd=root_dir):
@@ -53,12 +57,23 @@ def validate_postgres(db_url: str):
     print("\n--- 1. Initializing baseline schema via Base.metadata.create_all ---")
     Base.metadata.create_all(bind=engine)
     
-    # 2. Stamp at 0023
-    print("\n--- 2. Stamping Alembic at 0023_piping_canonical_catalog ---")
-    run_cmd(f'alembic -x url="{db_url}" stamp 0023_piping_canonical_catalog')
+    # 2. Stamp at 0024_symbol_governance
+    print("\n--- 2. Stamping Alembic at 0024_symbol_governance ---")
+    run_cmd(f'alembic -x url="{db_url}" stamp 0024_symbol_governance')
     
-    # 3. Test Downgrade to 0022
-    print("\n--- 3. Testing Alembic Downgrade -1 (reverting to 0022_expand_symbol_templates) ---")
+    # 3. Test Downgrade -1 (reverting to 0023_piping_canonical_catalog)
+    print("\n--- 3. Testing Alembic Downgrade -1 (reverting to 0023_piping_canonical_catalog) ---")
+    run_cmd(f'alembic -x url="{db_url}" downgrade -1')
+    
+    # Verify columns dropped
+    insp = sa.inspect(engine)
+    det_cols = [c["name"] for c in insp.get_columns("detected_symbols")]
+    assert "record_kind" not in det_cols, "record_kind should be dropped in 0023"
+    assert "environment" not in det_cols, "environment should be dropped in 0023"
+    print("Downgrade to 0023 verified: record_kind and environment columns dropped cleanly.")
+
+    # 4. Test Downgrade -1 (reverting to 0022_expand_symbol_templates)
+    print("\n--- 4. Testing Alembic Downgrade -1 (reverting to 0022_expand_symbol_templates) ---")
     run_cmd(f'alembic -x url="{db_url}" downgrade -1')
     
     # Verify tables dropped
@@ -66,10 +81,10 @@ def validate_postgres(db_url: str):
     existing_tables = set(insp.get_table_names())
     assert "symbol_template_versions" not in existing_tables, "symbol_template_versions should be dropped"
     assert "symbol_geometric_features" not in existing_tables, "symbol_geometric_features should be dropped"
-    print("Downgrade verified: canonical catalog tables dropped cleanly.")
+    print("Downgrade to 0022 verified: canonical catalog tables dropped cleanly.")
     
-    # 4. Test Upgrade to Head (0023)
-    print("\n--- 4. Testing Alembic Upgrade to Head (0023_piping_canonical_catalog) ---")
+    # 5. Test Upgrade to Head (0024)
+    print("\n--- 5. Testing Alembic Upgrade to Head (0024_symbol_governance) ---")
     run_cmd(f'alembic -x url="{db_url}" upgrade head')
     
     insp = sa.inspect(engine)
@@ -84,10 +99,13 @@ def validate_postgres(db_url: str):
     }
     for tbl in expected_tables:
         assert tbl in existing_tables, f"Expected table {tbl} was not found after upgrade"
-    print("Upgrade verified: all 6 canonical catalog tables recreated successfully.")
+    det_cols = [c["name"] for c in insp.get_columns("detected_symbols")]
+    assert "record_kind" in det_cols, "record_kind should be present in 0024"
+    assert "environment" in det_cols, "environment should be present in 0024"
+    print("Upgrade verified: all 6 canonical catalog tables and columns recreated successfully.")
     
-    # 5. Entity Lifecycle Validation on PostgreSQL
-    print("\n--- 5. Validating Entity Lifecycle & CRUD on PostgreSQL ---")
+    # 6. Entity Lifecycle & Governance Validation on PostgreSQL
+    print("\n--- 6. Validating Entity Lifecycle, Governance & CRUD on PostgreSQL ---")
     Session = sessionmaker(bind=engine)
     db = Session()
     try:
@@ -219,7 +237,7 @@ def validate_postgres(db_url: str):
         db.add_all([org, proj, doc, sheet])
         db.flush()
 
-        # Create Occurrence (DetectedSymbol / SymbolOccurrence)
+        # Create Occurrence (DetectedSymbol with record_kind='occurrence')
         occ_id = str(uuid.uuid4())
         occ = DetectedSymbol(
             id=occ_id,
@@ -233,6 +251,8 @@ def validate_postgres(db_url: str):
             symbol_crop_bbox=[200.0, 200.0, 260.0, 260.0],
             crop_image_path="/storage/crops/occ_gate_valve_01.png",
             crop_image_hash=hashlib.sha256(b"occ_gate_crop").hexdigest(),
+            record_kind="occurrence",
+            environment="production",
             classification="symbol",
             geometric_evidence=True,
             geometric_confidence=0.95,
@@ -249,6 +269,26 @@ def validate_postgres(db_url: str):
             review_status="pending_review"
         )
         db.add(occ)
+        
+        # Create unvalidated Candidate (DetectedSymbol with record_kind='candidate', classification='figure')
+        cand_id = str(uuid.uuid4())
+        cand = DetectedSymbol(
+            id=cand_id,
+            document_id=doc.id,
+            sheet_id=sheet.id,
+            symbol_type="valve",
+            bbox=[300, 300, 400, 400],
+            bbox_normalized=[0.3, 0.3, 0.4, 0.4],
+            confidence=0.80,
+            record_kind="candidate",
+            environment="production",
+            classification="figure",
+            geometric_evidence=False,
+            geometric_confidence=0.20,
+            matching_status="not_applicable",
+            review_status="unreviewed"
+        )
+        db.add(cand)
         db.flush()
         
         # Create Human Review Decision
@@ -264,21 +304,21 @@ def validate_postgres(db_url: str):
         db.add(dec)
         db.flush()
         
-        # Create Unknown Research Case
+        # Create Unknown Research Case for valid unknown geometry
         case_id = str(uuid.uuid4())
         case = SymbolUnknownResearchCase(
             id=case_id,
             symbol_occurrence_id=occ.id,
             status="unknown",
             search_query="gate valve variation PIP PNC00001",
-            proposed_name="Check Valve Variation",
+            proposed_name="SYM-UNKNOWN-001",
             proposed_standard_reference="PIP PNC00001",
-            research_notes="Unknown check-valve variation with internal flow arrow."
+            research_notes="SYM-UNKNOWN-001: Unknown check-valve variation with internal flow arrow."
         )
         db.add(case)
         db.commit()
         
-        # Query Verification
+        # Query Verification: Template & Evidence
         q_tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.canonical_code == "PIP-VALVE-GATE").first()
         assert q_tmpl is not None
         assert len(q_tmpl.versions) == 1
@@ -287,13 +327,83 @@ def validate_postgres(db_url: str):
         assert q_tmpl.versions[0].source_evidence is not None
         assert q_tmpl.versions[0].source_evidence.evidence_kind == "synthetic"
         
+        # Query Verification: Candidate vs Occurrence Separation on PostgreSQL
         q_occ = db.query(DetectedSymbol).filter(DetectedSymbol.id == occ_id).first()
         assert q_occ is not None
         assert q_occ.has_real_geometry is True
         assert q_occ.matching_status == "matched"
-        assert q_occ.match_score == 0.91
+        assert q_occ.record_kind == "occurrence"
+        assert q_occ.is_occurrence is True
+
+        q_cand = db.query(DetectedSymbol).filter(DetectedSymbol.id == cand_id).first()
+        assert q_cand is not None
+        assert q_cand.record_kind == "candidate"
+        assert q_cand.is_occurrence is False
+
+        # Invariant: filtering by record_kind='occurrence' yields only valid occurrences
+        occurrences_only = db.query(DetectedSymbol).filter(
+            DetectedSymbol.sheet_id == sheet.id,
+            DetectedSymbol.record_kind == "occurrence"
+        ).all()
+        assert len(occurrences_only) == 1
+        assert occurrences_only[0].id == occ_id
+        print("Candidate vs Occurrence separation verified on PostgreSQL.")
+
+        # Governance Policy Verification on PostgreSQL
+        catalog_service = CanonicalPipingCatalogService(db)
+        # 1. Attempting to approve synthetic evidence version for production MUST FAIL
+        try:
+            catalog_service.approve_template_version_for_production(
+                version_id=version.id,
+                reviewer_id="auditor_lead",
+                rationale="Intento de activar sintético en producción"
+            )
+            assert False, "Violation: Synthetic version was approved for production on PostgreSQL!"
+        except ValueError as e:
+            assert "Governance Violation" in str(e)
+            print("Governance verified: synthetic version correctly blocked from production approval.")
+
+        # 2. Real authorized evidence version CAN be approved for production
+        temp_crop_dir = tempfile.mkdtemp()
+        real_crop_path = os.path.join(temp_crop_dir, "real_pnc00001_p14.png")
+        img_dummy = np.ones((80, 80, 3), dtype=np.uint8) * 255
+        cv2.imwrite(real_crop_path, img_dummy)
+        with open(real_crop_path, "rb") as f:
+            real_crop_hash = hashlib.sha256(f.read()).hexdigest()
+
+        real_ver_id = str(uuid.uuid4())
+        real_ver = SymbolTemplateVersion(
+            id=real_ver_id,
+            symbol_template_id=tmpl.id,
+            version_number=2,
+            approval_status="pending_review",
+            canonical_crop_path=real_crop_path
+        )
+        db.add(real_ver)
+        real_ev = SymbolSourceEvidence(
+            symbol_template_version_id=real_ver.id,
+            evidence_kind="real_authorized",
+            source_standard_or_project="PIP PNC00001 Rev 2024",
+            source_document_hash="sha256_hash_real_pnc00001",
+            page_number=14,
+            bbox_normalized=[0.1, 0.1, 0.9, 0.9],
+            crop_image_path=real_crop_path,
+            crop_image_hash=real_crop_hash
+        )
+        db.add(real_ev)
+        db.commit()
+
+        approved_real = catalog_service.approve_template_version_for_production(
+            version_id=real_ver.id,
+            reviewer_id="lead_hitl_engineer",
+            rationale="Approved with real authorized evidence from PIP PNC00001."
+        )
+        assert approved_real.approval_status == "approved"
+        db.refresh(tmpl)
+        assert tmpl.status == "active"
+        print("Governance verified: real authorized evidence approved for production with HITL decision.")
         
-        print("\n>>> ALL ENTITY CRUD, MIGRATION UPGRADE & DOWNGRADE VERIFIED ON POSTGRESQL! <<<")
+        print("\n>>> ALL ENTITY CRUD, GOVERNANCE INVARIANTS, MIGRATION UPGRADE & DOWNGRADE VERIFIED ON POSTGRESQL! <<<")
     finally:
         db.close()
 
