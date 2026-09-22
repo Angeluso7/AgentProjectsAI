@@ -623,7 +623,10 @@ class CanonicalPipingCatalogService:
         if best_match_dto:
             matched_tmpl = self.db.query(SymbolTemplate).filter(SymbolTemplate.id == best_match_dto.template_id).first()
             matched_v = self.db.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == best_match_dto.version_id).first()
-            if matched_tmpl and matched_tmpl.status in ("sandbox", "test_only", "draft"):
+            if execution_mode == "sandbox":
+                is_sandbox_template = True
+                warning_msg = "sandbox/test_only; not production-approved"
+            elif matched_tmpl and matched_tmpl.status in ("sandbox", "test_only", "draft"):
                 is_sandbox_template = True
                 if execution_mode == "production":
                     # Prohibido activar match productivo contra plantilla no productiva
@@ -631,7 +634,7 @@ class CanonicalPipingCatalogService:
                     best_match_dto.matching_verdict = "rejected"
                     warning_msg = "Match productivo denegado: la plantilla coincide pero no posee estatus activo/aprobado de producción."
                 else:
-                    warning_msg = "Aviso: Match ejecutado en entorno sandbox con plantilla no productiva (test_only/sandbox)."
+                    warning_msg = "sandbox/test_only; not production-approved"
 
         research_case_id = None
         # Actualizar DetectedSymbol/SymbolOccurrence si existe

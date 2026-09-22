@@ -1731,4 +1731,151 @@ def test_project_drawing_validation_slice_with_unknown_ambiguous_excluded(db_ses
     assert res_txt.record_kind == "candidate"
 
 
+def test_sandbox_mode_matching_and_warning_enforcement(db_session: Session, synthetic_temp_dir):
+    """
+    Validación de Ensayo Sandbox:
+    1. execution_mode='sandbox' permite matching de prueba contra plantillas sandbox.
+    2. Todo match debe portar la advertencia mandatoria: 'sandbox/test_only; not production-approved'.
+    3. is_sandbox_or_test_only debe ser True.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl_crop = os.path.join(synthetic_temp_dir, "sandbox_tmpl_gate.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+    with open(tmpl_crop, "rb") as f:
+        tmpl_hash = hashlib.sha256(f.read()).hexdigest()
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        status="sandbox",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="sandbox_approved",
+        canonical_crop_path=tmpl_crop,
+        canonical_crop_hash=tmpl_hash
+    )
+    db_session.add(ver)
+    db_session.commit()
+
+    occ_crop = os.path.join(synthetic_temp_dir, "sandbox_occ_gate.png")
+    cv2.imwrite(occ_crop, _draw_synthetic_gate_valve_image(0))
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=occ_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.95,
+        classification="symbol",
+        context_text="HV-001 MANUAL GATE VALVE",
+        detected_tag="HV-001"
+    )
+
+    res = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="sandbox"
+    )
+    assert res.matching_status == "matched"
+    assert res.is_sandbox_or_test_only is True
+    assert res.warning == "sandbox/test_only; not production-approved"
+    assert res.environment == "sandbox"
+    assert res.record_kind == "occurrence"
+
+
+def test_sandbox_audit_persistence_and_context_navigation(db_session: Session, synthetic_temp_dir):
+    """
+    Validación de Persistencia de Auditoría y Navegación de Contexto:
+    1. Ocurrencia guarda bbox_normalized, sheet_id, document_id y crop_path en sandbox.
+    2. Permite reconstruir navegación a contexto exacta.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    crop_path = os.path.join(synthetic_temp_dir, "nav_gate_occ.png")
+    cv2.imwrite(crop_path, _draw_synthetic_gate_valve_image(0))
+
+    doc, sheet = _create_test_document_and_sheet(db_session)
+    occ = DetectedSymbol(
+        id=str(uuid.uuid4()),
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="valve",
+        bbox=[150, 200, 230, 280],
+        bbox_normalized=[0.1500, 0.2000, 0.2300, 0.2800],
+        inner_drawing_bbox=[0.1550, 0.2050, 0.2250, 0.2750],
+        cell_bbox=[0.1000, 0.1500, 0.2500, 0.3000],
+        symbol_crop_bbox=[0.1450, 0.1950, 0.2350, 0.2850],
+        crop_image_path=crop_path,
+        crop_image_hash=hashlib.sha256(open(crop_path, "rb").read()).hexdigest(),
+        geometric_evidence=True,
+        geometric_confidence=0.96,
+        classification="symbol",
+        context_text="HV-101",
+        detected_tag_or_code="HV-101",
+        record_kind="occurrence",
+        environment="sandbox",
+        matching_status="unconfirmed"
+    )
+    db_session.add(occ)
+    db_session.commit()
+
+    res = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="sandbox"
+    )
+    assert res.occurrence_id == str(occ.id)
+    # Verificar persistencia en base de datos
+    reloaded = db_session.query(DetectedSymbol).filter(DetectedSymbol.id == occ.id).first()
+    assert reloaded.environment == "sandbox"
+    assert reloaded.record_kind == "occurrence"
+    assert reloaded.bbox_normalized == [0.1500, 0.2000, 0.2300, 0.2800]
+    assert reloaded.inner_drawing_bbox == [0.1550, 0.2050, 0.2250, 0.2750]
+    assert reloaded.sheet_id == sheet.id
+    assert reloaded.document_id == doc.id
+
+
+def test_unknown_symbol_research_case_registration(db_session: Session, synthetic_temp_dir):
+    """
+    Validación de Símbolo Desconocido:
+    Geometría válida sin plantilla coincidente debe registrar SymbolUnknownResearchCase
+    con proposed_name='SYM-UNKNOWN-001' y status='unknown'.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    # Dibujar elemento cuadrado no coincidente con Gate Valve
+    img_unknown = np.ones((80, 80, 3), dtype=np.uint8) * 255
+    cv2.rectangle(img_unknown, (20, 20), (60, 60), (0, 0, 0), 2)
+    cv2.line(img_unknown, (20, 20), (60, 60), (0, 0, 0), 2)
+    unknown_crop = os.path.join(synthetic_temp_dir, "unknown_flow_element.png")
+    cv2.imwrite(unknown_crop, img_unknown)
+
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=unknown_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.93,
+        classification="symbol",
+        context_text="FE-102 ORIFICE PLATE"
+    )
+
+    res = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="sandbox"
+    )
+    assert res.matching_status == "unknown_symbol"
+    assert res.research_case_id is not None
+
+    rc = db_session.query(SymbolUnknownResearchCase).filter(SymbolUnknownResearchCase.id == res.research_case_id).first()
+    assert rc is not None
+    assert rc.status == "unknown"
+    assert rc.proposed_name == "SYM-UNKNOWN-001"
+    assert "SYM-UNKNOWN-001" in rc.research_notes
+
+
 
