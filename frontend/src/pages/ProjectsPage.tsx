@@ -31,6 +31,7 @@ export const ProjectsPage: React.FC = () => {
     unarchiveProject,
     deleteProject,
     exportProject,
+    error: projectContextError,
   } = useProject();
 
   // Estados de vista
@@ -242,15 +243,17 @@ export const ProjectsPage: React.FC = () => {
       </div>
 
       {/* Alertas de Notificación */}
-      {errorMessage && (
+      {(errorMessage || projectContextError) && (
         <div className="p-3.5 rounded-xl bg-rose-950/70 border border-rose-800 text-xs text-rose-300 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
-            <span>{errorMessage}</span>
+            <span>{errorMessage || projectContextError}</span>
           </div>
-          <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-rose-200 text-xs font-bold">
-            ✕
-          </button>
+          {errorMessage && (
+            <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-rose-200 text-xs font-bold cursor-pointer">
+              ✕
+            </button>
+          )}
         </div>
       )}
 
@@ -821,6 +824,19 @@ export const ProjectsPage: React.FC = () => {
           }
         }}
         existingProjects={projects}
+        onOpenProject={(projId) => {
+          setActiveProjectId(projId);
+          setInspectedProjectId(projId);
+          setIsFormModalOpen(false);
+          setSuccessMessage('Proyecto seleccionado como activo.');
+        }}
+        onRestoreProject={async (projId) => {
+          await unarchiveProject(projId);
+          setActiveProjectId(projId);
+          setInspectedProjectId(projId);
+          setIsFormModalOpen(false);
+          setSuccessMessage('Proyecto restaurado y seleccionado como activo.');
+        }}
       />
 
       {/* Modal de Eliminación Protegida de Proyecto */}

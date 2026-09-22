@@ -8,6 +8,8 @@ interface ProjectFormModalProps {
   onClose: () => void;
   onSubmit: (data: Partial<Project>, setAsActive: boolean) => Promise<void>;
   existingProjects?: Project[];
+  onOpenProject?: (projectId: string) => void;
+  onRestoreProject?: (projectId: string) => Promise<void>;
 }
 
 export const PROJECT_STAGES = [
@@ -46,7 +48,9 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   projectToEdit,
   onClose,
   onSubmit,
-  existingProjects = []
+  existingProjects = [],
+  onOpenProject,
+  onRestoreProject
 }) => {
   const [name, setName] = useState('');
   const [code, setCode] = useState('');
@@ -59,10 +63,12 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   const [setAsActive, setSetAsActive] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [conflictProject, setConflictProject] = useState<{ id: string; code: string; name: string; status: string; is_archived?: boolean } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setError(null);
+      setConflictProject(null);
       if (projectToEdit) {
         setName(projectToEdit.name || '');
         setCode(projectToEdit.code || '');
@@ -95,6 +101,7 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setConflictProject(null);
 
     const trimmedName = name.trim();
     const trimmedCode = code.trim().toUpperCase();
@@ -109,15 +116,35 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
     }
 
     // Validar duplicado de código en modo creación
-    if (!projectToEdit && existingProjects.some((p) => p.code.toLowerCase() === trimmedCode.toLowerCase())) {
-      setError(`Ya existe un proyecto con el código «${trimmedCode}». Utiliza un código diferente.`);
-      return;
+    if (!projectToEdit) {
+      const match = existingProjects.find((p) => p.code.trim().toUpperCase() === trimmedCode);
+      if (match) {
+        setError(`El código ${trimmedCode} ya existe en esta organización.`);
+        setConflictProject({
+          id: match.id,
+          code: match.code,
+          name: match.name,
+          status: match.status,
+          is_archived: match.status === 'archived'
+        });
+        return;
+      }
     }
 
     // Validar duplicado de código en modo edición si se cambia
-    if (projectToEdit && existingProjects.some((p) => p.id !== projectToEdit.id && p.code.toLowerCase() === trimmedCode.toLowerCase())) {
-      setError(`Ya existe otro proyecto con el código «${trimmedCode}».`);
-      return;
+    if (projectToEdit) {
+      const match = existingProjects.find((p) => p.id !== projectToEdit.id && p.code.trim().toUpperCase() === trimmedCode);
+      if (match) {
+        setError(`Ya existe otro proyecto con el código «${trimmedCode}».`);
+        setConflictProject({
+          id: match.id,
+          code: match.code,
+          name: match.name,
+          status: match.status,
+          is_archived: match.status === 'archived'
+        });
+        return;
+      }
     }
 
     try {
@@ -141,7 +168,45 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
       await onSubmit(payload, setAsActive);
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Error al guardar el proyecto.');
+      const data = err.response?.data;
+      let errMsg = 'Error al guardar el proyecto.';
+      let conflict: any = null;
+
+      if (data) {
+        if (typeof data.detail === 'string') {
+          errMsg = data.detail;
+        } else if (data.detail && typeof data.detail === 'object') {
+          errMsg = data.detail.message || JSON.stringify(data.detail);
+          conflict = data.detail.existing_project;
+        } else if (data.message) {
+          errMsg = data.message;
+        }
+      } else if (err.message) {
+        errMsg = err.message;
+      }
+
+      if (err.response?.status === 409) {
+        if (!errMsg.startsWith('El código') && !errMsg.startsWith('Ya existe')) {
+          errMsg = `El código ${trimmedCode} ya existe en esta organización.`;
+        }
+        if (!conflict) {
+          const localMatch = existingProjects.find((p) => p.code.trim().toUpperCase() === trimmedCode);
+          if (localMatch) {
+            conflict = {
+              id: localMatch.id,
+              code: localMatch.code,
+              name: localMatch.name,
+              status: localMatch.status,
+              is_archived: localMatch.status === 'archived'
+            };
+          }
+        }
+        if (conflict) {
+          setConflictProject(conflict);
+        }
+      }
+
+      setError(errMsg);
     } finally {
       setSaving(false);
     }
@@ -212,6 +277,66 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
             </div>
           )}
 
+          {conflictProject && (
+            <div className="p-3.5 rounded-xl bg-slate-900/90 border border-amber-500/40 text-xs text-slate-200 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Shield className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="font-bold text-amber-300">Proyecto existente detectado en esta organización</span>
+                </div>
+                <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                  conflictProject.status === 'archived'
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/30'
+                    : 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  {conflictProject.status === 'archived' ? 'Archivado' : 'Activo'}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] bg-slate-950/60 p-2.5 rounded-lg border border-slate-800">
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Nombre:</span>
+                  <span className="font-semibold text-slate-100">{conflictProject.name}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 block text-[10px]">Código:</span>
+                  <span className="font-mono text-slate-200">{conflictProject.code}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                {onOpenProject && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenProject(conflictProject.id)}
+                    className="px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-500 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <FolderPlus className="w-3.5 h-3.5" />
+                    <span>Abrir proyecto</span>
+                  </button>
+                )}
+                {conflictProject.status === 'archived' && onRestoreProject && (
+                  <button
+                    type="button"
+                    onClick={() => onRestoreProject(conflictProject.id)}
+                    className="px-3 py-1.5 text-xs font-semibold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                  >
+                    <span>Restaurar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCode('');
+                    setError(null);
+                    setConflictProject(null);
+                  }}
+                  className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  Usar nuevo código
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Fila 1: Código y Nombre */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -222,7 +347,11 @@ export const ProjectFormModal: React.FC<ProjectFormModalProps> = ({
                 type="text"
                 required
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => {
+                  setCode(e.target.value);
+                  setError(null);
+                  setConflictProject(null);
+                }}
                 placeholder="PRJ-2026-001"
                 className="w-full px-3 py-2 text-xs font-mono uppercase rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:outline-none focus:border-blue-500"
               />
