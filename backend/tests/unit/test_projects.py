@@ -22,6 +22,8 @@ def test_create_and_list_projects(client):
     assert len(projects) >= 1
     assert any(p["code"] == "PRJ-TEST-001" for p in projects)
 
-    # 3. Intentar crear proyecto con código duplicado (debe fallar con 400)
+    # 3. Intentar crear proyecto con código duplicado (debe fallar con 409)
     dup_res = client.post("/api/v1/projects/", json=payload)
-    assert dup_res.status_code == 400
+    assert dup_res.status_code == 409
+    dup_data = dup_res.json()
+    assert "detail" in dup_data

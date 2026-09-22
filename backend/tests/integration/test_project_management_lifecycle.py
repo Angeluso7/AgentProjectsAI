@@ -58,9 +58,9 @@ def test_project_crud_and_lifecycle_flow(client_with_auth):
     assert project["status"] == "active"
     assert project["is_active"] is True
 
-    # 2. Intentar duplicar código en la misma organización (debe dar 400)
+    # 2. Intentar duplicar código en la misma organización (debe dar 409)
     res_dup = client.post("/api/v1/projects/", json=create_payload, headers=headers)
-    assert res_dup.status_code == 400
+    assert res_dup.status_code == 409
 
     # 3. Obtener detalle de proyecto
     res_get = client.get(f"/api/v1/projects/{project_id}", headers=headers)
