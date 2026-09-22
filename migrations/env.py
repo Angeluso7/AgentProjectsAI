@@ -23,11 +23,30 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+import alembic.ddl.impl
+import sqlalchemy as sa
+from sqlalchemy import text
+
+# Ensure alembic_version table uses String(128) for long descriptive revision identifiers
+_orig_version_table_impl = alembic.ddl.impl.DefaultImpl.version_table_impl
+
+def _custom_version_table_impl(self, *, version_table, version_table_schema, version_table_pk, **kw):
+    vt = _orig_version_table_impl(self, version_table=version_table, version_table_schema=version_table_schema, version_table_pk=version_table_pk, **kw)
+    for col in vt.columns:
+        if col.name == "version_num":
+            col.type = sa.String(128)
+    return vt
+
+alembic.ddl.impl.DefaultImpl.version_table_impl = _custom_version_table_impl
+
 # add your model's MetaData object here
 # for 'autogenerate' support
 target_metadata = Base.metadata
 
 def get_url():
+    x_args = context.get_x_argument(as_dictionary=True)
+    if "url" in x_args:
+        return x_args["url"]
     url = os.environ.get("DATABASE_URL")
     if not url:
         url = config.get_main_option("sqlalchemy.url")
@@ -53,6 +72,7 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        version_num_length=128,
     )
 
     with context.begin_transaction():
@@ -76,8 +96,16 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
+        try:
+            connection.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE character varying(128);"))
+            connection.commit()
+        except Exception:
+            connection.rollback()
+
         context.configure(
-            connection=connection, target_metadata=target_metadata
+            connection=connection,
+            target_metadata=target_metadata,
+            version_num_length=128,
         )
 
         with context.begin_transaction():

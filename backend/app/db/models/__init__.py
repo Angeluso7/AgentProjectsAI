@@ -8,7 +8,7 @@ from app.db.models.operations import (
 )
 from app.db.models.document_memory import (
     Document, DocumentSheet, SheetRegion, TitleBlockExtraction, ExtractedText,
-    ExtractedTable, ExtractedTableCell, DetectedSymbol, VisualEvidence
+    ExtractedTable, ExtractedTableCell, DetectedSymbol, SymbolOccurrence, VisualEvidence
 )
 from app.db.models.normative_memory import (
     NormativeDocument, NormativeClause, NormativeCriterion, NormativeEmbedding
@@ -58,6 +58,10 @@ from app.db.models.acquisition import (
 from app.db.models.translations import (
     Translation
 )
+from app.db.models.symbol_catalog import (
+    SymbolTemplateVersion, SymbolGeometricFeature, SymbolFeatureRelation,
+    SymbolSourceEvidence, SymbolReviewDecision, SymbolUnknownResearchCase
+)
 
 __all__ = [
     "Base",
@@ -105,6 +109,7 @@ __all__ = [
     "ExtractedTable",
     "ExtractedTableCell",
     "DetectedSymbol",
+    "SymbolOccurrence",
     "VisualEvidence",
     "NormativeDocument",
     "NormativeClause",
@@ -113,6 +118,12 @@ __all__ = [
     "TitleBlockTemplate",
     "SymbolLibrary",
     "SymbolTemplate",
+    "SymbolTemplateVersion",
+    "SymbolGeometricFeature",
+    "SymbolFeatureRelation",
+    "SymbolSourceEvidence",
+    "SymbolReviewDecision",
+    "SymbolUnknownResearchCase",
     "TableSchemaTemplate",
     "OntologyDictionary",
     "RuleDefinition",

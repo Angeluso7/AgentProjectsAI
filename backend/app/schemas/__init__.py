@@ -53,6 +53,13 @@ from app.schemas.review import (
 from app.schemas.intake import (
     SourceAssetCreate, SourceAssetRead, SourceAssetApprovalRequest, SourceAssetIngestResponse
 )
+from app.schemas.symbol_catalog import (
+    SymbolGeometricFeatureDTO, SymbolFeatureRelationDTO, SymbolSourceEvidenceDTO,
+    SymbolTemplateVersionDetail, CanonicalSymbolTemplateDetail,
+    PromoteCandidateToCanonicalRequest, PromoteCandidateToCanonicalResponse,
+    ProgressiveMatchResult, MatchOccurrenceRequest, MatchOccurrenceResponse,
+    SymbolReviewDecisionRequest, SymbolReviewDecisionResponse
+)
 from app.schemas.operations import (
     ProcessingJobCreate, ProcessingJobRead, JobEventRead,
     ConfidencePolicyCreate, ConfidencePolicyRead,

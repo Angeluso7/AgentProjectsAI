@@ -2,9 +2,9 @@ name: CI Quality Gates
 
 'on':
   push:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'chore/**', 'feat/**' ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, 'chore/**', 'feat/**' ]
 
 jobs:
   frontend-gates:
@@ -34,8 +34,22 @@ jobs:
         run: npm run build
 
   backend-gates:
-    name: Backend Quality Gates (Integration Journey Suite)
+    name: Backend Quality Gates (Integration Journey Suite & PostgreSQL Validation)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres_migrator
+          POSTGRES_PASSWORD: migrator_secure_pass_123
+          POSTGRES_DB: planreview_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: backend
@@ -57,5 +71,18 @@ jobs:
       - name: Gate 3 - Backend Integration & Functional Journey Tests
         env:
           DATABASE_URL: 'sqlite:///:memory:'
-        run: pytest tests/integration/test_functional_validation_journey.py tests/integration/test_plan_selections_incorporation.py tests/integration/test_document_deletion.py tests/integration/test_information_acquisition_and_web_first_flow.py tests/integration/test_knowledge_base_operational.py tests/integration/test_project_maturity_and_acquisition_route.py -v --disable-warnings
+        run: pytest tests/integration/test_functional_validation_journey.py tests/integration/test_plan_selections_incorporation.py tests/integration/test_document_deletion.py tests/integration/test_information_acquisition_and_web_first_flow.py tests/integration/test_knowledge_base_operational.py tests/integration/test_project_maturity_and_acquisition_route.py tests/integration/test_canonical_piping_symbol_catalog.py -v --disable-warnings
+
+      - name: Gate 4 - PostgreSQL Migration Upgrade & Downgrade Validation
+        working-directory: .
+        run: |
+          alembic -x url="postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test" stamp 0021_translations_table
+          alembic -x url="postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test" upgrade head
+          alembic -x url="postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test" downgrade -1
+          alembic -x url="postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test" upgrade head
+
+      - name: Gate 5 - Piping Symbol Canonical Catalog on Real PostgreSQL
+        env:
+          TEST_DATABASE_URL: 'postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test'
+        run: pytest tests/integration/test_canonical_piping_symbol_catalog.py -v --disable-warnings
 

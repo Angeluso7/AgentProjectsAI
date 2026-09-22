@@ -4,7 +4,7 @@ from app.api.v1.endpoints import (
     projects, documents, ocr, layout, tables, symbols, intake, knowledge, review_runs, findings,
     memories, rules, review, training, reports, exports, evaluations, engines, annotations,
     intake_extractions, completeness, observations, consolidated_reports, assistant,
-    maturity, acquisition, dashboard, translations
+    maturity, acquisition, dashboard, translations, symbol_catalog
 )
 
 api_router = APIRouter()
@@ -42,6 +42,7 @@ api_router.include_router(ocr.router, prefix="/ocr", tags=["ocr"])
 api_router.include_router(layout.router, prefix="/layout", tags=["layout"])
 api_router.include_router(tables.router, prefix="/tables", tags=["tables"])
 api_router.include_router(symbols.router, prefix="/symbols", tags=["symbols"])
+api_router.include_router(symbol_catalog.router, prefix="/symbol-catalog", tags=["symbol-catalog"])
 api_router.include_router(knowledge.router, prefix="/knowledge", tags=["knowledge"])
 api_router.include_router(review_runs.router, prefix="/review-runs", tags=["review-runs"])
 api_router.include_router(findings.router, prefix="/findings", tags=["findings"])

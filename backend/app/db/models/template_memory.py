@@ -69,12 +69,26 @@ class SymbolTemplate(Base):
     is_active_for_detection = Column(Boolean, default=True, nullable=False, index=True)
     organization_id = Column(String(36), nullable=True, index=True)
     
+    # Identidad canónica y catalogación técnica
+    canonical_code = Column(String(100), unique=True, index=True, nullable=True) # e.g. "PIP-VALVE-GATE"
+    canonical_name = Column(String(150), nullable=True) # e.g. "Gate Valve"
+    category = Column(String(100), nullable=True, index=True) # e.g. "valve"
+    subcategory = Column(String(100), nullable=True, index=True) # e.g. "gate_valve"
+    discipline = Column(String(50), default="piping", nullable=False, index=True) # piping, electrical, architecture, etc.
+    technical_function = Column(Text, nullable=True) # e.g. "Isolation or shutoff valve"
+    standard_reference = Column(String(150), nullable=True) # e.g. "PIP PNC00001 / ISA-5.1"
+    status = Column(String(30), default="active", nullable=False, index=True) # draft, active, retired, superseded
+    current_version_id = Column(String(36), nullable=True)
+    created_by = Column(String(100), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
     feature_descriptors = Column(JSON, default=dict) # ORB/SIFT/Embedding descriptor legado
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relaciones
     library = relationship("SymbolLibrary", back_populates="symbols")
+    versions = relationship("SymbolTemplateVersion", back_populates="template", cascade="all, delete-orphan")
 
 
 class TableSchemaTemplate(Base):

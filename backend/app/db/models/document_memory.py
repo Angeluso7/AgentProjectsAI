@@ -253,17 +253,54 @@ class DetectedSymbol(Base):
     match_method = Column(String(50), nullable=True) # e.g. "ncc_hu_composite_v1"
     match_evidence = Column(JSON, default=dict) # {"ncc_score": 0.91, "hu_score": 0.88, "rotation": 90}
     algorithm_version = Column(String(20), default="v1.0")
+
+    # Extensiones de Ocurrencia de Proyecto (SymbolOccurrence)
+    project_id = Column(String(36), nullable=True, index=True)
+    project_document_id = Column(String(36), nullable=True, index=True)
+    table_id = Column(String(36), nullable=True)
+    cell_id = Column(String(36), nullable=True)
+    cell_bbox = Column(JSON, nullable=True)
+    inner_drawing_bbox = Column(JSON, nullable=True)
+    symbol_crop_bbox = Column(JSON, nullable=True)
+    crop_image_path = Column(String(500), nullable=True)
+    crop_image_hash = Column(String(64), nullable=True)
+    classification = Column(String(40), default="symbol", nullable=False, index=True) # symbol, figure, table_graphic, not_symbol, requires_human_review
+    geometric_evidence = Column(Boolean, default=True, nullable=False)
+    geometric_confidence = Column(Float, default=1.0, nullable=False)
+    matching_status = Column(String(30), default="unmatched", nullable=False, index=True) # matched, ambiguous, unknown_symbol, not_applicable, unmatched
+    matched_template_id = Column(String(36), ForeignKey("symbol_templates.id", ondelete="SET NULL"), nullable=True, index=True)
+    matched_template_version_id = Column(String(36), ForeignKey("symbol_template_versions.id", ondelete="SET NULL"), nullable=True, index=True)
+    match_score = Column(Float, nullable=True)
+    geometry_score = Column(Float, nullable=True)
+    topology_score = Column(Float, nullable=True)
+    visual_score = Column(Float, nullable=True)
+    context_score = Column(Float, nullable=True)
+    detected_tag_or_code = Column(String(100), nullable=True)
+    context_text = Column(Text, nullable=True)
+    review_status = Column(String(30), default="unreviewed", nullable=False, index=True) # unreviewed, accepted, rejected, needs_review
+    detection_run_id = Column(String(36), nullable=True, index=True)
     
     attributes = Column(JSON, default=dict) # {"orientation_deg": 90, "sahi_slice_id": "slice_01"}
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    @property
+    def has_real_geometry(self) -> bool:
+        """Propiedad derivada obligatoria: no crea una segunda fuente de verdad independiente."""
+        return bool(self.geometric_evidence and (self.geometric_confidence or 0.0) >= 0.70)
+
     # Relaciones
     document = relationship("Document", back_populates="symbols")
     sheet = relationship("DocumentSheet", back_populates="symbols")
     region = relationship("SheetRegion", back_populates="symbols")
-    library_entry = relationship("SymbolTemplate")
+    library_entry = relationship("SymbolTemplate", foreign_keys=[matched_library_entry_id])
+    matched_template = relationship("SymbolTemplate", foreign_keys=[matched_template_id])
+    matched_template_version = relationship("SymbolTemplateVersion", foreign_keys=[matched_template_version_id])
+
+
+# Alias canónico para el dominio
+SymbolOccurrence = DetectedSymbol
 
 
 class VisualEvidence(Base):

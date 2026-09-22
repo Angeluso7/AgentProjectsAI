@@ -41,6 +41,8 @@ data/intake_sources/*
 !data/intake_sources/.gitkeep
 data/crops/*
 !data/crops/.gitkeep
+data/symbol_templates/*
+!data/symbol_templates/.gitkeep
 uploads/*
 !uploads/.gitkeep
 scratch/*
