@@ -43,6 +43,10 @@ apiClient.interceptors.request.use((config) => {
   if (orgId) {
     config.headers['X-Organization-Id'] = orgId;
   }
+  // Si los datos son FormData, permitir que el navegador/Axios establezca el boundary multipart automáticamente
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
   return config;
 }, (error) => {
   return Promise.reject(error);
@@ -295,9 +299,7 @@ export const apiService = {
     return res.data;
   },
   uploadSourceFile: async (formData: FormData): Promise<SourceAssetItem> => {
-    const res = await apiClient.post<SourceAssetItem>('/intake/sources/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const res = await apiClient.post<SourceAssetItem>('/intake/sources/upload', formData);
     return res.data;
   },
   getSourceDependencies: async (sourceId: string): Promise<SourceDependenciesInfo> => {
@@ -441,9 +443,7 @@ export const apiService = {
     formData.append('project_id', projectId);
     if (versionId) formData.append('version_id', versionId);
     formData.append('file', file);
-    const res = await apiClient.post<DocumentItem>('/documents/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    });
+    const res = await apiClient.post<DocumentItem>('/documents/upload', formData);
     return res.data;
   },
   batchUploadDocuments: async (
@@ -459,7 +459,6 @@ export const apiService = {
       formData.append('files', file);
     });
     const res = await apiClient.post<BatchUploadResponse>('/documents/batch-upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
       onUploadProgress: (progressEvent) => {
         if (onProgress && progressEvent.total) {
           const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
@@ -467,6 +466,10 @@ export const apiService = {
         }
       },
     });
+    return res.data;
+  },
+  reprocessDocument: async (documentId: string, dpi?: number): Promise<DocumentItem> => {
+    const res = await apiClient.post<DocumentItem>(`/documents/${documentId}/process`, dpi ? { dpi } : {});
     return res.data;
   },
 

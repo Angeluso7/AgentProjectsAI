@@ -734,14 +734,25 @@ export interface DocumentSheet {
 
 export interface DocumentItem {
   id: string;
+  document_id?: string;
   project_id: string;
   filename: string;
   file_hash_sha256: string;
+  sha256?: string;
   file_size_bytes: number;
+  size_bytes?: number;
   mime_type?: string;
+  content_type?: string;
   page_count: number;
   status: string;
+  processing_status?: string;
+  storage_status?: string;
+  error_message?: string;
   created_at: string;
+  upload_timestamp?: string;
+  discipline?: string;
+  document_type?: string;
+  warnings?: string[];
   sheets?: DocumentSheet[];
 }
 
