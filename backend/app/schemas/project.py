@@ -48,6 +48,7 @@ class ProjectVersionRead(ProjectVersionBase):
 class ProjectRead(ProjectBase):
     id: str
     organization_id: str
+    normalized_code: Optional[str] = None
     is_active: bool
     created_at: datetime
     updated_at: datetime
@@ -58,6 +59,18 @@ class ProjectRead(ProjectBase):
 
     class Config:
         from_attributes = True
+
+class ProjectConflictItem(BaseModel):
+    id: str
+    code: str
+    name: str
+    status: str
+    is_archived: bool = False
+
+class ProjectConflictDetail(BaseModel):
+    message: str
+    conflict_type: str = "duplicate_code"
+    existing_project: Optional[ProjectConflictItem] = None
 
 class ProjectExportSummary(BaseModel):
     versions_count: int = 0

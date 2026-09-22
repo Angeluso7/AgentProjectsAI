@@ -43,14 +43,45 @@ def create_project(
     db: Session = Depends(get_db)
 ):
     """Crea un nuevo proyecto en la organización activa con su etapa y disciplina."""
+    from sqlalchemy.exc import IntegrityError
+
     repo = ProjectRepository(db)
-    existing = repo.get_by_code(project_in.code, organization_id=tenant.organization.id)
+    clean_code = project_in.code.strip()
+    existing = repo.get_by_code(clean_code, organization_id=tenant.organization.id)
     if existing:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Ya existe un proyecto con el código {project_in.code} en esta organización."
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": f"El código {clean_code} ya existe en esta organización.",
+                "conflict_type": "duplicate_code",
+                "existing_project": {
+                    "id": existing.id,
+                    "code": existing.code,
+                    "name": existing.name,
+                    "status": existing.status,
+                    "is_archived": existing.status == "archived"
+                }
+            }
         )
-    return repo.create_project(project_in, organization_id=tenant.organization.id)
+    try:
+        return repo.create_project(project_in, organization_id=tenant.organization.id)
+    except IntegrityError:
+        db.rollback()
+        conflict = repo.get_by_code(clean_code, organization_id=tenant.organization.id)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "message": f"El código {clean_code} ya existe en esta organización.",
+                "conflict_type": "duplicate_code",
+                "existing_project": {
+                    "id": conflict.id if conflict else "",
+                    "code": conflict.code if conflict else clean_code,
+                    "name": conflict.name if conflict else "",
+                    "status": conflict.status if conflict else "active",
+                    "is_archived": conflict.status == "archived" if conflict else False
+                }
+            }
+        )
 
 @router.get("/{project_id}", response_model=ProjectRead)
 def get_project(
@@ -79,12 +110,23 @@ def update_project(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
     
     # Si se intenta cambiar el código, validar que no colisione
-    if update_in.code and update_in.code != project.code:
-        existing = repo.get_by_code(update_in.code, organization_id=tenant.organization.id)
+    if update_in.code and update_in.code.strip() != project.code:
+        clean_code = update_in.code.strip()
+        existing = repo.get_by_code(clean_code, organization_id=tenant.organization.id)
         if existing and existing.id != project.id:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Ya existe otro proyecto con el código {update_in.code}."
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "message": f"Ya existe otro proyecto con el código «{clean_code}».",
+                    "conflict_type": "duplicate_code",
+                    "existing_project": {
+                        "id": existing.id,
+                        "code": existing.code,
+                        "name": existing.name,
+                        "status": existing.status,
+                        "is_archived": existing.status == "archived"
+                    }
+                }
             )
 
     return repo.update_project(project, update_in.model_dump(exclude_unset=True))

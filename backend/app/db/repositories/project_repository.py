@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, func
 
 from app.db.models.core import Project, ProjectVersion
 from app.db.models.document_memory import Document, DocumentSheet
@@ -18,15 +18,28 @@ class ProjectRepository(BaseRepository[Project]):
         super().__init__(Project, db)
 
     def _to_read_schema(self, project: Project) -> ProjectRead:
-        """Convierte una entidad Project a ProjectRead con contadores y etapa derivados."""
+        """Convierte una entidad Project a ProjectRead con contadores y etapa derivados de forma segura."""
         settings = project.settings or {}
         stage = settings.get("stage", "Ingeniería de Detalle")
         project_type = settings.get("project_type", "edificacion")
         
-        # Calcular contadores activos
-        docs = [d for d in (project.documents or []) if getattr(d, "status", "") not in ["deleted", "archived"]]
-        documents_count = len(docs)
-        sheets_count = sum(len(d.sheets) for d in docs if hasattr(d, "sheets") and d.sheets)
+        # Calcular contadores activos sin lazy-loading masivo para evitar N+1 y fallos en cascada
+        documents_count = 0
+        sheets_count = 0
+        try:
+            doc_rows = self.db.query(Document.id).filter(
+                Document.project_id == project.id,
+                Document.status.notin_(["deleted", "archived"])
+            ).all()
+            documents_count = len(doc_rows)
+            if documents_count > 0:
+                doc_ids = [r[0] for r in doc_rows]
+                sheets_count = self.db.query(DocumentSheet.id).filter(
+                    DocumentSheet.document_id.in_(doc_ids)
+                ).count()
+        except Exception:
+            documents_count = 0
+            sheets_count = 0
         
         # Hallazgos
         findings_count = 0
@@ -41,6 +54,7 @@ class ProjectRepository(BaseRepository[Project]):
             id=project.id,
             organization_id=project.organization_id,
             code=project.code,
+            normalized_code=getattr(project, "normalized_code", None) or project.code.strip().upper(),
             name=project.name,
             description=project.description,
             client_name=project.client_name,
@@ -90,7 +104,12 @@ class ProjectRepository(BaseRepository[Project]):
         ).first()
 
     def get_by_code(self, code: str, organization_id: Optional[str] = None) -> Optional[Project]:
-        query = self.db.query(Project).filter(Project.code == code, Project.status != "deleted")
+        clean_code = str(code).strip()
+        norm_code = clean_code.upper()
+        query = self.db.query(Project).filter(
+            func.upper(func.trim(Project.code)) == norm_code,
+            Project.status != "deleted"
+        )
         if organization_id:
             query = query.filter(Project.organization_id == organization_id)
         return query.first()
@@ -102,13 +121,17 @@ class ProjectRepository(BaseRepository[Project]):
         if project_in.project_type:
             settings["project_type"] = project_in.project_type
 
+        clean_code = project_in.code.strip()
+        normalized_code = clean_code.upper()
+
         db_project = Project(
             id=str(uuid.uuid4()),
             organization_id=organization_id,
-            code=project_in.code,
-            name=project_in.name,
-            description=project_in.description,
-            client_name=project_in.client_name,
+            code=clean_code,
+            normalized_code=normalized_code,
+            name=project_in.name.strip(),
+            description=project_in.description.strip() if project_in.description else None,
+            client_name=project_in.client_name.strip() if project_in.client_name else None,
             discipline=project_in.discipline.value if hasattr(project_in.discipline, "value") else str(project_in.discipline),
             status=project_in.status or "active",
             settings=settings,
@@ -116,8 +139,16 @@ class ProjectRepository(BaseRepository[Project]):
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow()
         )
-        created = self.create(db_project)
-        return self._to_read_schema(created)
+        try:
+            self.db.add(db_project)
+            self.db.flush()
+            self.db.commit()
+            self.db.refresh(db_project)
+        except Exception:
+            self.db.rollback()
+            raise
+
+        return self._to_read_schema(db_project)
 
     def update_project(self, project: Project, data: Dict[str, Any]) -> ProjectRead:
         settings = dict(project.settings or {})
@@ -136,12 +167,22 @@ class ProjectRepository(BaseRepository[Project]):
             disc = data["discipline"]
             data["discipline"] = disc.value if hasattr(disc, "value") else str(disc)
 
+        if "code" in data and data["code"] is not None:
+            clean_code = str(data["code"]).strip()
+            data["code"] = clean_code
+            data["normalized_code"] = clean_code.upper()
+
         for key, value in data.items():
             if hasattr(project, key) and value is not None:
                 setattr(project, key, value)
 
-        self.db.commit()
-        self.db.refresh(project)
+        try:
+            self.db.commit()
+            self.db.refresh(project)
+        except Exception:
+            self.db.rollback()
+            raise
+
         return self._to_read_schema(project)
 
     def archive_project(self, project_id: str, organization_id: str) -> Optional[ProjectRead]:
