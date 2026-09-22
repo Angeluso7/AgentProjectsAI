@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Text, JSON, Boolean, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 from app.db.session import Base
 
 class Organization(Base):
@@ -77,9 +77,17 @@ class Project(Base):
     status = Column(String(30), default="active", nullable=False)
     settings = Column(JSON, default=dict)
     is_active = Column(Boolean, default=True)
+    normalized_code = Column(String(50), nullable=False, index=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @validates("code")
+    def validate_code(self, key, value):
+        if value:
+            self.normalized_code = str(value).strip().upper()
+            return str(value).strip()
+        return value
 
     # Relaciones
     organization = relationship("Organization", back_populates="projects")
