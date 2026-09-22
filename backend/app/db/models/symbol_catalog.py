@@ -122,8 +122,14 @@ class SymbolSourceEvidence(Base):
     geometric_confidence = Column(Float, default=1.0, nullable=False)
     
     source_standard_or_project = Column(String(150), nullable=True)
+    source_authority = Column(String(150), nullable=True)
     source_revision = Column(String(50), nullable=True)
     source_date = Column(String(50), nullable=True)
+    discipline = Column(String(50), nullable=True)
+    sheet_name = Column(String(150), nullable=True)
+    sheet_code = Column(String(50), nullable=True)
+    extractor_version = Column(String(50), nullable=True)
+    evidence_metadata = Column(JSON, default=dict, nullable=True)
     extraction_run_id = Column(String(36), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 

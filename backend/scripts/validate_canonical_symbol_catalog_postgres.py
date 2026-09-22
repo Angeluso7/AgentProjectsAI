@@ -57,12 +57,25 @@ def validate_postgres(db_url: str):
     print("\n--- 1. Initializing baseline schema via Base.metadata.create_all ---")
     Base.metadata.create_all(bind=engine)
     
-    # 2. Stamp at 0024_symbol_governance
-    print("\n--- 2. Stamping Alembic at 0024_symbol_governance ---")
-    run_cmd(f'alembic -x url="{db_url}" stamp 0024_symbol_governance')
+    # 2. Stamp at 0025_symbol_source_evidence_metadata (head)
+    print("\n--- 2. Stamping Alembic at 0025_symbol_source_evidence_metadata ---")
+    run_cmd(f'alembic -x url="{db_url}" stamp 0025_symbol_source_evidence_metadata')
     
-    # 3. Test Downgrade -1 (reverting to 0023_piping_canonical_catalog)
-    print("\n--- 3. Testing Alembic Downgrade -1 (reverting to 0023_piping_canonical_catalog) ---")
+    # 3. Test Downgrade -1 (reverting to 0024_symbol_governance)
+    print("\n--- 3. Testing Alembic Downgrade -1 (reverting to 0024_symbol_governance) ---")
+    run_cmd(f'alembic -x url="{db_url}" downgrade -1')
+    
+    # Verify metadata columns dropped from symbol_source_evidences
+    insp = sa.inspect(engine)
+    ev_cols = [c["name"] for c in insp.get_columns("symbol_source_evidences")]
+    assert "source_authority" not in ev_cols, "source_authority should be dropped in 0024"
+    assert "discipline" not in ev_cols, "discipline should be dropped in 0024"
+    assert "sheet_name" not in ev_cols, "sheet_name should be dropped in 0024"
+    assert "extractor_version" not in ev_cols, "extractor_version should be dropped in 0024"
+    print("Downgrade to 0024 verified: metadata columns dropped cleanly from symbol_source_evidences.")
+
+    # 4. Test Downgrade -1 (reverting to 0023_piping_canonical_catalog)
+    print("\n--- 4. Testing Alembic Downgrade -1 (reverting to 0023_piping_canonical_catalog) ---")
     run_cmd(f'alembic -x url="{db_url}" downgrade -1')
     
     # Verify columns dropped
@@ -72,8 +85,8 @@ def validate_postgres(db_url: str):
     assert "environment" not in det_cols, "environment should be dropped in 0023"
     print("Downgrade to 0023 verified: record_kind and environment columns dropped cleanly.")
 
-    # 4. Test Downgrade -1 (reverting to 0022_expand_symbol_templates)
-    print("\n--- 4. Testing Alembic Downgrade -1 (reverting to 0022_expand_symbol_templates) ---")
+    # 5. Test Downgrade -1 (reverting to 0022_expand_symbol_templates)
+    print("\n--- 5. Testing Alembic Downgrade -1 (reverting to 0022_expand_symbol_templates) ---")
     run_cmd(f'alembic -x url="{db_url}" downgrade -1')
     
     # Verify tables dropped
@@ -83,8 +96,8 @@ def validate_postgres(db_url: str):
     assert "symbol_geometric_features" not in existing_tables, "symbol_geometric_features should be dropped"
     print("Downgrade to 0022 verified: canonical catalog tables dropped cleanly.")
     
-    # 5. Test Upgrade to Head (0024)
-    print("\n--- 5. Testing Alembic Upgrade to Head (0024_symbol_governance) ---")
+    # 6. Test Upgrade to Head (0025_symbol_source_evidence_metadata)
+    print("\n--- 6. Testing Alembic Upgrade to Head (0025_symbol_source_evidence_metadata) ---")
     run_cmd(f'alembic -x url="{db_url}" upgrade head')
     
     insp = sa.inspect(engine)
@@ -100,9 +113,12 @@ def validate_postgres(db_url: str):
     for tbl in expected_tables:
         assert tbl in existing_tables, f"Expected table {tbl} was not found after upgrade"
     det_cols = [c["name"] for c in insp.get_columns("detected_symbols")]
-    assert "record_kind" in det_cols, "record_kind should be present in 0024"
-    assert "environment" in det_cols, "environment should be present in 0024"
-    print("Upgrade verified: all 6 canonical catalog tables and columns recreated successfully.")
+    assert "record_kind" in det_cols, "record_kind should be present in 0024/0025"
+    assert "environment" in det_cols, "environment should be present in 0024/0025"
+    ev_cols = [c["name"] for c in insp.get_columns("symbol_source_evidences")]
+    for col in ["source_authority", "discipline", "sheet_name", "sheet_code", "extractor_version", "evidence_metadata"]:
+        assert col in ev_cols, f"Column {col} should be present in symbol_source_evidences after upgrade to 0025"
+    print("Upgrade verified: all 6 canonical catalog tables, governance columns, and 0025 metadata columns recreated successfully.")
     
     # 6. Entity Lifecycle & Governance Validation on PostgreSQL
     print("\n--- 6. Validating Entity Lifecycle, Governance & CRUD on PostgreSQL ---")
@@ -208,7 +224,13 @@ def validate_postgres(db_url: str):
             page_number=14,
             crop_image_path="/storage/crops/pip_gate_valve_v1.png",
             crop_image_hash=hashlib.sha256(crop_bytes).hexdigest(),
-            bbox_normalized=[120.0, 340.0, 180.0, 400.0]
+            bbox_normalized=[120.0, 340.0, 180.0, 400.0],
+            source_authority="Process Industry Practices (PIP)",
+            discipline="piping",
+            sheet_name="Legend Sheet 01",
+            sheet_code="LEG-01",
+            extractor_version="v1.0-piping",
+            evidence_metadata={"dpi": 300, "color_space": "grayscale"}
         )
         db.add(evidence)
         db.flush()

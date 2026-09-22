@@ -35,7 +35,9 @@ from app.db.models.symbol_catalog import (
 from app.schemas.symbol_catalog import (
     PromoteCandidateToCanonicalRequest, PromoteCandidateToCanonicalResponse,
     MatchOccurrenceRequest, MatchOccurrenceResponse, ProgressiveMatchResult,
-    SymbolReviewDecisionRequest, SymbolReviewDecisionResponse
+    SymbolReviewDecisionRequest, SymbolReviewDecisionResponse,
+    CandidateCurationViewResponse, CurateAndApproveCandidateRequest,
+    CurateAndApproveCandidateResponse, SymbolSourceEvidenceDTO
 )
 from app.services.symbols.template_normalizer import TemplateNormalizer
 
@@ -712,9 +714,20 @@ class CanonicalPipingCatalogService:
             technical_function = p.technical_function
             standard_reference = p.standard_reference
             evidence_kind = p.evidence_kind
+            source_document_id = p.source_document_id
+            source_document_hash = p.source_document_hash
+            source_authority = p.source_authority
+            sheet_name = p.sheet_name
+            sheet_code = p.sheet_code
+            page_number = p.page_number
+            source_revision = p.source_revision
+            source_date = p.source_date
+            extractor_version = p.extractor_version or "1.0.0"
             orientation_policy = p.orientation_policy
             reviewer_id = p.reviewer_id
+            rationale = p.rationale
             notes = p.notes
+            evidence_metadata = p.evidence_metadata or {}
         elif isinstance(payload_or_candidate_id, dict):
             p_dict = payload_or_candidate_id
             candidate_id = p_dict["candidate_id"]
@@ -726,9 +739,20 @@ class CanonicalPipingCatalogService:
             technical_function = p_dict.get("technical_function")
             standard_reference = p_dict.get("standard_reference")
             evidence_kind = p_dict.get("evidence_kind", "synthetic")
+            source_document_id = p_dict.get("source_document_id")
+            source_document_hash = p_dict.get("source_document_hash")
+            source_authority = p_dict.get("source_authority")
+            sheet_name = p_dict.get("sheet_name")
+            sheet_code = p_dict.get("sheet_code")
+            page_number = p_dict.get("page_number")
+            source_revision = p_dict.get("source_revision")
+            source_date = p_dict.get("source_date")
+            extractor_version = p_dict.get("extractor_version", "1.0.0")
             orientation_policy = p_dict.get("orientation_policy", "rotation_equivalent_180")
             reviewer_id = p_dict.get("reviewer_id", "auditor")
+            rationale = p_dict.get("rationale")
             notes = p_dict.get("notes")
+            evidence_metadata = p_dict.get("evidence_metadata", {})
         else:
             candidate_id = str(payload_or_candidate_id)
             canonical_code = kwargs["canonical_code"]
@@ -739,17 +763,35 @@ class CanonicalPipingCatalogService:
             technical_function = kwargs.get("technical_function")
             standard_reference = kwargs.get("standard_reference")
             evidence_kind = kwargs.get("evidence_kind", "synthetic")
+            source_document_id = kwargs.get("source_document_id")
+            source_document_hash = kwargs.get("source_document_hash")
+            source_authority = kwargs.get("source_authority")
+            sheet_name = kwargs.get("sheet_name")
+            sheet_code = kwargs.get("sheet_code")
+            page_number = kwargs.get("page_number")
+            source_revision = kwargs.get("source_revision")
+            source_date = kwargs.get("source_date")
+            extractor_version = kwargs.get("extractor_version", "1.0.0")
             orientation_policy = kwargs.get("orientation_policy", "rotation_equivalent_180")
             reviewer_id = kwargs.get("reviewer_id", "auditor")
+            rationale = kwargs.get("rationale")
             notes = kwargs.get("notes")
+            evidence_metadata = kwargs.get("evidence_metadata", {})
 
         sym = self.db.query(StructuredSymbol).filter(StructuredSymbol.id == candidate_id).first()
+        det_sym = None
         if not sym:
-            raise ValueError(f"No se encontró StructuredSymbol con id {candidate_id}")
+            det_sym = self.db.query(DetectedSymbol).filter(DetectedSymbol.id == candidate_id).first()
+            if not det_sym:
+                raise ValueError(f"No se encontró candidato con id {candidate_id} (ni en StructuredSymbol ni en DetectedSymbol)")
 
-        crop_path = sym.crop_image_path
+        crop_path = sym.crop_image_path if sym else det_sym.crop_image_path
         if not crop_path or not os.path.exists(crop_path):
             raise ValueError(f"El símbolo candidato no cuenta con recorte físico válido en {crop_path}")
+
+        # Calcular hash del crop de forma obligatoria e inmutable
+        with open(crop_path, "rb") as f:
+            crop_hash = hashlib.sha256(f.read()).hexdigest()
 
         # 1. Aplicar Política de Gobernanza de Evidencia y Estados
         if evidence_kind == "synthetic":
@@ -759,9 +801,7 @@ class CanonicalPipingCatalogService:
             source_kind = "synthetic_fixture"
         elif evidence_kind in ("real_authorized", "redacted_real"):
             # REGLA: Evidencia real debe ser íntegra y trazable
-            if not crop_hash:
-                raise ValueError("Governance Violation: Missing crop image hash in source evidence.")
-            if not reviewer_id:
+            if not reviewer_id or not reviewer_id.strip():
                 raise ValueError("Governance Violation: HITL Reviewer ID is required for approving real authorized template.")
             template_status = "active"
             version_approval_status = "approved"
@@ -775,6 +815,12 @@ class CanonicalPipingCatalogService:
             (SymbolTemplate.symbol_class == subcategory)
         ).first()
 
+        alias_list = [canonical_name, canonical_code]
+        if sym and sym.symbol_name:
+            alias_list.append(sym.symbol_name)
+        if det_sym and det_sym.detected_tag_or_code:
+            alias_list.append(det_sym.detected_tag_or_code)
+
         if not tmpl:
             tmpl = SymbolTemplate(
                 canonical_code=canonical_code,
@@ -786,7 +832,7 @@ class CanonicalPipingCatalogService:
                 discipline=discipline,
                 technical_function=technical_function,
                 standard_reference=standard_reference,
-                aliases=[canonical_name, canonical_code, sym.symbol_name],
+                aliases=list(dict.fromkeys(alias_list)),
                 status=template_status,
                 created_by=reviewer_id
             )
@@ -798,10 +844,7 @@ class CanonicalPipingCatalogService:
             tmpl.status = template_status
             tmpl.is_active_for_detection = True
 
-        # 2. Normalizar imagen y calcular hash del crop
-        with open(crop_path, "rb") as f:
-            crop_hash = hashlib.sha256(f.read()).hexdigest()
-
+        # 2. Normalizar imagen
         img_bgr = cv2.imread(crop_path)
         norm_result = self.normalizer.normalize_image(img_bgr)
 
@@ -871,7 +914,7 @@ class CanonicalPipingCatalogService:
                 relative_position=feat_dict["relative_position"],
                 confidence=feat_dict["confidence"],
                 relationship_group=feat_dict["relationship_group"],
-                extractor_version="v1.0-piping"
+                extractor_version=extractor_version or "v1.0-piping"
             )
             self.db.add(gfeat)
             self.db.flush()
@@ -899,36 +942,88 @@ class CanonicalPipingCatalogService:
             self.db.add(feat_rel)
 
         # 6. Registrar SymbolSourceEvidence
-        item = self.db.query(ExtractedItem).filter(ExtractedItem.id == sym.extracted_item_id).first()
-        source_doc_id = item.source_asset_id if item else None
+        if sym:
+            item = self.db.query(ExtractedItem).filter(ExtractedItem.id == sym.extracted_item_id).first()
+            resolved_doc_id = source_document_id or (item.source_asset_id if item else None)
+            resolved_page = page_number or (item.page_number if item else 1)
+            resolved_bbox = item.bbox_normalized if item else []
+            resolved_cell_bbox = sym.cell_bbox
+            resolved_table_id = sym.source_table_id
+            resolved_cell_id = None
+            resolved_sheet_id = None
+            resolved_inner_bbox = None
+            resolved_crop_bbox = None
+            resolved_grid_source = getattr(sym, "layout_context", getattr(sym, "source_render_mode", "table_cell"))
+            resolved_confidence = sym.confidence_score
+            resolved_excerpt = sym.symbol_name
+        else:
+            resolved_doc_id = source_document_id or det_sym.project_document_id or det_sym.document_id
+            resolved_page = page_number or (det_sym.sheet.sheet_number if det_sym.sheet else 1)
+            resolved_bbox = det_sym.bbox_normalized or det_sym.bbox or []
+            resolved_cell_bbox = det_sym.cell_bbox
+            resolved_table_id = det_sym.table_id
+            resolved_cell_id = det_sym.cell_id
+            resolved_sheet_id = det_sym.sheet_id
+            resolved_inner_bbox = det_sym.inner_drawing_bbox
+            resolved_crop_bbox = det_sym.symbol_crop_bbox
+            resolved_grid_source = getattr(det_sym, "grid_source", getattr(det_sym, "source_engine", "table_cell"))
+            resolved_confidence = det_sym.geometric_confidence or 1.0
+            resolved_excerpt = det_sym.detected_tag_or_code or canonical_name
+
+        resolved_sheet_name = sheet_name or (det_sym.sheet.title if (det_sym and det_sym.sheet) else None)
+        resolved_sheet_code = sheet_code or (det_sym.sheet.sheet_code if (det_sym and det_sym.sheet) else None)
 
         evidence = SymbolSourceEvidence(
             symbol_template_version_id=version.id,
-            source_document_id=source_doc_id,
+            source_document_id=resolved_doc_id,
+            source_document_hash=source_document_hash,
             evidence_kind=evidence_kind,
-            page_number=item.page_number if item else 1,
-            table_id=sym.source_table_id,
-            bbox_normalized=item.bbox_normalized if item else [],
-            cell_bbox=sym.cell_bbox,
+            source_authority=source_authority,
+            discipline=discipline,
+            sheet_name=resolved_sheet_name,
+            sheet_code=resolved_sheet_code,
+            sheet_id=resolved_sheet_id,
+            page_number=resolved_page,
+            table_id=resolved_table_id,
+            cell_id=resolved_cell_id,
+            bbox_normalized=resolved_bbox,
+            cell_bbox=resolved_cell_bbox,
+            inner_drawing_bbox=resolved_inner_bbox,
+            symbol_crop_bbox=resolved_crop_bbox,
             crop_image_path=crop_path,
             crop_image_hash=crop_hash,
-            source_excerpt=sym.symbol_name,
-            geometric_confidence=sym.confidence_score,
-            source_standard_or_project=standard_reference
+            extractor_version=extractor_version,
+            source_excerpt=resolved_excerpt,
+            grid_source=resolved_grid_source,
+            geometric_confidence=resolved_confidence,
+            source_standard_or_project=standard_reference,
+            source_revision=source_revision,
+            source_date=source_date,
+            evidence_metadata=evidence_metadata or {}
         )
         self.db.add(evidence)
 
         # 7. Registrar SymbolReviewDecision
+        decision_label = "create_template" if evidence_kind == "synthetic" else "approve_production"
         decision = SymbolReviewDecision(
             subject_type="candidate",
-            subject_id=sym.id,
-            decision="create_template",
+            subject_id=candidate_id,
+            decision=decision_label,
             reviewer_id=reviewer_id,
-            rationale=f"Promovido a plantilla ({evidence_kind}, status={template_status}) por {reviewer_id}. {notes or ''}".strip(),
-            evidence_snapshot={"crop_path": crop_path, "crop_hash": crop_hash, "evidence_kind": evidence_kind},
-            new_state={"canonical_code": canonical_code, "version": next_ver_num, "status": template_status}
+            rationale=rationale or f"Promovido a plantilla ({evidence_kind}, status={template_status}) por {reviewer_id}. {notes or ''}".strip(),
+            evidence_snapshot={
+                "crop_path": crop_path,
+                "crop_hash": crop_hash,
+                "document_hash": source_document_hash,
+                "evidence_kind": evidence_kind,
+                "source_authority": source_authority
+            },
+            new_state={"canonical_code": canonical_code, "version": next_ver_num, "status": template_status, "approval_status": version_approval_status}
         )
         self.db.add(decision)
+
+        if det_sym:
+            det_sym.review_status = "accepted"
 
         self.db.commit()
 
@@ -940,6 +1035,175 @@ class CanonicalPipingCatalogService:
             features_extracted=features_created,
             status=template_status,
             message=f"Símbolo promovido exitosamente como {canonical_code} versión {next_ver_num} (status={template_status})."
+        )
+
+    # ------------------------------------------------------------------------
+    # 7. CURACIÓN GUIADA Y APROBACIÓN PRODUCTIVA HITL
+    # ------------------------------------------------------------------------
+    def get_candidate_curation_view(self, candidate_id: str) -> CandidateCurationViewResponse:
+        """
+        Inspección guiada HITL: Devuelve vista completa del candidato preseleccionado
+        con evidencia geométrica válida, crop, rasgos explicables, contexto visual
+        y OCR secundario para decisión formal de curación.
+        """
+        sym = self.db.query(StructuredSymbol).filter(StructuredSymbol.id == candidate_id).first()
+        det_sym = None
+        if not sym:
+            det_sym = self.db.query(DetectedSymbol).filter(DetectedSymbol.id == candidate_id).first()
+            if not det_sym:
+                raise ValueError(f"No se encontró candidato con id {candidate_id}")
+
+        crop_path = sym.crop_image_path if sym else det_sym.crop_image_path
+        if not crop_path or not os.path.exists(crop_path):
+            raise ValueError(f"Recorte físico no encontrado para candidato {candidate_id}")
+
+        # Validar precondiciones estrictas
+        g_ev = sym.confidence_score > 0.0 if sym else det_sym.geometric_evidence
+        clf = "symbol" if sym else det_sym.classification
+        g_conf = sym.confidence_score if sym else (det_sym.geometric_confidence or 0.0)
+        
+        if not g_ev or clf != "symbol" or g_conf < 0.70:
+            raise ValueError(f"Candidato no apto para curación canónica: geometric_evidence={g_ev}, classification={clf}, confidence={g_conf}")
+
+        with open(crop_path, "rb") as f:
+            crop_hash = hashlib.sha256(f.read()).hexdigest()
+
+        img_bgr = cv2.imread(crop_path)
+        features = self.extract_gate_valve_features(img_bgr) if img_bgr is not None else []
+
+        if sym:
+            item = self.db.query(ExtractedItem).filter(ExtractedItem.id == sym.extracted_item_id).first()
+            page_num = item.page_number if item else 1
+            doc_id = item.source_asset_id if item else None
+            sheet_name = None
+            sheet_code = None
+            visual_context_bbox = item.bbox_normalized if item else []
+            cell_bbox = sym.cell_bbox
+            inner_bbox = None
+            crop_bbox = None
+            grid_source = getattr(sym, "layout_context", getattr(sym, "source_render_mode", "table_cell"))
+            ocr_text = sym.symbol_name
+            ocr_tag = None
+        else:
+            sheet = det_sym.sheet
+            page_num = sheet.sheet_number if sheet and sheet.sheet_number else 1
+            doc_id = det_sym.project_document_id or det_sym.document_id
+            sheet_name = (sheet.title or sheet.sheet_code) if sheet else None
+            sheet_code = sheet.sheet_code if sheet else None
+            visual_context_bbox = det_sym.bbox_normalized or det_sym.bbox or []
+            cell_bbox = det_sym.cell_bbox
+            inner_bbox = det_sym.inner_drawing_bbox
+            crop_bbox = det_sym.symbol_crop_bbox
+            grid_source = getattr(det_sym, "grid_source", getattr(det_sym, "source_engine", "table_cell"))
+            ocr_text = det_sym.context_text
+            ocr_tag = det_sym.detected_tag_or_code
+
+        return CandidateCurationViewResponse(
+            candidate_id=candidate_id,
+            record_kind="candidate" if det_sym else "structured_candidate",
+            classification=clf,
+            page_number=page_num,
+            document_id=doc_id,
+            sheet_name=sheet_name,
+            sheet_code=sheet_code,
+            visual_context_bbox=visual_context_bbox,
+            cell_bbox=cell_bbox,
+            inner_drawing_bbox=inner_bbox,
+            symbol_crop_bbox=crop_bbox,
+            crop_image_path=crop_path,
+            crop_image_hash=crop_hash,
+            grid_source=grid_source,
+            geometric_evidence=True,
+            geometric_confidence=g_conf,
+            geometric_features=features,
+            orientation_degrees=0.0,
+            ocr_secondary_context={
+                "context_text": ocr_text,
+                "detected_tag": ocr_tag,
+                "role": "secondary_context_only",
+                "governance_rule": "OCR context is secondary and CANNOT approve or match symbols alone"
+            },
+            suggested_canonical_code="PIP-VALVE-GATE",
+            suggested_canonical_name="Gate Valve"
+        )
+
+    def curate_and_approve_candidate(
+        self,
+        request: CurateAndApproveCandidateRequest
+    ) -> CurateAndApproveCandidateResponse:
+        """
+        Aprobación formal HITL guiada:
+        1. Confirma canonical_code == 'PIP-VALVE-GATE'.
+        2. Verifica explícitamente crop, fuente y rationale.
+        3. Exige clasificación de evidencia real_authorized o redacted_real.
+        4. Promueve y activa la plantilla para producción con decisión HITL auditable.
+        """
+        if request.confirmed_canonical_code != "PIP-VALVE-GATE":
+            raise ValueError(f"Governance Rule: Solo la familia PIP-VALVE-GATE está autorizada en este incremento (recibido: {request.confirmed_canonical_code}).")
+
+        if not request.explicit_approval or not request.reviewed_crop or not request.reviewed_source:
+            raise ValueError("Governance Rule: Se requiere confirmación explícita de revisión de crop, fuente y aprobación HITL.")
+
+        if not request.rationale or len(request.rationale.strip()) < 10:
+            raise ValueError("Governance Rule: Debe proporcionar una justificación técnica detallada (rationale >= 10 caracteres).")
+
+        if not request.reviewer_id or not request.reviewer_id.strip():
+            raise ValueError("Governance Rule: Reviewer ID es obligatorio.")
+
+        if request.evidence_kind not in ("real_authorized", "redacted_real"):
+            raise ValueError(f"Governance Violation: Evidencia '{request.evidence_kind}' no autoriza activación productiva.")
+
+        # Promover a canónico
+        promote_resp = self.promote_candidate_to_canonical(
+            payload_or_candidate_id={
+                "candidate_id": request.candidate_id,
+                "canonical_code": request.confirmed_canonical_code,
+                "canonical_name": request.confirmed_canonical_name,
+                "category": "valve",
+                "subcategory": "gate_valve",
+                "discipline": request.discipline,
+                "evidence_kind": request.evidence_kind,
+                "source_document_id": request.source_document_id,
+                "source_document_hash": request.source_document_hash,
+                "source_authority": request.source_authority,
+                "sheet_name": request.sheet_name,
+                "sheet_code": request.sheet_code,
+                "source_revision": request.source_revision,
+                "source_date": request.source_date,
+                "extractor_version": request.extractor_version,
+                "reviewer_id": request.reviewer_id,
+                "rationale": request.rationale,
+                "evidence_metadata": request.evidence_metadata,
+            }
+        )
+
+        ver = self.db.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == promote_resp.version_id).first()
+        ev = ver.source_evidence if ver else None
+
+        last_decision = self.db.query(SymbolReviewDecision).filter(
+            SymbolReviewDecision.subject_id == request.candidate_id
+        ).order_by(SymbolReviewDecision.created_at.desc()).first()
+
+        return CurateAndApproveCandidateResponse(
+            template_id=promote_resp.template_id,
+            version_id=promote_resp.version_id,
+            decision_id=last_decision.id if last_decision else str(uuid.uuid4()),
+            canonical_code=promote_resp.canonical_code,
+            canonical_name=request.confirmed_canonical_name,
+            template_status="active",
+            approval_status="approved",
+            features_count=promote_resp.features_extracted,
+            reviewer_id=request.reviewer_id,
+            approved_at=datetime.utcnow(),
+            evidence_snapshot={
+                "evidence_kind": request.evidence_kind,
+                "source_document_id": request.source_document_id,
+                "source_document_hash": request.source_document_hash,
+                "source_authority": request.source_authority,
+                "crop_hash": ev.crop_image_hash if ev else None,
+                "crop_path": ev.crop_image_path if ev else None,
+            },
+            message=f"Plantilla {promote_resp.canonical_code} aprobada formalmente y activada para producción por {request.reviewer_id}."
         )
 
     def approve_template_version_for_production(

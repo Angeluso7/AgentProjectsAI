@@ -104,7 +104,8 @@ def _create_detected_symbol(
     classification: str = "symbol",
     inner_drawing_bbox: list = None,
     symbol_crop_bbox: list = None,
-    context_text: str = None
+    context_text: str = None,
+    detected_tag: str = None
 ) -> DetectedSymbol:
     doc, sheet = _create_test_document_and_sheet(db_session)
     sym = DetectedSymbol(
@@ -112,6 +113,7 @@ def _create_detected_symbol(
         document_id=doc.id,
         sheet_id=sheet.id,
         symbol_type="valve",
+        detected_tag_or_code=detected_tag,
         bbox=[200, 200, 280, 280],
         bbox_normalized=[0.2, 0.2, 0.28, 0.28],
         confidence=0.95,
@@ -1113,5 +1115,620 @@ def test_unknown_symbol_with_valid_geometry_creates_finding_and_research_case(db
         SymbolTemplate.canonical_name == "SYM-UNKNOWN-001"
     ).count()
     assert templates_count == 0, "Violación: Un símbolo desconocido fue auto-promovido a plantilla sin decisión HITL."
+
+
+def test_synthetic_evidence_cannot_activate_production(db_session: Session, synthetic_temp_dir):
+    """
+    Regla de Gobernanza 1:
+    La evidencia sintética (synthetic) NUNCA puede activar una plantilla o versión para producción.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl_crop = os.path.join(synthetic_temp_dir, "synthetic_fail_crop.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-SYNTH-BLOCK",
+        canonical_name="Gate Valve Synthetic",
+        display_name="Gate Valve Synthetic",
+        symbol_class="gate_valve",
+        status="sandbox"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="sandbox_approved",
+        canonical_crop_path=tmpl_crop
+    )
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(
+        symbol_template_version_id=ver.id,
+        evidence_kind="synthetic",
+        crop_image_path=tmpl_crop,
+        crop_image_hash="hash_synth_block",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(ev)
+    db_session.commit()
+
+    with pytest.raises(ValueError, match="Governance Violation: Cannot approve a template version backed solely by synthetic evidence"):
+        service.approve_template_version_for_production(
+            version_id=ver.id,
+            reviewer_id="lead_auditor",
+            rationale="Intento prohibido de activar evidencia sintética en producción"
+        )
+
+
+def test_real_authorized_redacted_real_evidence_can_activate_only_after_hitl(db_session: Session, synthetic_temp_dir):
+    """
+    Regla de Gobernanza 2:
+    La evidencia real_authorized o redacted_real SÓLO puede activarse tras revisión humana explícita (HITL).
+    Verifica que el estado pasa a 'active' y 'approved' con registro formal de SymbolReviewDecision.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    real_crop = os.path.join(synthetic_temp_dir, "real_auth_crop.png")
+    cv2.imwrite(real_crop, _draw_synthetic_gate_valve_image(0))
+    with open(real_crop, "rb") as f:
+        real_hash = hashlib.sha256(f.read()).hexdigest()
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-REAL-HITL",
+        canonical_name="Gate Valve Real",
+        display_name="Gate Valve Real",
+        symbol_class="gate_valve",
+        status="draft"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="pending_review",
+        canonical_crop_path=real_crop
+    )
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(
+        symbol_template_version_id=ver.id,
+        evidence_kind="real_authorized",
+        source_document_id="DOC-STD-PIP-001",
+        source_document_hash="sha256_std_doc_hash_12345",
+        source_authority="Process Industry Practices (PIP)",
+        discipline="piping",
+        sheet_name="Piping Symbols Legend",
+        sheet_code="LEG-01",
+        page_number=14,
+        bbox_normalized=[0.12, 0.15, 0.28, 0.35],
+        crop_image_path=real_crop,
+        crop_image_hash=real_hash,
+        extractor_version="1.0.0"
+    )
+    db_session.add(ev)
+    db_session.commit()
+
+    # Intento sin reviewer_id debe fallar
+    with pytest.raises(ValueError, match="Governance Violation: HITL Reviewer ID is required"):
+        service.approve_template_version_for_production(
+            version_id=ver.id,
+            reviewer_id="",
+            rationale="Rationale sin ID"
+        )
+
+    # Aprobación válida HITL
+    approved_ver = service.approve_template_version_for_production(
+        version_id=ver.id,
+        reviewer_id="eng_lead_reyes",
+        rationale="Verificado contra PIP PNC00001 leyenda oficial de piping."
+    )
+    assert approved_ver.approval_status == "approved"
+    assert approved_ver.approved_by == "eng_lead_reyes"
+    db_session.refresh(tmpl)
+    assert tmpl.status == "active"
+
+    # Verificar que se registró SymbolReviewDecision inmutable
+    dec = db_session.query(SymbolReviewDecision).filter(
+        SymbolReviewDecision.subject_id == ver.id,
+        SymbolReviewDecision.decision == "approve"
+    ).first()
+    assert dec is not None
+    assert dec.reviewer_id == "eng_lead_reyes"
+    assert dec.evidence_snapshot["evidence_kind"] == "real_authorized"
+
+
+def test_approved_active_template_can_match_in_production(db_session: Session, synthetic_temp_dir):
+    """
+    Regla de Gobernanza 3:
+    Una plantilla aprobada con evidencia real autorizada y estado 'active' hace match exitoso en modo 'production'.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    real_crop = os.path.join(synthetic_temp_dir, "prod_active_template.png")
+    cv2.imwrite(real_crop, _draw_synthetic_gate_valve_image(0))
+    with open(real_crop, "rb") as f:
+        real_hash = hashlib.sha256(f.read()).hexdigest()
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        symbol_class="gate_valve",
+        discipline="piping",
+        status="active"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="approved",
+        canonical_crop_path=real_crop,
+        canonical_crop_hash=real_hash,
+        orientation_policy="rotation_equivalent_180"
+    )
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(
+        symbol_template_version_id=ver.id,
+        evidence_kind="real_authorized",
+        source_document_hash="sha256_real_doc_hash",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9],
+        crop_image_path=real_crop,
+        crop_image_hash=real_hash
+    )
+    db_session.add(ev)
+    db_session.commit()
+
+    # Ocurrencia en plano de proyecto
+    proj_crop = os.path.join(synthetic_temp_dir, "proj_gate_valve.png")
+    cv2.imwrite(proj_crop, _draw_synthetic_gate_valve_image(0))
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=proj_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.96,
+        classification="symbol",
+        context_text="HV-101 Gate Valve",
+        detected_tag="HV-101"
+    )
+    db_session.commit()
+
+    resp = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="production"
+    )
+    assert resp.matching_status == "matched"
+    assert resp.best_match is not None
+    assert resp.best_match.canonical_code == "PIP-VALVE-GATE"
+    assert resp.best_match.total_score >= 0.78
+    assert resp.record_kind == "occurrence"
+    assert resp.environment == "production"
+
+
+def test_recognized_occurrence_preserves_full_lineage(db_session: Session, synthetic_temp_dir):
+    """
+    Linaje e Inmutabilidad:
+    Una ocurrencia reconocida preserva trazabilidad completa: template_id, version_id,
+    document_id, sheet_id, page_number, bboxes, ruta y hash de crop, y desglose de scores.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    tmpl_crop = os.path.join(synthetic_temp_dir, "lineage_tmpl.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+    with open(tmpl_crop, "rb") as f:
+        tmpl_hash = hashlib.sha256(f.read()).hexdigest()
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        status="active",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="approved",
+        canonical_crop_path=tmpl_crop,
+        canonical_crop_hash=tmpl_hash
+    )
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(
+        symbol_template_version_id=ver.id,
+        evidence_kind="redacted_real",
+        source_document_id="DOC-LEGEND-001",
+        source_document_hash="sha256_legend_hash",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9],
+        crop_image_path=tmpl_crop,
+        crop_image_hash=tmpl_hash
+    )
+    db_session.add(ev)
+    db_session.commit()
+
+    proj_crop = os.path.join(synthetic_temp_dir, "lineage_occ.png")
+    cv2.imwrite(proj_crop, _draw_synthetic_gate_valve_image(0))
+    with open(proj_crop, "rb") as f:
+        proj_hash = hashlib.sha256(f.read()).hexdigest()
+
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=proj_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.95,
+        classification="symbol"
+    )
+    occ.crop_image_hash = proj_hash
+    db_session.commit()
+
+    res = service.match_occurrence(
+        occurrence_id=str(occ.id),
+        discipline="piping",
+        execution_mode="production"
+    )
+    assert res.matching_status == "matched"
+
+    db_session.refresh(occ)
+    assert occ.matched_template_id == tmpl.id
+    assert occ.matched_template_version_id == ver.id
+    assert occ.document_id is not None
+    assert occ.sheet_id is not None
+    assert occ.crop_image_hash == proj_hash
+    assert occ.match_score is not None and occ.match_score >= 0.78
+    assert occ.geometry_score is not None
+    assert occ.topology_score is not None
+    assert occ.visual_score is not None
+    assert occ.record_kind == "occurrence"
+
+
+def test_candidate_cannot_appear_in_recognized_occurrence_list(client: TestClient, db_session: Session, synthetic_temp_dir):
+    """
+    Separación Candidato vs Ocurrencia:
+    Los elementos que son 'candidate' (no validados como ocurrencias reconocidas)
+    NUNCA aparecen en la lista devuelta por GET /api/v1/symbols/occurrences por defecto.
+    """
+    crop_path = os.path.join(synthetic_temp_dir, "sep_crop.png")
+    cv2.imwrite(crop_path, _draw_synthetic_gate_valve_image(0))
+
+    # Crear un candidate puro (no reconocido)
+    cand = _create_detected_symbol(
+        db_session,
+        crop_path=crop_path,
+        classification="figure",
+        geometric_evidence=False
+    )
+    cand.record_kind = "candidate"
+
+    # Crear una occurrence reconocida
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=crop_path,
+        classification="symbol",
+        geometric_evidence=True
+    )
+    occ.record_kind = "occurrence"
+    occ.matching_status = "matched"
+    db_session.commit()
+
+    response = client.get("/api/v1/symbol-catalog/occurrences")
+    assert response.status_code == 200
+    data = response.json()
+    item_ids = [item["id"] for item in data["items"]]
+
+    assert str(occ.id) in item_ids
+    assert str(cand.id) not in item_ids, "Violación: Un candidato no validado apareció en la lista de ocurrencias reconocidas."
+
+
+def test_crop_bbox_context_navigation_payload_is_complete(client: TestClient, db_session: Session, synthetic_temp_dir):
+    """
+    Navegación Contextual:
+    Cada ocurrencia en GET /api/v1/symbols/occurrences provee el payload completo de navegación:
+    document_id, sheet_id, page_number, sheet_name, bbox, bbox_normalized, table_id, cell_id.
+    """
+    crop_path = os.path.join(synthetic_temp_dir, "nav_crop.png")
+    cv2.imwrite(crop_path, _draw_synthetic_gate_valve_image(0))
+
+    occ = _create_detected_symbol(
+        db_session,
+        crop_path=crop_path,
+        classification="symbol",
+        geometric_evidence=True
+    )
+    occ.record_kind = "occurrence"
+    occ.table_id = "TBL-01"
+    occ.cell_id = "CELL-A1"
+    db_session.commit()
+
+    response = client.get("/api/v1/symbol-catalog/occurrences")
+    assert response.status_code == 200
+    data = response.json()
+    item = next((i for i in data["items"] if i["id"] == str(occ.id)), None)
+    assert item is not None
+
+    nav = item["context_navigation"]
+    assert nav["document_id"] == occ.document_id
+    assert nav["sheet_id"] == occ.sheet_id
+    assert nav["page_number"] == 1
+    assert nav["bbox"] == occ.bbox
+    assert nav["bbox_normalized"] == occ.bbox_normalized
+    assert nav["table_id"] == "TBL-01"
+    assert nav["cell_id"] == "CELL-A1"
+
+
+def test_ocr_text_alone_cannot_approve_or_match(db_session: Session, synthetic_temp_dir):
+    """
+    Invariante Crítica:
+    El texto OCR por sí solo (incluso si contiene palabras clave como 'gate valve')
+    NO PUEDE activar una plantilla ni generar un match positivo sin geometría visual real.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    text_only_crop = os.path.join(synthetic_temp_dir, "text_only_blank.png")
+    cv2.imwrite(text_only_crop, np.ones((80, 80, 3), dtype=np.uint8) * 255) # Blanco puro
+
+    # Elemento con texto 'Gate Valve' pero sin geometría
+    cand = _create_detected_symbol(
+        db_session,
+        crop_path=text_only_crop,
+        geometric_evidence=False,
+        geometric_confidence=0.0,
+        classification="not_symbol",
+        context_text="Gate Valve 2 inch 150lb ANSI",
+        detected_tag="HV-999"
+    )
+    cand.record_kind = "candidate"
+    db_session.commit()
+
+    res = service.match_occurrence(occurrence_id=str(cand.id), discipline="piping", execution_mode="production")
+    assert res.matching_status == "not_applicable"
+    assert res.best_match is None
+
+
+def test_curation_view_and_guided_approval_api_flow(client: TestClient, db_session: Session, synthetic_temp_dir):
+    """
+    Curación Guiada HITL (Sección Tercero):
+    1. Consulta de curation-view devuelve geometría, crop, orientación y OCR secundario.
+    2. Aprobación guiada formal activa la plantilla para producción con evidencia redacted_real.
+    """
+    crop_path = os.path.join(synthetic_temp_dir, "curation_candidate.png")
+    cv2.imwrite(crop_path, _draw_synthetic_gate_valve_image(0))
+    with open(crop_path, "rb") as f:
+        crop_hash = hashlib.sha256(f.read()).hexdigest()
+
+    cand = _create_detected_symbol(
+        db_session,
+        crop_path=crop_path,
+        geometric_evidence=True,
+        geometric_confidence=0.95,
+        classification="symbol",
+        context_text="HV-001 Manual Gate Valve",
+        detected_tag="HV-001"
+    )
+    cand.crop_image_hash = crop_hash
+    cand.record_kind = "candidate"
+    db_session.commit()
+
+    # 1. Obtener curation view
+    view_resp = client.get(f"/api/v1/symbol-catalog/candidates/{cand.id}/curation-view")
+    assert view_resp.status_code == 200
+    v_data = view_resp.json()
+    assert v_data["candidate_id"] == str(cand.id)
+    assert v_data["geometric_evidence"] is True
+    assert len(v_data["geometric_features"]) >= 4
+    assert v_data["ocr_secondary_context"]["role"] == "secondary_context_only"
+    assert v_data["suggested_canonical_code"] == "PIP-VALVE-GATE"
+
+    # 2. Curar y aprobar formalmente para producción con evidencia redacted_real
+    approve_payload = {
+        "candidate_id": str(cand.id),
+        "confirmed_canonical_code": "PIP-VALVE-GATE",
+        "confirmed_canonical_name": "Gate Valve",
+        "reviewed_crop": True,
+        "reviewed_source": True,
+        "explicit_approval": True,
+        "reviewer_id": "lead_piping_engineer",
+        "rationale": "Curación formal y validación de crop de válvula de compuerta manual autorizada.",
+        "evidence_kind": "redacted_real",
+        "source_document_id": "DOC-PID-AUT-01",
+        "source_document_hash": "sha256_aut_doc_hash_999",
+        "source_authority": "Engineering Standard Legend",
+        "discipline": "piping",
+        "sheet_name": "Piping Legend Sheet 1",
+        "sheet_code": "LEG-01",
+        "extractor_version": "1.0.0"
+    }
+
+    post_resp = client.post(f"/api/v1/symbol-catalog/candidates/{cand.id}/curate-and-approve", json=approve_payload)
+    assert post_resp.status_code == 200
+    p_data = post_resp.json()
+    assert p_data["template_status"] == "active"
+    assert p_data["approval_status"] == "approved"
+    assert p_data["reviewer_id"] == "lead_piping_engineer"
+    assert p_data["canonical_code"] == "PIP-VALVE-GATE"
+
+    # Verificar que candidato fue marcado como accepted
+    db_session.refresh(cand)
+    assert cand.review_status == "accepted"
+
+
+def test_project_drawing_validation_slice_with_unknown_ambiguous_excluded(db_session: Session, synthetic_temp_dir):
+    """
+    Validación sobre Plano de Proyecto (Sección Cuarto):
+    Demuestra en un plano autorizado/redacted_real:
+    1. Ocurrencia reconocida de PIP-VALVE-GATE (HV-101).
+    2. Ocurrencia unknown_symbol (SYM-UNKNOWN-001).
+    3. Caso ambiguous dentro del margen de ambigüedad.
+    4. Figura o gráfico excluido (0 ocurrencias).
+    5. Tabla puramente textual con cero símbolos.
+    """
+    service = CanonicalPipingCatalogService(db_session)
+    doc, sheet = _create_test_document_and_sheet(db_session)
+
+    # 1. Crear plantilla canónica Gate Valve ACTIVA en producción
+    tmpl_crop = os.path.join(synthetic_temp_dir, "slice_gate_tmpl.png")
+    cv2.imwrite(tmpl_crop, _draw_synthetic_gate_valve_image(0))
+    with open(tmpl_crop, "rb") as f:
+        tmpl_hash = hashlib.sha256(f.read()).hexdigest()
+
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE",
+        canonical_name="Gate Valve",
+        display_name="Gate Valve",
+        status="active",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl)
+    ver = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl.id,
+        version_number=1,
+        approval_status="approved",
+        canonical_crop_path=tmpl_crop,
+        canonical_crop_hash=tmpl_hash
+    )
+    db_session.add(ver)
+    ev = SymbolSourceEvidence(
+        symbol_template_version_id=ver.id,
+        evidence_kind="redacted_real",
+        source_document_id=doc.id,
+        source_document_hash="doc_hash_slice_test",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9],
+        crop_image_path=tmpl_crop,
+        crop_image_hash=tmpl_hash
+    )
+    db_session.add(ev)
+    db_session.commit()
+
+    # CASO 1: Ocurrencia Matched de PIP-VALVE-GATE (HV-101)
+    gate_crop = os.path.join(synthetic_temp_dir, "slice_gate_occ.png")
+    cv2.imwrite(gate_crop, _draw_synthetic_gate_valve_image(0))
+    gate_occ = _create_detected_symbol(
+        db_session,
+        crop_path=gate_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.96,
+        classification="symbol",
+        context_text="HV-101",
+        detected_tag="HV-101"
+    )
+    db_session.commit()
+
+    res_gate = service.match_occurrence(occurrence_id=str(gate_occ.id), discipline="piping", execution_mode="production")
+    assert res_gate.matching_status == "matched"
+    assert res_gate.best_match.canonical_code == "PIP-VALVE-GATE"
+
+    # CASO 2: Símbolo Desconocido con Geometría Válida -> unknown_symbol (SYM-UNKNOWN-001)
+    unk_crop = os.path.join(synthetic_temp_dir, "slice_unk_occ.png")
+    img_unk = np.ones((80, 80, 3), dtype=np.uint8) * 255
+    cv2.rectangle(img_unk, (20, 20), (60, 60), (40, 40, 40), 2)
+    cv2.line(img_unk, (20, 40), (60, 40), (40, 40, 40), 2)
+    cv2.imwrite(unk_crop, img_unk)
+    unk_occ = _create_detected_symbol(
+        db_session,
+        crop_path=unk_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.93,
+        classification="symbol"
+    )
+    db_session.commit()
+
+    res_unk = service.match_occurrence(occurrence_id=str(unk_occ.id), discipline="piping", execution_mode="production")
+    assert res_unk.matching_status == "unknown_symbol"
+    assert res_unk.research_case_id is not None
+
+    # CASO 3: Símbolo Ambiguo (dentro de margen 0.05)
+    # Creamos una segunda plantilla activa muy similar
+    tmpl2_crop = os.path.join(synthetic_temp_dir, "slice_gate_tmpl2.png")
+    cv2.imwrite(tmpl2_crop, _draw_synthetic_gate_valve_image(0))
+    tmpl2 = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        canonical_code="PIP-VALVE-GATE-ISO",
+        canonical_name="Gate Valve Alternative",
+        display_name="Gate Valve Alternative",
+        status="active",
+        symbol_class="gate_valve",
+        discipline="piping"
+    )
+    db_session.add(tmpl2)
+    ver2 = SymbolTemplateVersion(
+        id=str(uuid.uuid4()),
+        symbol_template_id=tmpl2.id,
+        version_number=1,
+        approval_status="approved",
+        canonical_crop_path=tmpl2_crop,
+        canonical_crop_hash="tmpl2_hash"
+    )
+    db_session.add(ver2)
+    ev2 = SymbolSourceEvidence(
+        symbol_template_version_id=ver2.id,
+        evidence_kind="redacted_real",
+        crop_image_path=tmpl2_crop,
+        crop_image_hash="tmpl2_hash",
+        page_number=1,
+        bbox_normalized=[0.1, 0.1, 0.9, 0.9]
+    )
+    db_session.add(ev2)
+    db_session.commit()
+
+    # Como ambas plantillas son idénticas geométricamente, el score entre ambas es idéntico (delta < 0.05)
+    amb_crop = os.path.join(synthetic_temp_dir, "slice_amb_occ.png")
+    cv2.imwrite(amb_crop, _draw_synthetic_gate_valve_image(0))
+    amb_occ = _create_detected_symbol(
+        db_session,
+        crop_path=amb_crop,
+        geometric_evidence=True,
+        geometric_confidence=0.95,
+        classification="symbol"
+    )
+    db_session.commit()
+
+    res_amb = service.match_occurrence(occurrence_id=str(amb_occ.id), discipline="piping", execution_mode="production")
+    assert res_amb.matching_status == "ambiguous"
+
+    # CASO 4: Gráfico / Forma de onda excluida -> not_applicable, record_kind='candidate'
+    fig_crop = os.path.join(synthetic_temp_dir, "slice_waveform.png")
+    img_wave = np.ones((80, 80, 3), dtype=np.uint8) * 255
+    cv2.line(img_wave, (10, 40), (25, 20), (50, 50, 50), 2)
+    cv2.line(img_wave, (25, 20), (45, 60), (50, 50, 50), 2)
+    cv2.line(img_wave, (45, 60), (70, 40), (50, 50, 50), 2)
+    cv2.imwrite(fig_crop, img_wave)
+    fig_cand = _create_detected_symbol(
+        db_session,
+        crop_path=fig_crop,
+        classification="figure",
+        geometric_evidence=False
+    )
+    fig_cand.record_kind = "candidate"
+    db_session.commit()
+
+    res_fig = service.match_occurrence(occurrence_id=str(fig_cand.id), discipline="piping", execution_mode="production")
+    assert res_fig.matching_status == "not_applicable"
+    assert res_fig.record_kind == "candidate"
+
+    # CASO 5: Tabla textual con cero símbolos
+    txt_crop = os.path.join(synthetic_temp_dir, "slice_table_text.png")
+    cv2.imwrite(txt_crop, np.ones((80, 80, 3), dtype=np.uint8) * 255)
+    txt_cand = _create_detected_symbol(
+        db_session,
+        crop_path=txt_crop,
+        classification="text_cell",
+        geometric_evidence=False,
+        context_text="SCHEDULE 40 CARBON STEEL PIPE"
+    )
+    txt_cand.record_kind = "candidate"
+    db_session.commit()
+
+    res_txt = service.match_occurrence(occurrence_id=str(txt_cand.id), discipline="piping", execution_mode="production")
+    assert res_txt.matching_status == "not_applicable"
+    assert res_txt.record_kind == "candidate"
+
 
 

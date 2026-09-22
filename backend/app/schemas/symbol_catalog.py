@@ -43,8 +43,14 @@ class SymbolSourceEvidenceDTO(BaseModel):
     grid_source: Optional[str] = None
     geometric_confidence: float = 1.0
     source_standard_or_project: Optional[str] = None
+    source_authority: Optional[str] = None
     source_revision: Optional[str] = None
     source_date: Optional[str] = None
+    discipline: Optional[str] = None
+    sheet_name: Optional[str] = None
+    sheet_code: Optional[str] = None
+    extractor_version: Optional[str] = None
+    evidence_metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class SymbolTemplateVersionDetail(BaseModel):
@@ -92,7 +98,7 @@ class CanonicalSymbolTemplateDetail(BaseModel):
 
 
 class PromoteCandidateToCanonicalRequest(BaseModel):
-    candidate_id: str # StructuredSymbol.id
+    candidate_id: str # StructuredSymbol.id or DetectedSymbol.id
     canonical_code: str # e.g. "PIP-VALVE-GATE"
     canonical_name: str # e.g. "Gate Valve"
     category: str = "valve"
@@ -101,9 +107,20 @@ class PromoteCandidateToCanonicalRequest(BaseModel):
     technical_function: Optional[str] = "Isolation or shutoff valve"
     standard_reference: Optional[str] = "PIP PNC00001 / ISA-5.1"
     evidence_kind: str = "synthetic" # synthetic, redacted_real, real_authorized
+    source_document_id: Optional[str] = None
+    source_document_hash: Optional[str] = None
+    source_authority: Optional[str] = None
+    sheet_name: Optional[str] = None
+    sheet_code: Optional[str] = None
+    page_number: Optional[int] = None
+    source_revision: Optional[str] = None
+    source_date: Optional[str] = None
+    extractor_version: Optional[str] = "1.0.0"
     orientation_policy: str = "rotation_equivalent_180"
     reviewer_id: str = "auditor"
+    rationale: Optional[str] = None
     notes: Optional[str] = None
+    evidence_metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
 class PromoteCandidateToCanonicalResponse(BaseModel):
@@ -227,3 +244,66 @@ class SymbolReviewDecisionResponse(BaseModel):
     reviewer_id: str
     recorded_at: datetime
     message: str
+
+
+class CandidateCurationViewResponse(BaseModel):
+    candidate_id: str
+    record_kind: str = "candidate"
+    classification: str = "symbol"
+    page_number: int = 1
+    document_id: Optional[str] = None
+    sheet_name: Optional[str] = None
+    sheet_code: Optional[str] = None
+    visual_context_bbox: List[float] = Field(default_factory=list)
+    cell_bbox: Optional[List[float]] = None
+    inner_drawing_bbox: Optional[List[float]] = None
+    symbol_crop_bbox: Optional[List[float]] = None
+    crop_image_path: Optional[str] = None
+    crop_image_hash: Optional[str] = None
+    grid_source: Optional[str] = None
+    geometric_evidence: bool = True
+    geometric_confidence: float = 1.0
+    geometric_features: List[Dict[str, Any]] = Field(default_factory=list)
+    orientation_degrees: Optional[float] = None
+    ocr_secondary_context: Dict[str, Any] = Field(default_factory=dict)
+    source_evidence: Optional[SymbolSourceEvidenceDTO] = None
+    suggested_canonical_code: str = "PIP-VALVE-GATE"
+    suggested_canonical_name: str = "Gate Valve"
+
+
+class CurateAndApproveCandidateRequest(BaseModel):
+    candidate_id: str
+    confirmed_canonical_code: str = "PIP-VALVE-GATE"
+    confirmed_canonical_name: str = "Gate Valve"
+    reviewed_crop: bool = True
+    reviewed_source: bool = True
+    explicit_approval: bool = True
+    reviewer_id: str
+    rationale: str
+    evidence_kind: str = "redacted_real" # real_authorized, redacted_real
+    source_document_id: Optional[str] = None
+    source_document_hash: Optional[str] = None
+    source_authority: Optional[str] = None
+    discipline: str = "piping"
+    sheet_name: Optional[str] = None
+    sheet_code: Optional[str] = None
+    source_revision: Optional[str] = None
+    source_date: Optional[str] = None
+    extractor_version: Optional[str] = "1.0.0"
+    evidence_metadata: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CurateAndApproveCandidateResponse(BaseModel):
+    template_id: str
+    version_id: str
+    decision_id: str
+    canonical_code: str
+    canonical_name: str
+    template_status: str = "active"
+    approval_status: str = "approved"
+    features_count: int
+    reviewer_id: str
+    approved_at: datetime
+    evidence_snapshot: Dict[str, Any] = Field(default_factory=dict)
+    message: str
+

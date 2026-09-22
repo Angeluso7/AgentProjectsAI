@@ -26,6 +26,9 @@ from app.schemas.symbol_catalog import (
     MatchOccurrenceResponse,
     SymbolReviewDecisionRequest,
     SymbolReviewDecisionResponse,
+    CandidateCurationViewResponse,
+    CurateAndApproveCandidateRequest,
+    CurateAndApproveCandidateResponse,
 )
 from app.services.symbols.canonical_catalog_service import CanonicalPipingCatalogService
 
@@ -70,8 +73,14 @@ def _map_template_version(v: SymbolTemplateVersion) -> SymbolTemplateVersionDeta
             grid_source=e.grid_source,
             geometric_confidence=e.geometric_confidence,
             source_standard_or_project=e.source_standard_or_project,
+            source_authority=e.source_authority,
             source_revision=e.source_revision,
             source_date=e.source_date,
+            discipline=e.discipline,
+            sheet_name=e.sheet_name,
+            sheet_code=e.sheet_code,
+            extractor_version=e.extractor_version,
+            evidence_metadata=e.evidence_metadata or {},
         )
 
     return SymbolTemplateVersionDetail(
@@ -315,6 +324,104 @@ def record_review_decision(
     """
     service = CanonicalPipingCatalogService(db)
     return service.record_review_decision(payload)
+
+
+@router.get("/candidates")
+def list_symbol_candidates(
+    project_id: Optional[str] = Query(None, description="Filtra por ID de proyecto"),
+    document_id: Optional[str] = Query(None, description="Filtra por documento"),
+    classification: Optional[str] = Query("symbol", description="Filtra por clasificación (default: symbol)"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
+):
+    """
+    Lista candidatos a símbolos (record_kind='candidate') para inspección y curación HITL.
+    Garantiza que candidatos no aprobados estén completamente separados de las ocurrencias reconocidas.
+    """
+    query = db.query(DetectedSymbol).filter(DetectedSymbol.record_kind == "candidate")
+    if project_id:
+        query = query.filter(DetectedSymbol.project_id == project_id)
+    if document_id:
+        query = query.filter(
+            (DetectedSymbol.project_document_id == document_id) |
+            (DetectedSymbol.document_id == document_id)
+        )
+    if classification:
+        query = query.filter(DetectedSymbol.classification == classification)
+
+    total = query.count()
+    items = query.order_by(DetectedSymbol.created_at.desc()).offset(offset).limit(limit).all()
+
+    response_items = []
+    for item in items:
+        sheet = item.sheet
+        page_num = sheet.sheet_number if sheet and sheet.sheet_number else 1
+        sheet_name = (sheet.title or sheet.sheet_code) if sheet else None
+        sheet_code = sheet.sheet_code if sheet else None
+
+        response_items.append({
+            "id": str(item.id),
+            "record_kind": item.record_kind,
+            "classification": item.classification,
+            "page_number": page_num,
+            "document_id": item.document_id,
+            "project_document_id": item.project_document_id,
+            "sheet_name": sheet_name,
+            "sheet_code": sheet_code,
+            "bbox_normalized": item.bbox_normalized or item.bbox or [],
+            "cell_bbox": item.cell_bbox,
+            "inner_drawing_bbox": item.inner_drawing_bbox,
+            "symbol_crop_bbox": item.symbol_crop_bbox,
+            "crop_image_path": item.crop_image_path,
+            "crop_image_hash": item.crop_image_hash,
+            "geometric_evidence": item.geometric_evidence,
+            "geometric_confidence": item.geometric_confidence,
+            "review_status": item.review_status,
+            "context_text": item.context_text,
+            "detected_tag_or_code": item.detected_tag_or_code,
+            "created_at": item.created_at.isoformat() if item.created_at else None,
+        })
+
+    return {"total": total, "items": response_items}
+
+
+@router.get("/candidates/{candidate_id}/curation-view", response_model=CandidateCurationViewResponse)
+def get_candidate_curation_view(
+    candidate_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Inspección guiada HITL: Devuelve vista completa del candidato preseleccionado
+    con evidencia geométrica válida, crop, rasgos explicables, contexto visual
+    y OCR secundario para decisión formal de curación.
+    """
+    service = CanonicalPipingCatalogService(db)
+    try:
+        return service.get_candidate_curation_view(candidate_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/candidates/{candidate_id}/curate-and-approve", response_model=CurateAndApproveCandidateResponse)
+def curate_and_approve_candidate(
+    candidate_id: str,
+    payload: CurateAndApproveCandidateRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Aprobación formal HITL guiada:
+    1. Revisor confirma nombre canónico y familia (PIP-VALVE-GATE).
+    2. Revisor confirma verificación física de crop y fuente.
+    3. Exige clasificación de evidencia real_authorized o redacted_real.
+    4. Activa la versión de plantilla para producción y registra SymbolReviewDecision.
+    """
+    service = CanonicalPipingCatalogService(db)
+    try:
+        payload.candidate_id = candidate_id
+        return service.curate_and_approve_candidate(payload)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
 @router.get("/research-cases")
