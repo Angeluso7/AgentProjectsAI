@@ -1,6 +1,6 @@
 name: CI Quality Gates
 
-on:
+'on':
   push:
     branches: [ main, master, develop ]
   pull_request:
@@ -56,6 +56,6 @@ jobs:
 
       - name: Gate 3 - Backend Integration & Functional Journey Tests
         env:
-          DATABASE_URL: sqlite:///:memory:
+          DATABASE_URL: 'sqlite:///:memory:'
         run: pytest tests/integration/test_functional_validation_journey.py tests/integration/test_plan_selections_incorporation.py tests/integration/test_document_deletion.py tests/integration/test_information_acquisition_and_web_first_flow.py tests/integration/test_knowledge_base_operational.py tests/integration/test_project_maturity_and_acquisition_route.py -v --disable-warnings
 
