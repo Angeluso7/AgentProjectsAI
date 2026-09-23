@@ -1,5 +1,4 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { apiService } from '../services/api';
 import { useProject } from '../context/ProjectContext';
 import {
@@ -15,8 +14,20 @@ import {
   FileSpreadsheet, FileCode, CheckSquare, Square, Eye, Sparkles
 } from 'lucide-react';
 
-export const PipelinePage: React.FC = () => {
-  const navigate = useNavigate();
+export interface PipelinePageProps {
+  onNavigate?: (
+    target: 'viewer' | 'projects' | 'sources' | string,
+    context?: {
+      documentId?: string;
+      projectId?: string;
+      pageNumber?: number;
+      sheetId?: string;
+      bbox?: number[];
+    }
+  ) => void;
+}
+
+export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
   const { projects, activeProject, activeProjectId, setActiveProjectId } = useProject();
 
   // Taxonomía
@@ -97,12 +108,21 @@ export const PipelinePage: React.FC = () => {
     }
   };
 
+  const selectActiveRun = (run: ReviewRunDetailResponse | null) => {
+    setActiveRun(run);
+    if (run?.id) {
+      localStorage.setItem('last_active_review_run_id', run.id);
+    }
+  };
+
   const loadHistoryRuns = async (projId: string) => {
     try {
       const runs = await apiService.listReviewRuns(projId);
       setHistoryRuns(runs);
       if (runs.length > 0 && !activeRun) {
-        setActiveRun(runs[0]);
+        const lastRunId = localStorage.getItem('last_active_review_run_id');
+        const targetRun = (lastRunId && runs.find(r => r.id === lastRunId)) || runs[0];
+        selectActiveRun(targetRun);
       }
     } catch (e) {
       console.error('Error cargando historial de revisiones:', e);
@@ -191,7 +211,7 @@ export const PipelinePage: React.FC = () => {
 
       // Recargar detalles de la corrida ejecutada
       const details = await apiService.getReviewRunDetails(res.review_run_id);
-      setActiveRun(details);
+      selectActiveRun(details);
 
       // Recargar historial
       loadHistoryRuns(activeProjectId);
@@ -223,6 +243,48 @@ export const PipelinePage: React.FC = () => {
       alert(err.response?.data?.detail || 'Error al generar exportación.');
     } finally {
       setExportingFormat(null);
+    }
+  };
+
+  const handleOpenContext = (finding: any) => {
+    const navCtx = finding.navigation_context || {};
+    const docId = navCtx.document_id;
+    const sheetId = navCtx.sheet_id;
+    const projId = navCtx.project_id || activeProjectId;
+    const bbox = finding.bbox;
+    const pageNumber = navCtx.page_number;
+
+    if (!docId) return;
+
+    // Persistir estado y contexto en localStorage para el visor
+    if (docId) localStorage.setItem('viewer_target_doc_id', docId);
+    if (sheetId) localStorage.setItem('viewer_target_sheet_id', sheetId);
+    if (projId) localStorage.setItem('active_project_id', projId);
+    if (bbox) localStorage.setItem('viewer_target_bbox', JSON.stringify(bbox));
+    localStorage.setItem('viewer_return_to_tab', 'pipeline');
+    if (activeRun?.id) {
+      localStorage.setItem('last_active_review_run_id', activeRun.id);
+    }
+
+    if (onNavigate) {
+      onNavigate('viewer', {
+        projectId: projId,
+        documentId: docId,
+        sheetId: sheetId,
+        pageNumber: pageNumber,
+        bbox: bbox
+      });
+    } else {
+      window.dispatchEvent(new CustomEvent('navigate-tab', {
+        detail: {
+          tab: 'viewer',
+          docId: docId,
+          sheetId: sheetId,
+          projectId: projId,
+          pageNumber: pageNumber,
+          bbox: bbox
+        }
+      }));
     }
   };
 
@@ -466,7 +528,7 @@ export const PipelinePage: React.FC = () => {
                   return (
                     <div
                       key={r.id}
-                      onClick={() => setActiveRun(r)}
+                      onClick={() => selectActiveRun(r)}
                       className={`p-2.5 rounded-lg border text-xs cursor-pointer transition-all ${
                         isSelected
                           ? 'border-blue-500 bg-blue-50/50 dark:bg-blue-900/20'
@@ -885,16 +947,25 @@ export const PipelinePage: React.FC = () => {
                             </div>
 
                             {/* Botón para navegar al visor con contexto */}
-                            {f.navigation_context?.document_id && (
+                            {f.navigation_context?.document_id ? (
                               <button
                                 type="button"
-                                onClick={() => {
-                                  navigate(`/viewer?document_id=${f.navigation_context?.document_id}`);
-                                }}
+                                onClick={() => handleOpenContext(f)}
                                 className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 flex items-center gap-1 transition-colors shrink-0"
+                                title="Abrir en Visor de Planos con contexto"
                               >
                                 <Eye className="w-3.5 h-3.5 text-blue-600" />
                                 Visor
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                className="px-2.5 py-1 text-xs font-semibold rounded bg-slate-100/50 dark:bg-slate-800/50 text-slate-400 flex items-center gap-1 cursor-not-allowed shrink-0"
+                                title="Este hallazgo no cuenta con documento o contexto visual vinculado"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-slate-400" />
+                                Sin Visor
                               </button>
                             )}
                           </div>

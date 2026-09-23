@@ -158,6 +158,11 @@ try {
   }
   console.log('✅ Rules of Hooks check PASSED: All hooks are called unconditionally at top-level.');
 
+  // 5. Deep Architecture & Page Component Rendering Test (includes One-Click Review & Navigation)
+  console.log('\n⏳ Running Deep Page Component Rendering & Navigation Contract Tests...');
+  execSync('node scripts/run_render_test.js', { cwd: path.resolve(__dirname, '..'), stdio: 'inherit' });
+  console.log('✅ Component Rendering & Navigation Suite PASSED with 0 router conflicts.');
+
   console.log('\n🎉 [SMOKE-TEST] All checks completed successfully. Frontend is robust and stable.\n');
   process.exit(0);
 } catch (err) {

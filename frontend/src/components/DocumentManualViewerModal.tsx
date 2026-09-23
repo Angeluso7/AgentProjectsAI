@@ -13,7 +13,9 @@ import { apiService } from '../services/api';
 import { ExtractedItem, ExtractedItemType, SourceExtraction, SourceAssetItem } from '../types';
 
 // Configuración del worker de PDF.js
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+if (pdfjsLib && pdfjsLib.GlobalWorkerOptions) {
+  pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorker;
+}
 
 interface DocumentManualViewerModalProps {
   isOpen: boolean;

@@ -57,6 +57,9 @@ export function App() {
         if (e.detail.projectId) {
           localStorage.setItem('active_project_id', e.detail.projectId);
         }
+        if (e.detail.bbox) {
+          localStorage.setItem('viewer_target_bbox', JSON.stringify(e.detail.bbox));
+        }
         setRefreshKey((prev) => prev + 1);
       }
     };
@@ -119,6 +122,32 @@ export function App() {
   }
 
 
+  const handleNavigate = (
+    target: string,
+    context?: {
+      documentId?: string;
+      projectId?: string;
+      pageNumber?: number;
+      sheetId?: string;
+      bbox?: number[];
+    }
+  ) => {
+    setCurrentTab(target);
+    if (context?.documentId) {
+      localStorage.setItem('viewer_target_doc_id', context.documentId);
+    }
+    if (context?.sheetId) {
+      localStorage.setItem('viewer_target_sheet_id', context.sheetId);
+    }
+    if (context?.projectId) {
+      localStorage.setItem('active_project_id', context.projectId);
+    }
+    if (context?.bbox) {
+      localStorage.setItem('viewer_target_bbox', JSON.stringify(context.bbox));
+    }
+    setRefreshKey((prev) => prev + 1);
+  };
+
   // Si está autenticado, renderizar la aplicación envuelta en el contexto global de proyectos
   return (
     <ProjectProvider>
@@ -129,7 +158,7 @@ export function App() {
           <Navbar onSync={handleSync} />
 
           {currentTab === 'dashboard' && <DashboardPage key={refreshKey} />}
-          {currentTab === 'pipeline' && <PipelinePage key={refreshKey} />}
+          {currentTab === 'pipeline' && <PipelinePage key={refreshKey} onNavigate={handleNavigate} />}
           {currentTab === 'engines' && <AiEnginesPage key={refreshKey} />}
           {currentTab === 'jobs' && <JobsPage key={refreshKey} />}
           {currentTab === 'sources' && <SourcesPage key={refreshKey} />}

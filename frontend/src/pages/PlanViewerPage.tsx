@@ -5,7 +5,7 @@ import {
   Table as TableIcon, Shapes, Sparkles, Filter, ShieldAlert, SquareCheck, AlertOctagon,
   FileText, Folder, Upload, Hand, MousePointer, Crop, Maximize2,
   BookmarkPlus, Database, Trash2, Edit3, Check, Info, ArrowUpRight,
-  ScanText, X
+  ScanText, X, ArrowLeft
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import {
@@ -678,6 +678,31 @@ export const PlanViewerPage: React.FC = () => {
         
         {/* Selectores de Contexto */}
         <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+          {localStorage.getItem('viewer_return_to_tab') === 'pipeline' && (
+            <button
+              type="button"
+              onClick={() => {
+                localStorage.removeItem('viewer_return_to_tab');
+                window.dispatchEvent(new CustomEvent('navigate-tab', { detail: { tab: 'pipeline' } }));
+              }}
+              className="btn btn-secondary"
+              style={{
+                padding: '4px 10px',
+                fontSize: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+                borderColor: '#0284c7',
+                color: '#38bdf8',
+                background: 'rgba(2, 132, 199, 0.15)',
+                fontWeight: 600
+              }}
+              title="Volver a la vista de One-Click Review conservando el estado de la corrida"
+            >
+              <ArrowLeft size={13} /> Volver a One-Click Review
+            </button>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Folder size={15} style={{ color: 'var(--primary)' }} />
             <select
