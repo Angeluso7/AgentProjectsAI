@@ -21,6 +21,13 @@ from app.services.rules.implementations import (
     RequiredTablesRule,
     NormativeMinDoorWidthRule
 )
+from app.services.rules.piping_rules import (
+    SymUnknown001Rule,
+    SymAmbiguous001Rule,
+    SymLegendConsistency001Rule,
+    SymTagMissing001Rule,
+    GenDoc001Rule
+)
 from app.schemas.qa_rule import RuleEvaluationSummaryResponse
 from app.core.logging import logger
 
@@ -36,7 +43,12 @@ class RuleRegistry:
             TitleBlockRequiredFieldsRule(),
             TitleBlockScaleValidRule(),
             RequiredTablesRule(),
-            NormativeMinDoorWidthRule()
+            NormativeMinDoorWidthRule(),
+            SymUnknown001Rule(),
+            SymAmbiguous001Rule(),
+            SymLegendConsistency001Rule(),
+            SymTagMissing001Rule(),
+            GenDoc001Rule()
         ]
         for r in default_instances:
             cls._rules[r.code] = r
@@ -64,14 +76,33 @@ class RuleRegistry:
                     code=r.code,
                     name=r.name,
                     category=r.category,
-                    discipline=r.discipline,
+                    discipline=getattr(r, "discipline", "general").lower(),
                     severity_default=r.severity_default,
                     description=r.description,
+                    rule_scope=getattr(r, "rule_scope", "specialty"),
+                    execution_phase=getattr(r, "execution_phase", 5),
+                    priority=getattr(r, "priority", 100),
+                    enabled=True,
+                    source_status=getattr(r, "source_status", "approved"),
+                    requires_data=getattr(r, "requires_data", []),
+                    applicable_document_types=getattr(r, "applicable_document_types", []),
                     rule_logic_type=r.rule_logic_type,
                     version=r.version,
                     is_active=True
                 )
                 db.add(db_rule)
+            else:
+                # Actualizar metadatos si estaban por defecto
+                if not existing.rule_scope or existing.rule_scope == "specialty":
+                    existing.rule_scope = getattr(r, "rule_scope", "specialty")
+                if getattr(r, "execution_phase", None):
+                    existing.execution_phase = getattr(r, "execution_phase", 5)
+                if getattr(r, "priority", None):
+                    existing.priority = getattr(r, "priority", 100)
+                if getattr(r, "requires_data", None):
+                    existing.requires_data = getattr(r, "requires_data", [])
+                if getattr(r, "applicable_document_types", None):
+                    existing.applicable_document_types = getattr(r, "applicable_document_types", [])
         db.commit()
 
 

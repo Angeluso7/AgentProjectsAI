@@ -2616,4 +2616,201 @@ export interface BatchPromoteToTemplateResponse {
   message: string;
 }
 
+// ==========================================
+// One-Click Review Taxonomy & Orchestration
+// ==========================================
+
+export interface ReviewDisciplineItem {
+  id: string;
+  code: string;
+  name: string;
+  description?: string;
+  order_index: number;
+  is_active: boolean;
+}
+
+export interface ReviewTopicItem {
+  id: string;
+  discipline_id?: string;
+  code: string;
+  name: string;
+  description?: string;
+  is_transversal: boolean;
+  enabled_mvp: boolean;
+  order_index: number;
+  is_active: boolean;
+}
+
+export interface ReviewPlanRequest {
+  project_id: string;
+  discipline_code: string;
+  topic_code: string;
+  document_ids?: string[];
+  mode?: 'production' | 'sandbox';
+}
+
+export interface ReviewPlanResponse {
+  project_id: string;
+  project_code?: string;
+  project_name?: string;
+  discipline_code: string;
+  discipline_name: string;
+  topic_code: string;
+  topic_name: string;
+  execution_mode: 'production' | 'sandbox';
+  can_execute: boolean;
+  empty_reason?: string;
+  applicable_rules: Array<{
+    rule_id: string;
+    code: string;
+    name: string;
+    category: string;
+    discipline: string;
+    severity_default: string;
+    description: string;
+    rule_scope: string;
+    execution_phase: number;
+    priority: number;
+    requires_data: string[];
+    applicable_document_types: string[];
+    role: string;
+    approval_status: string;
+    source: string;
+    rationale?: string;
+    confidence: number;
+  }>;
+  unapproved_rules: Array<any>;
+  included_documents: Array<{
+    document_id: string;
+    filename: string;
+    file_hash_sha256?: string;
+    inclusion_reason: string;
+    document_role: string;
+    status: string;
+  }>;
+  excluded_documents: Array<{
+    document_id: string;
+    filename: string;
+    exclusion_reason: string;
+  }>;
+  missing_required_document_types: Array<{
+    document_type: string;
+    reason: string;
+    recommended_action: string;
+  }>;
+  phases_blueprint: Array<{
+    phase: number;
+    phase_name: string;
+    step_type: string;
+    rule_count: number;
+    rules: string[];
+    description: string;
+  }>;
+  warnings: string[];
+}
+
+export interface ReviewRunCreatePayload {
+  project_id: string;
+  discipline_code: string;
+  topic_code: string;
+  document_ids: string[];
+  mode: 'production' | 'sandbox';
+  run_name?: string;
+}
+
+export interface ReviewRunStepDetail {
+  phase: number;
+  phase_name: string;
+  step_type: string;
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'skipped';
+  input_summary: Record<string, any>;
+  output_summary: Record<string, any>;
+  error_summary?: string;
+}
+
+export interface RuleExecutionDetail {
+  id: string;
+  rule_code: string;
+  rule_name: string;
+  phase: number;
+  status: string;
+  confidence: number;
+  not_evaluable_reason_code?: string;
+  not_evaluable_reason_message?: string;
+  missing_requirements: string[];
+  recommended_action?: string;
+  result_summary: Record<string, any>;
+}
+
+export interface ReviewFindingDetail {
+  id: string;
+  rule_code: string;
+  rule_name: string;
+  severity: string;
+  status: string;
+  title: string;
+  description: string;
+  recommendation?: string;
+  bbox?: number[];
+  navigation_context?: {
+    document_id?: string;
+    sheet_id?: string;
+    bbox?: number[];
+    crop_url?: string;
+  };
+}
+
+export interface ReviewRunDetailResponse {
+  id: string;
+  project_id: string;
+  run_name: string;
+  discipline_code: string;
+  discipline_name: string;
+  topic_code: string;
+  topic_name: string;
+  execution_mode: 'production' | 'sandbox';
+  status: string;
+  requested_by: string;
+  requested_at?: string;
+  completed_at?: string;
+  execution_time_sec: number;
+  rule_count: number;
+  document_count: number;
+  findings_count: number;
+  summary_stats: {
+    passed?: number;
+    failed?: number;
+    warning?: number;
+    not_evaluable?: number;
+    critical?: number;
+    high?: number;
+    medium?: number;
+  };
+  documents: Array<{
+    document_id: string;
+    filename: string;
+    inclusion_reason: string;
+    document_role: string;
+    status: string;
+  }>;
+  steps: ReviewRunStepDetail[];
+  executions: RuleExecutionDetail[];
+  findings: ReviewFindingDetail[];
+}
+
+export interface ReviewReportItem {
+  id: string;
+  project_id: string;
+  review_run_id: string;
+  report_name: string;
+  format: 'json' | 'xlsx' | 'pdf';
+  artifact_path: string;
+  sha256: string;
+  status: string;
+  baseline_catalog_version?: string;
+  stats_summary: Record<string, any>;
+  created_at: string;
+}
+
+
 

@@ -40,7 +40,8 @@ dependencies = [
   "email-validator",
   "python-multipart",
   "ezdxf",
-  "qdrant-client"
+  "qdrant-client",
+  "openpyxl"
 ]
 
 [project.optional-dependencies]

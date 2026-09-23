@@ -37,3 +37,10 @@ class RuleResult:
     verdict: str = "cumple" # cumple, no_cumple, no_verificable, no_aplica
     unverifiable_reason: Optional[str] = None # minor_missing, insufficient_evidence, blocked_by_missing_doc, formal_rfi_required
     blocked_by_deliverable: Optional[str] = None
+
+    # Not Evaluable Estructurado (Auditoría QA/QC)
+    not_evaluable_reason_code: Optional[str] = None
+    not_evaluable_reason_message: Optional[str] = None
+    missing_requirements: List[str] = field(default_factory=list)
+    recommended_action: Optional[str] = None
+    findings_list: List[Dict[str, Any]] = field(default_factory=list)

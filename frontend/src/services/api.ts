@@ -1761,8 +1761,56 @@ export const apiService = {
       params: { library_name: libraryName, discipline }
     });
     return res.data;
+  },
+
+  // One-Click Review Orquestado por Especialidad y Punto de Revisión
+  getReviewDisciplines: async (activeOnly: boolean = true): Promise<import('../types').ReviewDisciplineItem[]> => {
+    const res = await apiClient.get<import('../types').ReviewDisciplineItem[]>('/review/disciplines', {
+      params: { active_only: activeOnly }
+    });
+    return res.data;
+  },
+
+  getReviewTopics: async (disciplineCode?: string, activeOnly: boolean = true): Promise<import('../types').ReviewTopicItem[]> => {
+    const res = await apiClient.get<import('../types').ReviewTopicItem[]>('/review/topics', {
+      params: { discipline_code: disciplineCode, active_only: activeOnly }
+    });
+    return res.data;
+  },
+
+  getReviewPlan: async (payload: import('../types').ReviewPlanRequest): Promise<import('../types').ReviewPlanResponse> => {
+    const res = await apiClient.post<import('../types').ReviewPlanResponse>('/review/plan', payload);
+    return res.data;
+  },
+
+  executeReviewRun: async (payload: import('../types').ReviewRunCreatePayload): Promise<any> => {
+    const res = await apiClient.post('/review/runs', payload);
+    return res.data;
+  },
+
+  getReviewRunDetails: async (runId: string): Promise<import('../types').ReviewRunDetailResponse> => {
+    const res = await apiClient.get<import('../types').ReviewRunDetailResponse>(`/review/runs/${runId}`);
+    return res.data;
+  },
+
+  listReviewRuns: async (projectId: string): Promise<import('../types').ReviewRunDetailResponse[]> => {
+    const res = await apiClient.get<import('../types').ReviewRunDetailResponse[]>('/review/runs', {
+      params: { project_id: projectId }
+    });
+    return res.data;
+  },
+
+  createReviewExport: async (runId: string, format: 'json' | 'xlsx' | 'pdf'): Promise<import('../types').ReviewReportItem> => {
+    const res = await apiClient.post<import('../types').ReviewReportItem>(`/review/runs/${runId}/exports`, { format });
+    return res.data;
+  },
+
+  downloadReviewReportUrl: (reportId: string): string => {
+    const baseUrl = (apiClient.defaults.baseURL || '/api/v1').replace(/\/$/, '');
+    return `${baseUrl}/review/reports/${reportId}/download`;
   }
 };
+
 
 
 

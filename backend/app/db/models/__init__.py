@@ -19,7 +19,9 @@ from app.db.models.template_memory import (
 )
 from app.db.models.decision_memory import (
     RuleDefinition, RuleExecution, ReviewRun, RuleFinding, FindingResolution,
-    FindingEvidence, HumanFeedback, DecisionPrecedent
+    FindingEvidence, HumanFeedback, DecisionPrecedent,
+    ReviewDiscipline, ReviewTopic, RuleApplicability, RuleExecutionDependency,
+    ReviewRunDocument, ReviewRunStep, ReviewReport
 )
 from app.db.models.reporting import (
     AuditReport, EvidenceManifest, ProjectStageReportSnapshot
@@ -134,6 +136,13 @@ __all__ = [
     "FindingEvidence",
     "HumanFeedback",
     "DecisionPrecedent",
+    "ReviewDiscipline",
+    "ReviewTopic",
+    "RuleApplicability",
+    "RuleExecutionDependency",
+    "ReviewRunDocument",
+    "ReviewRunStep",
+    "ReviewReport",
     "AuditReport",
     "EvidenceManifest",
     "ManualAnnotation",
