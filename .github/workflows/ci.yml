@@ -83,3 +83,9 @@ jobs:
           TEST_DATABASE_URL: 'postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test'
         run: pytest tests/integration/test_canonical_piping_symbol_catalog.py -v --disable-warnings
 
+      - name: Gate 6 - One-Click Review Taxonomy & Sandbox/Production Contract on Real PostgreSQL
+        env:
+          DATABASE_URL: 'postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test'
+          TEST_DATABASE_URL: 'postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5432/planreview_test'
+        run: pytest tests/integration/test_one_click_review_orchestrator.py -v --disable-warnings
+

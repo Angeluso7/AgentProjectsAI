@@ -143,7 +143,10 @@ class ReviewExportService:
                     "description": f.description,
                     "recommendation": f.recommendation,
                     "bbox": f.bbox,
-                    "navigation_context": f.navigation_context
+                    "navigation_context": f.navigation_context,
+                    "execution_mode": (f.evidence_refs or {}).get("execution_mode", run.execution_mode),
+                    "is_exploratory": (f.evidence_refs or {}).get("is_exploratory", run.execution_mode == "sandbox"),
+                    "warning": (f.evidence_refs or {}).get("warning")
                 }
                 for f in findings
             ]
@@ -296,7 +299,8 @@ class ReviewExportService:
         ws_findings = wb.create_sheet(title="Hallazgos QA-QC")
         headers_findings = [
             "ID Hallazgo", "Código Regla", "Nombre Regla", "Severidad",
-            "Estado", "Título", "Descripción", "Recomendación", "Coordenadas BBox"
+            "Estado", "Título", "Descripción", "Recomendación", "Coordenadas BBox",
+            "Modo Ejecución", "Exploratorio"
         ]
         ws_findings.append(headers_findings)
         for col in range(1, len(headers_findings) + 1):
@@ -314,10 +318,12 @@ class ReviewExportService:
                 f.get("title"),
                 f.get("description"),
                 f.get("recommendation") or "-",
-                str(f.get("bbox") or "-")
+                str(f.get("bbox") or "-"),
+                str(f.get("execution_mode") or run_data.get("execution_mode", "production")).upper(),
+                "SÍ (Exploratorio)" if f.get("is_exploratory") else "NO (Productivo)"
             ])
 
-        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I"]:
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]:
             ws_findings.column_dimensions[col_letter].width = 25
 
         # Sheet 4: Documentos Auditados

@@ -28,6 +28,8 @@ from app.db.models.document_memory import (
     DetectedSymbol
 )
 from app.db.models.normative_memory import NormativeCriterion
+from app.db.models.template_memory import SymbolTemplate
+from app.db.models.symbol_catalog import SymbolTemplateVersion
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.export_service import ReviewExportService
 from app.services.rules.engine import RuleRegistry
@@ -49,6 +51,33 @@ PHASE_NAMES = {
 
 class ReviewOrchestrator:
     """Orquestador de evaluación por Especialidad y Punto de Revisión."""
+
+    @classmethod
+    def _has_approved_production_catalog(cls, db: Session, discipline_code: str = "PIPING") -> bool:
+        """
+        Verifica si existe al menos una plantilla activa con versión aprobada
+        y evidencia real/normativa en el catálogo productivo (excluye test_only y synthetic).
+        """
+        tmpls = db.query(SymbolTemplate).filter(
+            SymbolTemplate.status == "active",
+            SymbolTemplate.is_active_for_detection.is_(True)
+        ).all()
+        for t in tmpls:
+            if getattr(t, "category", "") == "test_only" or getattr(t, "subcategory", "") == "test_only":
+                continue
+            versions = db.query(SymbolTemplateVersion).filter(
+                SymbolTemplateVersion.symbol_template_id == t.id,
+                SymbolTemplateVersion.approval_status == "approved"
+            ).all()
+            for v in versions:
+                source_kind = getattr(v, "source_kind", "")
+                if source_kind in ["normative_document", "real_authorized", "redacted_real", "project_legend"]:
+                    return True
+            if not versions and t.status == "active":
+                func = getattr(t, "technical_function", "") or ""
+                if "test_only" not in func.lower():
+                    return True
+        return False
 
     @classmethod
     def generate_review_plan(
@@ -174,10 +203,16 @@ class ReviewOrchestrator:
             })
 
         warnings = []
+        limitations = []
         if mode == "sandbox":
             warnings.append("Resultado exploratorio — no constituye validación productiva oficial.")
         if not included_documents:
             warnings.append("No se han seleccionado documentos para esta revisión.")
+
+        if mode == "production" and topic_code == "PID_SYMBOLS":
+            has_cat = cls._has_approved_production_catalog(db, discipline_code)
+            if not has_cat:
+                limitations.append("Catálogo de Simbología productivo sin versiones aprobadas con evidencia real autorizada. Las reglas de simbología resultarán en estado Not Evaluable.")
 
         can_execute = len(included_documents) > 0 and len(applicable_rules) > 0
 
@@ -197,7 +232,8 @@ class ReviewOrchestrator:
             "excluded_documents": excluded_documents,
             "missing_required_document_types": missing_required_types,
             "phases_blueprint": phases_blueprint,
-            "warnings": warnings
+            "warnings": warnings,
+            "limitations": limitations
         }
 
     @classmethod
@@ -354,6 +390,8 @@ class ReviewOrchestrator:
         total_findings = 0
         execution_stats = {"passed": 0, "failed": 0, "warning": 0, "not_evaluable": 0, "critical": 0, "high": 0, "medium": 0}
 
+        has_prod_catalog = cls._has_approved_production_catalog(db, discipline_code) if mode == "production" else True
+
         # 7. Ejecutar Fases 5 a 8 (Evaluación QA/QC)
         for phase_num in range(5, 9):
             p_step = step_records[phase_num]
@@ -371,6 +409,28 @@ class ReviewOrchestrator:
             for r_meta in p_rules:
                 r_code = r_meta["code"]
                 rule_inst = RuleRegistry.get_rule(r_code)
+
+                # Semántica de Production: validar catálogo aprobado para reglas que lo requieren
+                if mode == "production" and not has_prod_catalog and (r_code.startswith("SYM-") or "detected_symbols" in r_meta.get("requires_data", [])):
+                    execution = RuleExecution(
+                        review_run_id=review_run.id,
+                        document_id=doc_ids[0] if doc_ids else None,
+                        rule_id=r_meta["rule_id"],
+                        phase=phase_num,
+                        execution_status="not_evaluable",
+                        not_evaluable_reason_code="MISSING_SYMBOL_CATALOG",
+                        not_evaluable_reason_message="No existen plantillas activas con versión aprobada y evidencia autorizada en el Catálogo de Simbología productivo.",
+                        missing_requirements=["symbol_catalog_approved", "authorized_evidence"],
+                        recommended_action="Aprobar versiones canónicas con evidencia autorizada en el Catálogo de Simbología o ejecutar en modo Sandbox.",
+                        result_summary={"catalog": "missing_or_unapproved", "status": "not_evaluable"},
+                        confidence=1.0,
+                        started_at=datetime.utcnow(),
+                        completed_at=datetime.utcnow()
+                    )
+                    db.add(execution)
+                    rule_eval_results[r_code] = "not_evaluable"
+                    execution_stats["not_evaluable"] += 1
+                    continue
 
                 # Verificar dependencias declarativas
                 deps = rule_dependencies.get(r_code, [])
@@ -419,7 +479,21 @@ class ReviewOrchestrator:
                     for t in tables:
                         cells_by_table[t.id] = db.query(ExtractedTableCell).filter(ExtractedTableCell.table_id == t.id).all()
 
-                    symbols = db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet_id).all() if sheet_id else []
+                    if mode == "production":
+                        symbols_raw = db.query(DetectedSymbol).filter(
+                            DetectedSymbol.sheet_id == sheet_id,
+                            DetectedSymbol.environment != "sandbox"
+                        ).all() if sheet_id else []
+                        symbols = []
+                        for s in symbols_raw:
+                            matched_id = getattr(s, "matched_library_entry_id", None) or getattr(s, "source_asset_template_id", None)
+                            if matched_id:
+                                tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.id == matched_id).first()
+                                if tmpl and (tmpl.status in ["test_only", "sandbox"] or getattr(tmpl, "category", "") == "test_only"):
+                                    continue
+                            symbols.append(s)
+                    else:
+                        symbols = db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet_id).all() if sheet_id else []
                     texts = db.query(ExtractedText).filter(ExtractedText.sheet_id == sheet_id).all() if sheet_id else []
                     regions = db.query(SheetRegion).filter(SheetRegion.sheet_id == sheet_id).all() if sheet_id else []
                     tb = db.query(TitleBlockExtraction).filter(TitleBlockExtraction.sheet_id == sheet_id).first() if sheet_id else None
@@ -518,13 +592,37 @@ class ReviewOrchestrator:
                         ]
 
                         for f_data in findings_to_create:
+                            is_exploratory = (mode == "sandbox")
+                            warning_text = "Resultado exploratorio — no constituye validación productiva" if is_exploratory else None
+
+                            # En producción, no generar hallazgos basados en símbolos de sandbox
+                            sym_id = f_data.get("symbol_id")
+                            if mode == "production" and sym_id:
+                                sym_obj = db.query(DetectedSymbol).filter(DetectedSymbol.id == sym_id).first()
+                                if sym_obj and (sym_obj.environment == "sandbox" or getattr(sym_obj, "record_kind", "") == "sandbox"):
+                                    continue
+
                             nav_ctx = {
                                 "document_id": doc_id,
                                 "sheet_id": sheet_id,
                                 "bbox": f_data.get("bbox"),
-                                "crop_url": f_data.get("crop_url")
+                                "crop_url": f_data.get("crop_url"),
+                                "execution_mode": mode,
+                                "is_exploratory": is_exploratory
                             }
+                            evidence_refs = {
+                                **(f_data.get("evidence_refs") or {}),
+                                "execution_mode": mode,
+                                "is_exploratory": is_exploratory
+                            }
+                            if warning_text:
+                                evidence_refs["warning"] = warning_text
+
                             sev = f_data.get("severity", eval_res.severity)
+                            finding_title = f_data.get("title", eval_res.title)
+                            if is_exploratory and not finding_title.startswith("[SANDBOX]"):
+                                finding_title = f"[SANDBOX] {finding_title}"
+
                             finding = RuleFinding(
                                 organization_id=project.organization_id,
                                 review_run_id=review_run.id,
@@ -539,9 +637,10 @@ class ReviewOrchestrator:
                                 status="open",
                                 confidence=eval_res.confidence,
                                 finding_type="normative_violation" if sev in ["critical", "high"] else "reconciliation_mismatch",
-                                title=f_data.get("title", eval_res.title),
+                                title=finding_title,
                                 description=f_data.get("description", eval_res.description),
                                 recommendation=f_data.get("recommendation", eval_res.recommendation),
+                                evidence_refs=evidence_refs,
                                 bbox=f_data.get("bbox"),
                                 navigation_context=nav_ctx
                             )

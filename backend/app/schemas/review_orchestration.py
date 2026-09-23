@@ -56,6 +56,7 @@ class ReviewPlanResponse(BaseModel):
     missing_required_document_types: List[Dict[str, Any]] = []
     phases_blueprint: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    limitations: List[str] = []
 
 
 class ReviewRunCreateRequest(BaseModel):

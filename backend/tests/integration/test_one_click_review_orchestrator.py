@@ -29,7 +29,10 @@ from app.db.models.document_memory import (
     ExtractedTableCell,
     TitleBlockExtraction
 )
+import json
 from app.core.security import create_access_token
+from app.db.models.template_memory import SymbolTemplate
+from app.db.models.symbol_catalog import SymbolTemplateVersion
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.orchestrator import ReviewOrchestrator
 from app.services.review.export_service import ReviewExportService
@@ -128,6 +131,31 @@ def review_env():
     )
     db.add(tb_a)
 
+    # Plantilla canónica activa aprobada en catálogo de producción
+    prod_template = SymbolTemplate(
+        id=f"tmpl-gate-{suffix}",
+        symbol_class="gate_valve",
+        canonical_code=f"PIP-VALVE-GATE-{suffix[:4].upper()}",
+        canonical_name="Gate Valve",
+        display_name="Válvula de Compuerta Canónica ISA-5.1",
+        discipline="piping",
+        status="active",
+        is_active_for_detection=True
+    )
+    db.add(prod_template)
+    db.flush()
+
+    prod_version = SymbolTemplateVersion(
+        id=f"ver-gate-{suffix}",
+        symbol_template_id=prod_template.id,
+        version_number=1,
+        approval_status="approved",
+        source_kind="normative_document",
+        approved_by="lead_auditor@test.com",
+        approved_at=datetime.utcnow()
+    )
+    db.add(prod_version)
+
     # Símbolos en sheet_a
     sym_1 = DetectedSymbol(
         id=f"sym-1-{suffix}",
@@ -137,6 +165,8 @@ def review_env():
         confidence=0.96,
         bbox=[100.0, 100.0, 140.0, 140.0],
         bbox_normalized=[0.08, 0.11, 0.12, 0.16],
+        environment="production",
+        matched_library_entry_id=prod_template.id,
         match_evidence={
             "tag_or_code": "V-101",
             "canonical_name": "gate_valve",
@@ -152,6 +182,7 @@ def review_env():
         confidence=0.35,
         bbox=[200.0, 200.0, 240.0, 240.0],
         bbox_normalized=[0.16, 0.23, 0.20, 0.28],
+        environment="production",
         match_evidence={
             "tag_or_code": "SYM-UNKNOWN-001",
             "canonical_name": "unknown_symbol",
@@ -475,3 +506,190 @@ def test_unmet_dependency_produces_structured_not_evaluable(review_env):
     assert dep_ex.execution_status == "not_evaluable"
     assert "SYM-UNKNOWN-001" in dep_ex.not_evaluable_reason_message
     assert dep_ex.recommended_action is not None
+
+
+@pytest.mark.postgres
+def test_missing_approved_catalog_produces_not_evaluable(review_env):
+    """
+    Verifica que en modo production, si no existen plantillas activas aprobadas
+    en el catálogo, las reglas de PID_SYMBOLS produzcan not_evaluable estructurado
+    (MISSING_SYMBOL_CATALOG), en lugar de simular evaluaciones aprobadas o falladas.
+    """
+    db: Session = review_env["db"]
+    org = review_env["org"]
+    suffix = str(uuid.uuid4())[:8]
+
+    # Crear proyecto aislado sin templates
+    proj_empty = Project(
+        id=f"prj-empty-{suffix}",
+        organization_id=org.id,
+        name=f"Proyecto Sin Catálogo {suffix}",
+        code=f"PRJ-EMP-{suffix[:4].upper()}",
+        discipline="piping"
+    )
+    db.add(proj_empty)
+    doc_empty = Document(
+        id=f"doc-empty-{suffix}",
+        project_id=proj_empty.id,
+        organization_id=org.id,
+        filename="empty.pdf",
+        file_path="/tmp/empty.pdf",
+        file_hash_sha256=f"hash-emp-{suffix}",
+        file_size_bytes=1000,
+        page_count=1,
+        status="ready"
+    )
+    db.add(doc_empty)
+    db.commit()
+
+    # Desactivar temporalmente plantillas activas para simular ausencia de catálogo
+    tmpls = db.query(SymbolTemplate).filter(SymbolTemplate.status == "active").all()
+    for t in tmpls:
+        t.status = "draft"
+    db.commit()
+
+    try:
+        # Pre-flight plan en production reporta limitación
+        plan = ReviewOrchestrator.generate_review_plan(
+            db=db,
+            project_id=proj_empty.id,
+            discipline_code="PIPING",
+            topic_code="PID_SYMBOLS",
+            document_ids=[doc_empty.id],
+            mode="production"
+        )
+        assert any("Catálogo de Simbología productivo sin versiones aprobadas" in lim for lim in plan.get("limitations", []))
+
+        # Ejecución en production
+        run_res = ReviewOrchestrator.execute_review_run(
+            db=db,
+            project_id=proj_empty.id,
+            discipline_code="PIPING",
+            topic_code="PID_SYMBOLS",
+            document_ids=[doc_empty.id],
+            mode="production"
+        )
+        run_id = run_res["review_run_id"]
+        executions = db.query(RuleExecution).filter(RuleExecution.review_run_id == run_id).all()
+        sym_execs = [ex for ex in executions if ex.rule.code.startswith("SYM-")]
+        assert len(sym_execs) >= 4
+        for ex in sym_execs:
+            assert ex.execution_status == "not_evaluable"
+            assert ex.not_evaluable_reason_code == "MISSING_SYMBOL_CATALOG"
+            assert "symbol_catalog_approved" in ex.missing_requirements
+    finally:
+        # Restaurar estado
+        for t in tmpls:
+            t.status = "active"
+        db.commit()
+
+
+@pytest.mark.postgres
+def test_test_only_template_and_sandbox_semantics(review_env):
+    """
+    Verifica que:
+    1. Una plantilla test_only funciona en sandbox generando hallazgos con aviso explícito.
+    2. La misma plantilla test_only no crea match/hallazgo productivo en production.
+    3. Un símbolo con environment='sandbox' no genera hallazgos productivos.
+    4. Los reportes exportados dejan visible execution_mode y la marca de sandbox.
+    """
+    db: Session = review_env["db"]
+    project_a = review_env["project_a"]
+    doc_a = review_env["doc_a"]
+    sheet_a = review_env["sheet_a"]
+    suffix = str(uuid.uuid4())[:8]
+
+    # 1. Crear plantilla test_only
+    tmpl_test = SymbolTemplate(
+        id=f"tmpl-test-{suffix}",
+        symbol_class="special_test_valve",
+        canonical_code=f"TEST-VALVE-{suffix[:4].upper()}",
+        canonical_name="Test Only Valve",
+        display_name="Plantilla Experimental",
+        discipline="piping",
+        status="test_only",
+        category="test_only",
+        is_active_for_detection=True
+    )
+    db.add(tmpl_test)
+    db.flush()
+
+    ver_test = SymbolTemplateVersion(
+        id=f"ver-test-{suffix}",
+        symbol_template_id=tmpl_test.id,
+        version_number=1,
+        approval_status="draft",
+        source_kind="test_only"
+    )
+    db.add(ver_test)
+
+    # Símbolo experimental en sandbox
+    sym_sandbox = DetectedSymbol(
+        id=f"sym-sbx-{suffix}",
+        document_id=doc_a.id,
+        sheet_id=sheet_a.id,
+        symbol_type="special_test_valve",
+        confidence=0.45,
+        bbox=[300.0, 300.0, 350.0, 350.0],
+        bbox_normalized=[0.25, 0.35, 0.29, 0.41],
+        environment="sandbox",
+        matched_library_entry_id=tmpl_test.id,
+        match_evidence={"tag_or_code": "SYM-UNKNOWN-001", "is_recognized": False}
+    )
+    db.add(sym_sandbox)
+    db.commit()
+
+    # 2. Ejecución en SANDBOX
+    run_sandbox = ReviewOrchestrator.execute_review_run(
+        db=db,
+        project_id=project_a.id,
+        discipline_code="PIPING",
+        topic_code="PID_SYMBOLS",
+        document_ids=[doc_a.id],
+        mode="sandbox"
+    )
+    sbx_run_id = run_sandbox["review_run_id"]
+    sbx_findings = db.query(RuleFinding).filter(RuleFinding.review_run_id == sbx_run_id).all()
+    assert len(sbx_findings) >= 1
+    for f in sbx_findings:
+        assert f.evidence_refs.get("execution_mode") == "sandbox"
+        assert f.evidence_refs.get("is_exploratory") is True
+        assert "Resultado exploratorio" in f.evidence_refs.get("warning", "")
+        assert f.navigation_context.get("execution_mode") == "sandbox"
+        assert f.navigation_context.get("is_exploratory") is True
+        assert "[SANDBOX]" in f.title
+
+    # 3. Export en Sandbox deja visible execution_mode y advertencia
+    rep_json = ReviewExportService.create_report(db, sbx_run_id, "json")
+    with open(rep_json.artifact_path, "r", encoding="utf-8") as jf:
+        jdata = json.load(jf)
+        assert jdata["execution_mode"] == "sandbox"
+        assert any(find.get("is_exploratory") is True for find in jdata.get("findings", []))
+
+    rep_pdf = ReviewExportService.create_report(db, sbx_run_id, "pdf")
+    with open(rep_pdf.artifact_path, "rb") as pf:
+        pdf_content = pf.read().decode("latin-1", errors="ignore")
+        assert "SANDBOX" in pdf_content
+        assert "Resultado exploratorio" in pdf_content
+
+    rep_xlsx = ReviewExportService.create_report(db, sbx_run_id, "xlsx")
+    assert rep_xlsx.format == "xlsx"
+
+    # 4. En PRODUCTION: símbolo sandbox NO genera finding productivo
+    # y la plantilla test_only no se usa para matching productivo
+    run_prod = ReviewOrchestrator.execute_review_run(
+        db=db,
+        project_id=project_a.id,
+        discipline_code="PIPING",
+        topic_code="PID_SYMBOLS",
+        document_ids=[doc_a.id],
+        mode="production"
+    )
+    prod_run_id = run_prod["review_run_id"]
+    prod_findings = db.query(RuleFinding).filter(RuleFinding.review_run_id == prod_run_id).all()
+    for f in prod_findings:
+        assert f.evidence_refs.get("execution_mode") == "production"
+        assert f.evidence_refs.get("is_exploratory") is False
+        # Ningún finding basado en sym_sandbox
+        assert f.navigation_context.get("symbol_id") != sym_sandbox.id
+        assert "[SANDBOX]" not in f.title
