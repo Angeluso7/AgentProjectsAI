@@ -367,7 +367,18 @@ class ReviewOrchestrator:
         s4.status = "running"
         s4.started_at = datetime.utcnow()
         s4.input_summary = {"catalog_version": "ISA-5.1-2009-CANONICAL-V1"}
-        s4.output_summary = {"symbol_extraction_status": "ready"}
+
+        from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+        inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, review_run, force_rebuild=True)
+
+        s4.output_summary = {
+            "symbol_extraction_status": "ready",
+            "inventory_groups_count": len(inv_groups),
+            "valid_symbol_occurrences": inv_metrics.get("valid_symbol_occurrences", 0),
+            "unknown_symbols_count": inv_metrics.get("unknown", 0),
+            "recognized_production": inv_metrics.get("recognized_production", 0),
+            "recognized_sandbox": inv_metrics.get("recognized_sandbox", 0)
+        }
         s4.status = "succeeded"
         s4.completed_at = datetime.utcnow()
 
@@ -742,6 +753,9 @@ class ReviewOrchestrator:
         docs = db.query(Document).filter(Document.id.in_(doc_ids)).all() if doc_ids else []
         doc_map = {d.id: d for d in docs}
 
+        from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+        inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+
         return {
             "id": run.id,
             "project_id": run.project_id,
@@ -828,5 +842,37 @@ class ReviewOrchestrator:
                 }
                 for rep in reports
             ],
-            "baseline_catalog_version": (reports[0].baseline_catalog_version if reports and reports[0].baseline_catalog_version else None) or ("PIP PNC00001 (Sandbox Candidate Baseline v0.1)" if run.execution_mode == "sandbox" else "PIP PNC00001 (Production Formal Baseline)")
+            "baseline_catalog_version": (reports[0].baseline_catalog_version if reports and reports[0].baseline_catalog_version else None) or ("PIP PNC00001 (Sandbox Candidate Baseline v0.1)" if run.execution_mode == "sandbox" else "PIP PNC00001 (Production Formal Baseline)"),
+            "symbol_inventory": {
+                "metrics": inv_metrics,
+                "groups": [
+                    {
+                        "id": g.id,
+                        "review_run_id": g.review_run_id,
+                        "grouping_key": g.grouping_key,
+                        "grouping_method": g.grouping_method,
+                        "grouping_confidence": g.grouping_confidence,
+                        "grouping_version": g.grouping_version,
+                        "display_code": g.display_code,
+                        "unknown_group_id": g.unknown_group_id,
+                        "representative_occurrence_id": g.representative_occurrence_id,
+                        "representative_selection_reason": g.representative_selection_reason,
+                        "matched_template_id": g.matched_template_id,
+                        "matched_template_version_id": g.matched_template_version_id,
+                        "canonical_name": g.canonical_name,
+                        "description": g.description,
+                        "technical_function": g.technical_function,
+                        "standard_reference": g.standard_reference,
+                        "catalog_status": g.catalog_status,
+                        "confidence_summary": g.confidence_summary or {},
+                        "total_occurrences": g.total_occurrences,
+                        "occurrences_by_document": g.occurrences_by_document or {},
+                        "occurrences_by_sheet": g.occurrences_by_sheet or {},
+                        "requires_human_review": g.requires_human_review,
+                        "explanation": g.explanation,
+                        "created_at": g.created_at.isoformat() if g.created_at else None
+                    }
+                    for g in inv_groups
+                ]
+            }
         }

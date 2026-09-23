@@ -1805,6 +1805,16 @@ export const apiService = {
     return res.data;
   },
 
+  getSymbolInventory: async (runId: string): Promise<import('../types').SymbolInventoryResponse> => {
+    const res = await apiClient.get<import('../types').SymbolInventoryResponse>(`/review/runs/${runId}/symbol-inventory`);
+    return res.data;
+  },
+
+  getSymbolGroupOccurrences: async (runId: string, groupId: string): Promise<import('../types').SymbolOccurrenceSummaryItem[]> => {
+    const res = await apiClient.get<import('../types').SymbolOccurrenceSummaryItem[]>(`/review/runs/${runId}/symbol-inventory/groups/${groupId}/occurrences`);
+    return res.data;
+  },
+
   downloadReviewReport: async (reportId: string, customFilename?: string): Promise<{ filename: string; size: number }> => {
     try {
       const res = await apiClient.get(`/review/reports/${reportId}/download`, {

@@ -94,6 +94,37 @@ def compute_symbol_crop_bbox(
     return [round(s_x0, 4), round(s_y0, 4), round(s_x1, 4), round(s_y1, 4)]
 
 
+def compute_occurrence_context_crop_bbox(
+    symbol_crop_bbox_norm: List[float],
+    margin_mm: float = 15.0,
+    page_bbox_norm: Optional[List[float]] = None,
+    pw: float = 800.0,
+    ph: float = 600.0
+) -> List[float]:
+    """
+    Calcula occurrence_context_crop_bbox = symbol_crop_bbox + 15 mm,
+    limitado siempre a page_bbox ([0.0, 0.0, 1.0, 1.0] normalizado) para no salirse de la lámina.
+    Conversión: 15 mm = 15 * 72 / 25.4 = 42.5197 pt.
+    """
+    if not symbol_crop_bbox_norm or len(symbol_crop_bbox_norm) < 4:
+        return [0.0, 0.0, 1.0, 1.0]
+
+    p_limit = page_bbox_norm or [0.0, 0.0, 1.0, 1.0]
+    p_x0, p_y0, p_x1, p_y1 = p_limit
+    s_x0, s_y0, s_x1, s_y1 = symbol_crop_bbox_norm
+
+    margin_pt = margin_mm * (72.0 / 25.4)
+    dx = margin_pt / max(1.0, pw)
+    dy = margin_pt / max(1.0, ph)
+
+    ctx_x0 = max(p_x0, s_x0 - dx)
+    ctx_y0 = max(p_y0, s_y0 - dy)
+    ctx_x1 = min(p_x1, s_x1 + dx)
+    ctx_y1 = min(p_y1, s_y1 + dy)
+
+    return [round(ctx_x0, 4), round(ctx_y0, 4), round(ctx_x1, 4), round(ctx_y1, 4)]
+
+
 class GeometricEvidenceValidator:
     """
     Validador de Evidencia Geométrica Visual para Extracción de Simbología.
@@ -104,6 +135,7 @@ class GeometricEvidenceValidator:
         self.height_px = height_px
 
     compute_symbol_crop_bbox = staticmethod(compute_symbol_crop_bbox)
+    compute_occurrence_context_crop_bbox = staticmethod(compute_occurrence_context_crop_bbox)
 
     def evaluate_cell(
         self,

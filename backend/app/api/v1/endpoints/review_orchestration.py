@@ -10,6 +10,8 @@ from app.db.models.decision_memory import ReviewRun, ReviewReport
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.orchestrator import ReviewOrchestrator
 from app.services.review.export_service import ReviewExportService
+from app.db.models.document_memory import DetectedSymbol
+from app.services.symbols.symbol_inventory_service import SymbolInventoryService
 from app.schemas.review_orchestration import (
     ReviewDisciplineResponse,
     ReviewTopicResponse,
@@ -19,7 +21,11 @@ from app.schemas.review_orchestration import (
     ReviewRunExecuteResponse,
     ReviewRunDetailsResponse,
     ReviewExportCreateRequest,
-    ReviewReportResponse
+    ReviewReportResponse,
+    SymbolOccurrenceSummary,
+    SymbolInventoryGroupResponse,
+    SymbolInventoryMetricsResponse,
+    SymbolInventoryResponse
 )
 from app.core.deps import get_current_tenant, TenantContext
 from app.core.logging import logger
@@ -128,6 +134,90 @@ def get_review_run_details(
                 detail="No autorizado para acceder a corridas de otra organización."
             )
     return details
+
+
+@router.get("/runs/{run_id}/symbol-inventory", response_model=SymbolInventoryResponse)
+def get_run_symbol_inventory(
+    run_id: str,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """Retorna el inventario consolidado de simbología (Tabla 1) y sus métricas."""
+    run = db.query(ReviewRun).filter(ReviewRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corrida '{run_id}' no encontrada.")
+
+    if tenant and tenant.organization and run.organization_id != tenant.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado para acceder a corridas de otra organización."
+        )
+
+    groups, metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+
+    active_groups = []
+    excluded_groups = []
+    for g in groups:
+        rep_occ = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first() if g.representative_occurrence_id else None
+        rep_crop = rep_occ.crop_image_path if rep_occ else None
+        item = {
+            "id": g.id,
+            "review_run_id": g.review_run_id,
+            "grouping_key": g.grouping_key,
+            "grouping_method": g.grouping_method,
+            "grouping_confidence": g.grouping_confidence,
+            "grouping_version": g.grouping_version,
+            "display_code": g.display_code,
+            "unknown_group_id": g.unknown_group_id,
+            "representative_occurrence_id": g.representative_occurrence_id,
+            "representative_selection_reason": g.representative_selection_reason,
+            "representative_crop_path": rep_crop,
+            "matched_template_id": g.matched_template_id,
+            "matched_template_version_id": g.matched_template_version_id,
+            "canonical_name": g.canonical_name,
+            "description": g.description,
+            "technical_function": g.technical_function,
+            "standard_reference": g.standard_reference,
+            "catalog_status": g.catalog_status,
+            "confidence_summary": g.confidence_summary or {},
+            "total_occurrences": g.total_occurrences,
+            "occurrences_by_document": g.occurrences_by_document or {},
+            "occurrences_by_sheet": g.occurrences_by_sheet or {},
+            "requires_human_review": g.requires_human_review,
+            "explanation": g.explanation,
+            "created_at": g.created_at.isoformat() if g.created_at else None
+        }
+        if g.catalog_status in ["figure_excluded", "not_symbol"]:
+            excluded_groups.append(item)
+        else:
+            active_groups.append(item)
+
+    return {
+        "metrics": metrics,
+        "groups": active_groups,
+        "excluded_groups": excluded_groups
+    }
+
+
+@router.get("/runs/{run_id}/symbol-inventory/groups/{group_id}/occurrences", response_model=List[SymbolOccurrenceSummary])
+def get_run_symbol_group_occurrences(
+    run_id: str,
+    group_id: str,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """Retorna la lista de ocurrencias detalladas con doble crop para un grupo de inventario (Tabla 2)."""
+    run = db.query(ReviewRun).filter(ReviewRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corrida '{run_id}' no encontrada.")
+
+    if tenant and tenant.organization and run.organization_id != tenant.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado para acceder a corridas de otra organización."
+        )
+
+    return SymbolInventoryService.get_group_occurrences_summary(db, group_id)
 
 
 @router.get("/runs", response_model=List[ReviewRunDetailsResponse])

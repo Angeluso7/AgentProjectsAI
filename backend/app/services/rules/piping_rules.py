@@ -81,17 +81,36 @@ class SymUnknown001Rule(BaseRule):
                 verdict="cumple"
             )
 
-        findings = []
+        # Agrupar símbolos desconocidos por firma/tipo (Regla de negocio: un hallazgo por grupo, no uno por ocurrencia)
+        unknown_groups_map: Dict[str, List[Any]] = {}
         for s in unknown_symbols:
-            s_id = getattr(s, "id", None)
-            bbox = getattr(s, "bbox", None) or getattr(s, "bounding_box", None)
+            grp_key = getattr(s, "symbol_type", "unknown") or "unknown"
+            if grp_key not in unknown_groups_map:
+                unknown_groups_map[grp_key] = []
+            unknown_groups_map[grp_key].append(s)
+
+        findings = []
+        for idx, (grp_key, sym_list) in enumerate(unknown_groups_map.items(), start=1):
+            rep = sym_list[0]
+            display_code = f"U-{idx:03d}"
+            occ_count = len(sym_list)
+            occ_ids = [getattr(s, "id", None) for s in sym_list if getattr(s, "id", None)]
+            rep_id = getattr(rep, "id", None)
+            bbox = getattr(rep, "bbox", None) or getattr(rep, "symbol_crop_bbox", None) or getattr(rep, "bounding_box", None)
+
             findings.append({
-                "symbol_id": s_id,
-                "title": f"Símbolo no reconocido en P&ID (ID: {s_id or 'N/A'})",
-                "description": "Geometría gráfica detectada no corresponde a ninguna plantilla canónica de cañerías/válvulas aprobada.",
+                "symbol_id": rep_id,
+                "title": f"Grupo {display_code}: {occ_count} ocurrencia(s) geométricamente válidas sin plantilla aprobada",
+                "description": f"El grupo '{display_code}' cuenta con {occ_count} ocurrencia(s) detectadas con geometría técnica válida sin plantilla aprobada en el catálogo.",
                 "bbox": bbox,
                 "severity": "high",
-                "recommendation": "Ingresar el símbolo al módulo de Active Learning o verificar si se trata de un componente no estándar."
+                "recommendation": "Auditar el recorte representativo e incorporar la plantilla canónica a la biblioteca de símbolos.",
+                "evidence_refs": {
+                    "display_code": display_code,
+                    "total_occurrences": occ_count,
+                    "occurrence_ids": occ_ids,
+                    "representative_occurrence_id": rep_id
+                }
             })
 
         return RuleResult(

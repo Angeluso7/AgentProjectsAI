@@ -270,6 +270,11 @@ class DetectedSymbol(Base):
     symbol_crop_bbox = Column(JSON, nullable=True)
     crop_image_path = Column(String(500), nullable=True)
     crop_image_hash = Column(String(64), nullable=True)
+    inventory_group_id = Column(String(36), ForeignKey("symbol_inventory_groups.id", ondelete="SET NULL"), nullable=True, index=True)
+    occurrence_context_crop_bbox = Column(JSON, nullable=True)
+    occurrence_context_crop_path = Column(String(500), nullable=True)
+    occurrence_context_crop_hash = Column(String(64), nullable=True)
+    context_margin_mm = Column(Float, default=15.0, nullable=False)
     record_kind = Column(String(30), default="candidate", nullable=False, index=True) # candidate, occurrence
     environment = Column(String(30), default="production", nullable=False, index=True) # production, sandbox
     classification = Column(String(40), default="symbol", nullable=False, index=True) # symbol, figure, table_graphic, not_symbol, requires_human_review
@@ -310,6 +315,7 @@ class DetectedSymbol(Base):
     library_entry = relationship("SymbolTemplate", foreign_keys=[matched_library_entry_id])
     matched_template = relationship("SymbolTemplate", foreign_keys=[matched_template_id])
     matched_template_version = relationship("SymbolTemplateVersion", foreign_keys=[matched_template_version_id])
+    inventory_group = relationship("SymbolInventoryGroup", back_populates="occurrences")
 
 
 # Alias canónico para el dominio

@@ -16,9 +16,22 @@ import {
   RefreshCw,
   FolderGit2,
   Copy,
-  Check
+  Check,
+  Shapes,
+  MapPin,
+  Search,
+  ChevronRight,
+  ArrowLeft
 } from 'lucide-react';
-import { ReviewRunDetailResponse, ReviewFindingDetail, ReviewReportItem } from '../types';
+import {
+  ReviewRunDetailResponse,
+  ReviewFindingDetail,
+  ReviewReportItem,
+  SymbolInventoryResponse,
+  SymbolInventoryMetrics,
+  SymbolInventoryGroupItem,
+  SymbolOccurrenceSummaryItem
+} from '../types';
 import { apiService } from '../services/api';
 
 interface ReviewRunDetailModalProps {
@@ -30,7 +43,7 @@ interface ReviewRunDetailModalProps {
   onRefreshRun?: () => void;
 }
 
-type TabType = 'overview' | 'phases' | 'rules' | 'findings' | 'exports';
+type TabType = 'overview' | 'phases' | 'rules' | 'findings' | 'inventory' | 'exports';
 
 export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
   isOpen,
@@ -45,6 +58,41 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
   const [generatingFormat, setGeneratingFormat] = useState<'json' | 'xlsx' | 'pdf' | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
+
+  // Estados para Inventario de Simbología y Ocurrencias (Tabla 1 y Tabla 2)
+  const [inventoryData, setInventoryData] = useState<SymbolInventoryResponse | null>(run.symbol_inventory || null);
+  const [isLoadingInventory, setIsLoadingInventory] = useState<boolean>(false);
+  const [selectedGroup, setSelectedGroup] = useState<SymbolInventoryGroupItem | null>(null);
+  const [groupOccurrences, setGroupOccurrences] = useState<SymbolOccurrenceSummaryItem[]>([]);
+  const [isLoadingOccurrences, setIsLoadingOccurrences] = useState<boolean>(false);
+  const [inventoryFilter, setInventoryFilter] = useState<'all' | 'production' | 'sandbox' | 'unknown' | 'excluded'>('all');
+
+  const loadInventory = async () => {
+    if (inventoryData) return;
+    setIsLoadingInventory(true);
+    try {
+      const data = await apiService.getSymbolInventory(run.id);
+      setInventoryData(data);
+    } catch (err: any) {
+      console.error('Error cargando inventario de simbología:', err);
+    } finally {
+      setIsLoadingInventory(false);
+    }
+  };
+
+  const handleSelectGroup = async (group: SymbolInventoryGroupItem) => {
+    setSelectedGroup(group);
+    setIsLoadingOccurrences(true);
+    try {
+      const occs = await apiService.getSymbolGroupOccurrences(run.id, group.id);
+      setGroupOccurrences(occs);
+    } catch (err: any) {
+      console.error('Error cargando ocurrencias del grupo:', err);
+      setGroupOccurrences([]);
+    } finally {
+      setIsLoadingOccurrences(false);
+    }
+  };
 
   if (!isOpen || !run) return null;
 
@@ -233,6 +281,21 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
           >
             <AlertTriangle className="w-4 h-4" />
             Hallazgos ({run.findings.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('inventory');
+              loadInventory();
+            }}
+            className={`py-3 border-b-2 transition-all flex items-center gap-1.5 ${
+              activeTab === 'inventory'
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+            }`}
+          >
+            <Shapes className="w-4 h-4" />
+            Inventario de Simbología ({inventoryData?.groups?.length ?? run.symbol_inventory?.groups?.length ?? 0})
           </button>
           <button
             type="button"
@@ -531,6 +594,361 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                       </div>
                     );
                   })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB: INVENTARIO DE SIMBOLOGÍA (TABLA 1 Y TABLA 2) */}
+          {activeTab === 'inventory' && (
+            <div className="space-y-6">
+              {isLoadingInventory ? (
+                <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-500">
+                  <RefreshCw className="w-6 h-6 animate-spin text-blue-600" />
+                  <p className="text-xs font-semibold">Cargando inventario consolidado y doble recortes técnicos...</p>
+                </div>
+              ) : selectedGroup ? (
+                /* TABLA 2: OCURRENCIAS Y LOCALIZACIONES DEL GRUPO SELECCIONADO */
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedGroup(null);
+                        setGroupOccurrences([]);
+                      }}
+                      className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      Volver a Inventario Consolidado (Tabla 1)
+                    </button>
+                    <span className="text-xs text-slate-500">
+                      Grupo: <strong className="text-slate-900 dark:text-white">{selectedGroup.display_code}</strong>
+                    </span>
+                  </div>
+
+                  {/* Cabecera del Grupo Seleccionado */}
+                  <div className="p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 space-y-2">
+                    <div className="flex items-start justify-between flex-wrap gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="px-2.5 py-0.5 rounded font-mono text-xs font-bold bg-blue-100 dark:bg-blue-950/60 text-blue-800 dark:text-blue-300">
+                            {selectedGroup.display_code}
+                          </span>
+                          <span className={`px-2 py-0.5 rounded text-[11px] font-bold uppercase ${
+                            selectedGroup.catalog_status === 'recognized_production' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                            selectedGroup.catalog_status === 'recognized_sandbox' ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' :
+                            selectedGroup.catalog_status === 'unknown_symbol' ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300' :
+                            selectedGroup.catalog_status === 'ambiguous_symbol' ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300' :
+                            'bg-slate-100 text-slate-700'
+                          }`}>
+                            {selectedGroup.catalog_status.replace('_', ' ')}
+                          </span>
+                          <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                            {selectedGroup.canonical_name || 'Símbolo Técnico'}
+                          </h3>
+                        </div>
+                        <p className="text-xs text-slate-600 dark:text-slate-300">
+                          {selectedGroup.description || selectedGroup.explanation || 'Sin descripción técnica registrada.'}
+                        </p>
+                      </div>
+                      <div className="text-right text-xs text-slate-500">
+                        <div>Total Ocurrencias: <strong className="text-slate-900 dark:text-white">{selectedGroup.total_occurrences}</strong></div>
+                        <div>Norma: <strong className="text-slate-700 dark:text-slate-300">{selectedGroup.standard_reference || 'N/A'}</strong></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Listado / Grilla de Ocurrencias (Tabla 2) */}
+                  <div className="space-y-2">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <MapPin className="w-3.5 h-3.5 text-blue-600" />
+                      Tabla 2: Localización y Doble Recorte por Ocurrencia ({groupOccurrences.length})
+                    </h4>
+
+                    {isLoadingOccurrences ? (
+                      <div className="py-8 flex flex-col items-center justify-center gap-2 text-slate-500">
+                        <RefreshCw className="w-5 h-5 animate-spin text-blue-600" />
+                        <span className="text-xs">Cargando ocurrencias y coordenadas de recortes...</span>
+                      </div>
+                    ) : groupOccurrences.length === 0 ? (
+                      <div className="p-8 text-center text-xs text-slate-500 italic border rounded-xl border-dashed">
+                        No hay ocurrencias registradas para este grupo.
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {groupOccurrences.map((occ, idx) => (
+                          <div
+                            key={occ.occurrence_id || idx}
+                            className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 space-y-2.5 text-xs shadow-sm hover:border-blue-300 dark:hover:border-blue-700 transition-colors"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                                  <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                  {occ.document_name}
+                                </span>
+                                <span className="text-[11px] text-slate-500">
+                                  {occ.sheet_name || `Lámina Pág ${occ.page_number}`} • Pág {occ.page_number}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (onNavigateContext) {
+                                    onNavigateContext({
+                                      id: occ.occurrence_id,
+                                      rule_code: 'PID_SYMBOLS',
+                                      rule_name: 'Simbología P&ID',
+                                      severity: 'info',
+                                      status: 'open',
+                                      title: `${selectedGroup.display_code} - ${selectedGroup.canonical_name || 'Símbolo'}`,
+                                      description: `Ocurrencia identificada en ${occ.document_name} (${occ.sheet_name})`,
+                                      bbox: occ.symbol_crop_bbox || occ.bbox_normalized,
+                                      navigation_context: occ.navigation_context
+                                    });
+                                    onClose();
+                                  }
+                                }}
+                                className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/80 dark:text-blue-300 flex items-center gap-1 transition-colors shrink-0"
+                              >
+                                <Eye className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                                Abrir en Visor
+                              </button>
+                            </div>
+
+                            {/* Metadatos de Doble Recorte Técnico */}
+                            <div className="p-2 rounded bg-slate-50 dark:bg-slate-950/40 border border-slate-100 dark:border-slate-800/60 space-y-1 font-mono text-[10px] text-slate-600 dark:text-slate-400">
+                              <div className="flex items-center justify-between">
+                                <span>Tag/Código: <strong className="text-slate-800 dark:text-slate-200">{occ.detected_tag_or_code || 'N/A'}</strong></span>
+                                <span>Confianza: <strong className="text-emerald-700 dark:text-emerald-400">{((occ.geometric_confidence || 1.0) * 100).toFixed(1)}%</strong></span>
+                              </div>
+                              <div>
+                                Symbol Crop (3mm): [{occ.symbol_crop_bbox?.map((v: number) => v.toFixed(2)).join(', ') || occ.bbox_normalized?.map((v: number) => v.toFixed(2)).join(', ') || '-'}]
+                              </div>
+                              <div>
+                                Context Crop (15mm): [{occ.occurrence_context_crop_bbox?.map((v: number) => v.toFixed(2)).join(', ') || '-'}]
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                /* TABLA 1: INVENTARIO CONSOLIDADO DE SIMBOLOGÍA */
+                <div className="space-y-6">
+                  {/* Tarjetas de Métricas de Cobertura */}
+                  {(() => {
+                    const metrics: Partial<SymbolInventoryMetrics> = inventoryData?.metrics || {
+                      production_coverage: 0,
+                      sandbox_coverage: 0,
+                      unknown_rate: 0,
+                      valid_symbol_occurrences: 0,
+                      inventory_groups: 0,
+                      figures_excluded: 0,
+                      recognized_production: 0,
+                      recognized_sandbox: 0,
+                      unknown: 0
+                    };
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20">
+                          <span className="text-[11px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
+                            Cob. Productiva
+                          </span>
+                          <p className="text-xl font-black text-emerald-900 dark:text-emerald-100 mt-1">
+                            {((metrics.production_coverage || 0) * 100).toFixed(1)}%
+                          </p>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400">
+                            {metrics.recognized_production || 0} ocurrencias
+                          </span>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/50 bg-amber-50/40 dark:bg-amber-950/20">
+                          <span className="text-[11px] font-bold uppercase text-amber-700 dark:text-amber-300">
+                            Cob. Sandbox
+                          </span>
+                          <p className="text-xl font-black text-amber-900 dark:text-amber-100 mt-1">
+                            {((metrics.sandbox_coverage || 0) * 100).toFixed(1)}%
+                          </p>
+                          <span className="text-[10px] text-amber-600 dark:text-amber-400">
+                            {metrics.recognized_sandbox || 0} ocurrencias
+                          </span>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl border border-rose-200 dark:border-rose-900/50 bg-rose-50/40 dark:bg-rose-950/20">
+                          <span className="text-[11px] font-bold uppercase text-rose-700 dark:text-rose-300">
+                            Tasa Desconocidos
+                          </span>
+                          <p className="text-xl font-black text-rose-900 dark:text-rose-100 mt-1">
+                            {((metrics.unknown_rate || 0) * 100).toFixed(1)}%
+                          </p>
+                          <span className="text-[10px] text-rose-600 dark:text-rose-400">
+                            {metrics.unknown || 0} sin catálogo
+                          </span>
+                        </div>
+
+                        <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/40 dark:bg-blue-950/20">
+                          <span className="text-[11px] font-bold uppercase text-blue-700 dark:text-blue-300">
+                            Ocurrencias Totales
+                          </span>
+                          <p className="text-xl font-black text-blue-900 dark:text-blue-100 mt-1">
+                            {metrics.valid_symbol_occurrences || 0}
+                          </p>
+                          <span className="text-[10px] text-blue-600 dark:text-blue-400">
+                            {metrics.inventory_groups || 0} grupos canónicos
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Filtros de la Tabla */}
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold">
+                      {(['all', 'production', 'sandbox', 'unknown', 'excluded'] as const).map((flt) => (
+                        <button
+                          key={flt}
+                          type="button"
+                          onClick={() => setInventoryFilter(flt)}
+                          className={`px-3 py-1 rounded-lg transition-colors ${
+                            inventoryFilter === flt
+                              ? 'bg-blue-600 text-white font-bold'
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300'
+                          }`}
+                        >
+                          {flt === 'all' ? 'Todos los Grupos' :
+                           flt === 'production' ? 'Productivos' :
+                           flt === 'sandbox' ? 'Sandbox' :
+                           flt === 'unknown' ? 'Desconocidos' : 'Excluidos'}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInventoryData(null);
+                        loadInventory();
+                      }}
+                      className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      Recalcular
+                    </button>
+                  </div>
+
+                  {/* Tabla 1: Inventario Consolidado */}
+                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-500">
+                          <tr>
+                            <th className="px-4 py-3">Código</th>
+                            <th className="px-4 py-3">Identidad & Función Técnica</th>
+                            <th className="px-4 py-3">Estado Catálogo</th>
+                            <th className="px-4 py-3">Norma</th>
+                            <th className="px-4 py-3">Conteo Documentos</th>
+                            <th className="px-4 py-3 text-right">Total</th>
+                            <th className="px-4 py-3 text-right">Confianza</th>
+                            <th className="px-4 py-3 text-center">Acción</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                          {(() => {
+                            const allGroups = [
+                              ...(inventoryData?.groups || run.symbol_inventory?.groups || []),
+                              ...(inventoryFilter === 'all' || inventoryFilter === 'excluded' ? (inventoryData?.excluded_groups || []) : [])
+                            ];
+
+                            const filtered = allGroups.filter((g) => {
+                              if (inventoryFilter === 'production') return g.catalog_status === 'recognized_production';
+                              if (inventoryFilter === 'sandbox') return g.catalog_status === 'recognized_sandbox';
+                              if (inventoryFilter === 'unknown') return g.catalog_status === 'unknown_symbol';
+                              if (inventoryFilter === 'excluded') return g.catalog_status === 'figure_excluded' || g.catalog_status === 'not_symbol';
+                              return true;
+                            });
+
+                            if (filtered.length === 0) {
+                              return (
+                                <tr>
+                                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500 italic">
+                                    No hay grupos de simbología identificados bajo este filtro.
+                                  </td>
+                                </tr>
+                              );
+                            }
+
+                            return filtered.map((g) => {
+                              const isProd = g.catalog_status === 'recognized_production';
+                              const isSand = g.catalog_status === 'recognized_sandbox';
+                              const isUnk = g.catalog_status === 'unknown_symbol';
+                              const isAmb = g.catalog_status === 'ambiguous_symbol';
+
+                              return (
+                                <tr key={g.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/40 transition-colors">
+                                  <td className="px-4 py-3 font-mono font-bold text-slate-900 dark:text-white">
+                                    <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-xs">
+                                      {g.display_code}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 space-y-0.5 max-w-xs">
+                                    <div className="font-bold text-slate-900 dark:text-white">
+                                      {g.canonical_name || 'Símbolo'}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 truncate" title={g.description || g.explanation}>
+                                      {g.description || g.explanation || '-'}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+                                      isProd ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300' :
+                                      isSand ? 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300' :
+                                      isUnk ? 'bg-rose-100 text-rose-800 dark:bg-rose-950/60 dark:text-rose-300' :
+                                      isAmb ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300' :
+                                      'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300'
+                                    }`}>
+                                      {g.catalog_status.replace('_', ' ')}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-500 text-[11px]">
+                                    {g.standard_reference || '-'}
+                                  </td>
+                                  <td className="px-4 py-3">
+                                    <div className="flex flex-wrap gap-1">
+                                      {Object.entries(g.occurrences_by_document || {}).map(([doc, cnt]) => (
+                                        <span key={doc} className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-[10px] text-slate-600 dark:text-slate-300" title={doc}>
+                                          {doc.slice(0, 12)}...: <strong>{cnt}</strong>
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-black text-slate-900 dark:text-white text-sm">
+                                    {g.total_occurrences}
+                                  </td>
+                                  <td className="px-4 py-3 text-right font-semibold text-slate-600 dark:text-slate-300">
+                                    {(((g.confidence_summary?.avg ?? 1.0) * 100)).toFixed(1)}%
+                                  </td>
+                                  <td className="px-4 py-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectGroup(g)}
+                                      className="px-2.5 py-1 text-xs font-bold rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-950/60 dark:hover:bg-blue-900/80 dark:text-blue-300 inline-flex items-center gap-1 transition-colors"
+                                    >
+                                      <span>Ver ({g.total_occurrences})</span>
+                                      <ChevronRight className="w-3.5 h-3.5" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>

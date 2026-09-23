@@ -152,6 +152,42 @@ class ReviewExportService:
             ]
         }
 
+        # Cargar inventario técnico de simbología (Tabla 1 y Tabla 2)
+        from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+        inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+
+        all_occurrences = []
+        groups_summary = []
+        for g in inv_groups:
+            occ_list = SymbolInventoryService.get_group_occurrences_summary(db, g.id)
+            for o in occ_list:
+                o["group_display_code"] = g.display_code
+                o["group_canonical_name"] = g.canonical_name
+                o["catalog_status"] = g.catalog_status
+            all_occurrences.extend(occ_list)
+
+            groups_summary.append({
+                "id": g.id,
+                "display_code": g.display_code,
+                "canonical_name": g.canonical_name,
+                "description": g.description,
+                "technical_function": g.technical_function,
+                "standard_reference": g.standard_reference,
+                "catalog_status": g.catalog_status,
+                "confidence_summary": g.confidence_summary or {},
+                "total_occurrences": g.total_occurrences,
+                "occurrences_by_document": g.occurrences_by_document or {},
+                "occurrences_by_sheet": g.occurrences_by_sheet or {},
+                "requires_human_review": g.requires_human_review,
+                "explanation": g.explanation
+            })
+
+        run_data["symbol_inventory"] = {
+            "metrics": inv_metrics,
+            "groups": groups_summary,
+            "occurrences": all_occurrences
+        }
+
         # Directorio destino
         target_dir = os.path.join(cls.BASE_STORAGE_DIR, run.project_id)
         cls._ensure_dir(target_dir)
@@ -348,6 +384,77 @@ class ReviewExportService:
         for col_letter in ["A", "B", "C", "D", "E", "F"]:
             ws_docs.column_dimensions[col_letter].width = 25
 
+        # Sheet 5: Tabla 1 - Resumen de Inventario Consolidado de Simbología
+        inventory = run_data.get("symbol_inventory", {})
+        groups = inventory.get("groups", [])
+        occurrences = inventory.get("occurrences", [])
+
+        ws_inv = wb.create_sheet(title="Resumen de Inventario")
+        headers_inv = [
+            "Código Visual", "Nombre Canónico / Identidad", "Estado de Catálogo",
+            "Norma / Referencia", "Conteo por Documento", "Total Ocurrencias",
+            "Confianza Promedio", "Requiere Revisión", "Explicación Técnica"
+        ]
+        ws_inv.append(headers_inv)
+        for col in range(1, len(headers_inv) + 1):
+            cell = ws_inv.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for g in groups:
+            by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
+            conf_avg = (g.get("confidence_summary") or {}).get("avg", 1.0)
+            ws_inv.append([
+                g.get("display_code"),
+                g.get("canonical_name") or "-",
+                g.get("catalog_status"),
+                g.get("standard_reference") or "-",
+                by_doc_str or "-",
+                g.get("total_occurrences", 0),
+                conf_avg,
+                "SÍ" if g.get("requires_human_review") else "NO",
+                g.get("explanation") or "-"
+            ])
+
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I"]:
+            ws_inv.column_dimensions[col_letter].width = 25
+
+        # Sheet 6: Tabla 2 - Ocurrencias y Localizaciones
+        ws_occ = wb.create_sheet(title="Ocurrencias y Localizaciones")
+        headers_occ = [
+            "ID Ocurrencia", "Código Grupo", "Identidad", "Estado Catálogo",
+            "Documento", "Lámina / Hoja", "Página", "BBox Símbolo (3mm)",
+            "BBox Contexto (15mm)", "Margen mm", "Confianza Geométrica",
+            "Tag / Código", "Calidad Recorte", "Ruta Recorte Símbolo", "Ruta Recorte Contexto"
+        ]
+        ws_occ.append(headers_occ)
+        for col in range(1, len(headers_occ) + 1):
+            cell = ws_occ.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for o in occurrences:
+            ws_occ.append([
+                o.get("occurrence_id"),
+                o.get("group_display_code") or "-",
+                o.get("group_canonical_name") or "-",
+                o.get("catalog_status") or "-",
+                o.get("document_name") or "-",
+                o.get("sheet_name") or "-",
+                o.get("page_number", 1),
+                str(o.get("symbol_crop_bbox") or o.get("bbox_normalized") or "-"),
+                str(o.get("occurrence_context_crop_bbox") or "-"),
+                o.get("context_margin_mm", 15.0),
+                round(o.get("geometric_confidence", 1.0), 3),
+                o.get("detected_tag_or_code") or "-",
+                o.get("crop_quality_status") or "valid",
+                o.get("symbol_crop_path") or "-",
+                o.get("occurrence_context_crop_path") or "-"
+            ])
+
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"]:
+            ws_occ.column_dimensions[col_letter].width = 22
+
         wb.save(output_path)
 
     @classmethod
@@ -475,6 +582,103 @@ class ReviewExportService:
                 if y < 70:
                     pdf.new_page()
                     y = pdf.height - 50
+
+        # Sección 4: Tabla 1 - Inventario Consolidado de Simbología
+        inventory = run_data.get("symbol_inventory", {})
+        metrics = inventory.get("metrics", {})
+        groups = inventory.get("groups", [])
+        occurrences = inventory.get("occurrences", [])
+
+        pdf.new_page()
+        y = pdf.height - 50
+
+        pdf.draw_text("4. Inventario Consolidado de Simbología (Tabla 1)", 40, y, font_size=12, font="Helvetica-Bold")
+        y -= 16
+
+        # Cuadro de Métricas de Cobertura
+        pdf.draw_rect(40, y - 36, pdf.width - 80, 40, fill_color=(0.95, 0.97, 1.0), stroke_color=(0.7, 0.8, 0.95), line_width=0.75)
+        my = y - 12
+        pdf.draw_text(
+            f"Ocurrencias Válidas: {metrics.get('valid_symbol_occurrences', 0)} | Grupos: {metrics.get('inventory_groups', 0)} | Figuras Excluidas: {metrics.get('figures_excluded', 0)}",
+            48, my, font_size=8.5, font="Helvetica-Bold", color=(0.1, 0.25, 0.5)
+        )
+        my -= 14
+        prod_cov = round(metrics.get("production_coverage", 0.0) * 100, 1)
+        sand_cov = round(metrics.get("sandbox_coverage", 0.0) * 100, 1)
+        unk_rate = round(metrics.get("unknown_rate", 0.0) * 100, 1)
+        pdf.draw_text(
+            f"Cob. Productiva: {prod_cov}% | Cob. Sandbox: {sand_cov}% | Tasa Desconocidos: {unk_rate}% | Rec. Prod: {metrics.get('recognized_production', 0)} | Rec. Sandbox: {metrics.get('recognized_sandbox', 0)} | Desconocidos: {metrics.get('unknown', 0)}",
+            48, my, font_size=8, font="Helvetica", color=(0.2, 0.3, 0.4)
+        )
+        y -= 50
+
+        if not groups:
+            pdf.draw_text("No se registraron grupos de simbología identificados.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
+            y -= 15
+        else:
+            for g in groups:
+                status_color = (0.1, 0.6, 0.2) if "production" in g.get("catalog_status", "") else (0.8, 0.5, 0.0) if "sandbox" in g.get("catalog_status", "") else (0.7, 0.2, 0.2)
+                pdf.draw_text(
+                    f"[{g.get('display_code')}] {g.get('canonical_name') or 'Símbolo'}",
+                    45, y, font_size=9, font="Helvetica-Bold"
+                )
+                pdf.draw_text(
+                    f"{g.get('catalog_status', '').upper()}",
+                    pdf.width - 150, y, font_size=8, font="Helvetica-Bold", color=status_color
+                )
+                y -= 12
+                by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
+                pdf.draw_text(
+                    f"Total: {g.get('total_occurrences', 0)} | Por Documento: {by_doc_str or '-'} | Norma: {g.get('standard_reference') or '-'}",
+                    55, y, font_size=7.5, color=(0.3, 0.3, 0.3)
+                )
+                y -= 11
+                if g.get("explanation"):
+                    pdf.draw_text(
+                        f"Detalle: {g.get('explanation')}",
+                        55, y, font_size=7.5, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5)
+                    )
+                    y -= 11
+                y -= 4
+
+                if y < 70:
+                    pdf.new_page()
+                    y = pdf.height - 50
+
+        # Sección 5: Tabla 2 - Anexo de Ubicaciones y Ocurrencias Técnicas
+        pdf.new_page()
+        y = pdf.height - 50
+        pdf.draw_text("5. Anexo de Ubicaciones y Ocurrencias Técnicas (Tabla 2)", 40, y, font_size=12, font="Helvetica-Bold")
+        y -= 16
+
+        if not occurrences:
+            pdf.draw_text("No se registraron ocurrencias específicas en este informe.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
+            y -= 15
+        else:
+            for o in occurrences[:100]:  # Mostrar hasta 100 ocurrencias en PDF para legibilidad
+                pdf.draw_text(
+                    f"• {o.get('group_display_code')} | {o.get('document_name')} | {o.get('sheet_name')} (Pág {o.get('page_number')}) | Tag: {o.get('detected_tag_or_code') or '-'}",
+                    45, y, font_size=8, font="Helvetica-Bold"
+                )
+                y -= 11
+                sym_b = str(o.get('symbol_crop_bbox') or o.get('bbox_normalized') or '-')
+                ctx_b = str(o.get('occurrence_context_crop_bbox') or '-')
+                pdf.draw_text(
+                    f"  Símbolo (3mm): {sym_b} | Contexto (15mm): {ctx_b} | Conf: {round(o.get('geometric_confidence', 1.0), 2)}",
+                    52, y, font_size=7, color=(0.4, 0.45, 0.5)
+                )
+                y -= 11
+
+                if y < 70:
+                    pdf.new_page()
+                    y = pdf.height - 50
+
+            if len(occurrences) > 100:
+                pdf.draw_text(
+                    f"... y {len(occurrences) - 100} ocurrencias adicionales disponibles en la exportación XLSX (Hoja 'Ocurrencias y Localizaciones').",
+                    45, y, font_size=8, font="Helvetica-Oblique", color=(0.2, 0.4, 0.7)
+                )
+                y -= 14
 
         with open(output_path, "wb") as out_f:
             out_f.write(pdf.build_pdf_bytes())

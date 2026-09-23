@@ -171,6 +171,7 @@ class ReviewRun(Base):
     findings = relationship("RuleFinding", back_populates="review_run", cascade="all, delete-orphan")
     run_documents = relationship("ReviewRunDocument", back_populates="review_run", cascade="all, delete-orphan")
     reports = relationship("ReviewReport", back_populates="review_run", cascade="all, delete-orphan")
+    symbol_inventory_groups = relationship("SymbolInventoryGroup", back_populates="review_run", cascade="all, delete-orphan", order_by="SymbolInventoryGroup.display_code.asc()")
 
 
 class ReviewRunDocument(Base):
@@ -408,4 +409,47 @@ class ReviewReport(Base):
     review_run = relationship("ReviewRun", back_populates="reports")
     discipline = relationship("ReviewDiscipline")
     topic = relationship("ReviewTopic")
+
+
+class SymbolInventoryGroup(Base):
+    """Grupo de ocurrencias de símbolos visualmente equivalentes auditadas en un ReviewRun."""
+    __tablename__ = "symbol_inventory_groups"
+    __table_args__ = (
+        UniqueConstraint("review_run_id", "grouping_key", name="uq_run_grouping_key"),
+    )
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    review_run_id = Column(String(36), ForeignKey("review_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    grouping_key = Column(String(150), nullable=False)
+    grouping_method = Column(String(50), default="template_match", nullable=False) # template_match, geometry_signature, visual_similarity, manual
+    grouping_confidence = Column(Float, default=1.0, nullable=False)
+    grouping_version = Column(String(30), default="v1.0", nullable=False)
+    display_code = Column(String(50), nullable=False) # e.g. "SYM-VALVE-001", "U-001", "FIG-001"
+    unknown_group_id = Column(String(36), nullable=True) # UUID interno para trazabilidad si luego se cura
+    representative_occurrence_id = Column(String(36), nullable=True)
+    representative_selection_reason = Column(String(255), nullable=True)
+
+    matched_template_id = Column(String(36), ForeignKey("symbol_templates.id", ondelete="SET NULL"), nullable=True, index=True)
+    matched_template_version_id = Column(String(36), ForeignKey("symbol_template_versions.id", ondelete="SET NULL"), nullable=True, index=True)
+    canonical_name = Column(String(150), nullable=True)
+    description = Column(Text, nullable=True)
+    technical_function = Column(Text, nullable=True)
+    standard_reference = Column(String(150), nullable=True)
+    catalog_status = Column(String(40), default="unknown_symbol", nullable=False, index=True)
+    # recognized_production, recognized_sandbox, recognized_reference_only, unknown_symbol, ambiguous_symbol, requires_review, figure_excluded, not_symbol
+    confidence_summary = Column(JSON, default=dict) # {"min": 0.85, "max": 0.98, "avg": 0.92}
+    total_occurrences = Column(Integer, default=0, nullable=False)
+    occurrences_by_document = Column(JSON, default=dict)
+    occurrences_by_sheet = Column(JSON, default=dict)
+    requires_human_review = Column(Boolean, default=False, nullable=False)
+    explanation = Column(Text, nullable=True)
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relaciones
+    review_run = relationship("ReviewRun", back_populates="symbol_inventory_groups")
+    matched_template = relationship("SymbolTemplate", foreign_keys=[matched_template_id])
+    matched_template_version = relationship("SymbolTemplateVersion", foreign_keys=[matched_template_version_id])
+    occurrences = relationship("DetectedSymbol", back_populates="inventory_group")
 

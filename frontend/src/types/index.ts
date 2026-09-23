@@ -2799,6 +2799,110 @@ export interface ReviewRunDetailResponse {
   findings: ReviewFindingDetail[];
   reports?: ReviewReportItem[];
   baseline_catalog_version?: string;
+  symbol_inventory?: SymbolInventoryResponse;
+}
+
+export interface SymbolOccurrenceSummaryItem {
+  occurrence_id: string;
+  inventory_group_id?: string;
+  project_id?: string;
+  document_id: string;
+  document_name: string;
+  sheet_id?: string;
+  sheet_name?: string;
+  page_number: number;
+  bbox_normalized: number[];
+  inner_drawing_bbox?: number[];
+  symbol_crop_bbox?: number[];
+  symbol_crop_path?: string;
+  symbol_crop_hash?: string;
+  occurrence_context_crop_bbox?: number[];
+  occurrence_context_crop_path?: string;
+  occurrence_context_crop_hash?: string;
+  context_margin_mm: number;
+  geometric_confidence: number;
+  geometry_score?: number;
+  topology_score?: number;
+  visual_score?: number;
+  context_score?: number;
+  match_score?: number;
+  classification: string;
+  matching_status: string;
+  orientation?: number;
+  crop_quality_status: string;
+  text_mask_overlap_ratio?: number;
+  detected_tag_or_code?: string;
+  table_id?: string;
+  cell_id?: string;
+  cell_bbox?: number[];
+  navigation_context: {
+    project_id?: string;
+    document_id: string;
+    sheet_id?: string;
+    page_number: number;
+    bbox: number[];
+  };
+}
+
+export interface SymbolInventoryGroupItem {
+  id: string;
+  review_run_id: string;
+  grouping_key: string;
+  grouping_method: string;
+  grouping_confidence: number;
+  grouping_version: string;
+  display_code: string;
+  unknown_group_id?: string;
+  representative_occurrence_id?: string;
+  representative_selection_reason?: string;
+  representative_crop_path?: string;
+  matched_template_id?: string;
+  matched_template_version_id?: string;
+  canonical_name?: string;
+  description?: string;
+  technical_function?: string;
+  standard_reference?: string;
+  catalog_status: string;
+  confidence_summary: {
+    min?: number;
+    max?: number;
+    avg?: number;
+  };
+  total_occurrences: number;
+  occurrences_by_document: Record<string, number>;
+  occurrences_by_sheet: Record<string, number>;
+  requires_human_review: boolean;
+  explanation?: string;
+  created_at?: string;
+}
+
+export interface SymbolInventoryMetrics {
+  documents_reviewed: number;
+  sheets_reviewed: number;
+  geometric_candidates: number;
+  valid_symbol_occurrences: number;
+  inventory_groups: number;
+  recognized_production: number;
+  recognized_sandbox: number;
+  recognized_reference_only: number;
+  unknown: number;
+  ambiguous: number;
+  requires_review: number;
+  figures_excluded: number;
+  not_symbols: number;
+  inventory_coverage: number;
+  production_coverage: number;
+  sandbox_coverage: number;
+  unknown_rate: number;
+  review_required_rate: number;
+  exclusion_rate: number;
+  by_document?: Record<string, any>;
+}
+
+export interface SymbolInventoryResponse {
+  metrics: SymbolInventoryMetrics;
+  groups: SymbolInventoryGroupItem[];
+  excluded_groups?: SymbolInventoryGroupItem[];
 }
 
 export interface ReviewReportItem {
