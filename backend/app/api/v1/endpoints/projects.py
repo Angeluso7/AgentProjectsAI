@@ -136,7 +136,7 @@ def update_project(
 @router.get("/{project_id}/deletion-impact", response_model=ProjectDeletionImpact)
 def get_project_deletion_impact(
     project_id: str,
-    tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "reviewer", "contributor"])),
     db: Session = Depends(get_db)
 ):
     """Calcula y devuelve el resumen del impacto de vaciar o eliminar un proyecto."""

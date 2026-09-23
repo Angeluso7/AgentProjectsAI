@@ -79,12 +79,64 @@ export const ProjectDeleteModal: React.FC<ProjectDeleteModalProps> = ({
     }
   };
 
+  const normalizeCode = (str?: string | null): string => {
+    if (!str) return '';
+    return str.replace(/\s+/g, ' ').trim().toUpperCase();
+  };
+
   if (!isOpen || !project) return null;
 
-  const expectedCode = project.code.trim().toUpperCase();
-  const isCodeMatch = confirmInput.trim().toUpperCase() === expectedCode;
-  const isBlocked = impact?.can_hard_delete === false && impact.blocking_reasons.length > 0;
-  const canSubmit = isCodeMatch && acknowledgeLoss && !isProcessing && !isBlocked;
+  const expectedCode = normalizeCode(project.code);
+  const normalizedInput = normalizeCode(confirmInput);
+  const isCodeMatch = normalizedInput === expectedCode && expectedCode.length > 0;
+  
+  const isHardDeleteBlocked =
+    activeTab === 'delete' &&
+    deleteMode === 'hard_delete' &&
+    impact?.can_hard_delete === false &&
+    (impact.blocking_reasons?.length ?? 0) > 0;
+
+  const isHardDeleteConfirmationValid =
+    activeTab === 'delete' &&
+    deleteMode === 'hard_delete' &&
+    isCodeMatch &&
+    acknowledgeLoss &&
+    !isHardDeleteBlocked &&
+    !isProcessing;
+
+  const isAnonymizeConfirmationValid =
+    activeTab === 'delete' &&
+    deleteMode === 'anonymize' &&
+    isCodeMatch &&
+    acknowledgeLoss &&
+    !isProcessing;
+
+  const isClearContentValid =
+    activeTab === 'clear_content' &&
+    isCodeMatch &&
+    acknowledgeLoss &&
+    !isProcessing;
+
+  const canSubmit = isHardDeleteConfirmationValid || isAnonymizeConfirmationValid || isClearContentValid;
+
+  // Diagnóstico de depuración en consola para auditar condiciones del botón
+  if (isOpen) {
+    console.debug('[ProjectDeleteModal Diagnostic]', {
+      projectCode: project.code,
+      expectedCode,
+      inputRaw: confirmInput,
+      normalizedInput,
+      isCodeMatch,
+      acknowledgeLoss,
+      activeTab,
+      deleteMode,
+      can_hard_delete: impact?.can_hard_delete,
+      blocking_reasons: impact?.blocking_reasons,
+      isHardDeleteBlocked,
+      isProcessing,
+      canSubmit
+    });
+  }
 
   const handleAction = async () => {
     if (!isCodeMatch) {
@@ -95,15 +147,19 @@ export const ProjectDeleteModal: React.FC<ProjectDeleteModalProps> = ({
       setError('Debes confirmar que comprendes la pérdida irreversible de los datos.');
       return;
     }
+    if (isHardDeleteBlocked) {
+      setError(`Eliminación bloqueada: ${impact?.blocking_reasons.join(', ')}`);
+      return;
+    }
 
     try {
       setIsProcessing(true);
       setError(null);
 
       if (activeTab === 'clear_content') {
-        await onClearContent(project.id, confirmInput.trim(), reasonInput.trim() || undefined);
+        await onClearContent(project.id, normalizedInput, reasonInput.trim() || undefined);
       } else {
-        await onDeleteConfirmed(project.id, confirmInput.trim(), deleteMode, reasonInput.trim() || undefined);
+        await onDeleteConfirmed(project.id, normalizedInput, deleteMode, reasonInput.trim() || undefined);
       }
       onClose();
     } catch (err: any) {
@@ -350,70 +406,138 @@ export const ProjectDeleteModal: React.FC<ProjectDeleteModalProps> = ({
 
           {/* Confirmación por código */}
           <div>
-            <label className="block text-xs font-medium text-slate-300 mb-1.5 leading-relaxed">
-              Para confirmar, escribe el código exacto <strong className="text-rose-400 font-mono select-all bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-900">{project.code}</strong>:
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="block text-xs font-medium text-slate-300 leading-relaxed">
+                Para confirmar, escribe el código exacto <strong className="text-rose-400 font-mono select-all bg-rose-950/60 px-1.5 py-0.5 rounded border border-rose-900">{project.code}</strong>:
+              </label>
+              <button
+                type="button"
+                onClick={() => setConfirmInput(project.code)}
+                className="text-[11px] text-blue-400 hover:text-blue-300 underline font-mono cursor-pointer shrink-0 ml-2"
+                title="Copiar y autocompletar código exacto del proyecto"
+              >
+                Auto-rellenar
+              </button>
+            </div>
             <input
               type="text"
               autoFocus
               value={confirmInput}
               onChange={(e) => setConfirmInput(e.target.value)}
               placeholder={project.code}
-              className="w-full px-3 py-2 text-xs font-mono font-bold rounded-xl bg-slate-950 border border-slate-800 text-slate-100 focus:outline-none focus:border-rose-500 tracking-wider"
+              className={`w-full px-3 py-2 text-xs font-mono font-bold rounded-xl bg-slate-950 border text-slate-100 focus:outline-none tracking-wider transition-colors ${
+                isCodeMatch
+                  ? 'border-emerald-500 focus:border-emerald-400'
+                  : confirmInput.trim() !== ''
+                  ? 'border-rose-700 focus:border-rose-500'
+                  : 'border-slate-800 focus:border-blue-500'
+              }`}
             />
+            {/* Mensajes de validación en tiempo real del código */}
+            <div className="mt-1.5 text-[11px]">
+              {confirmInput.trim() === '' ? (
+                <span className="text-slate-500 flex items-center gap-1">
+                  <Search className="w-3 h-3" /> Escribe el código exacto del proyecto para habilitar la confirmación.
+                </span>
+              ) : isCodeMatch ? (
+                <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> Código confirmado ({expectedCode})
+                </span>
+              ) : (
+                <span className="text-rose-400 font-semibold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-400" /> Código no coincide (ingresado: «{normalizedInput}», esperado: «{expectedCode}»)
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Checkbox de Reconocimiento de Pérdida de Datos */}
-          <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-start gap-2.5">
-            <input
-              type="checkbox"
-              id="acknowledgeDataLossCheck"
-              checked={acknowledgeLoss}
-              onChange={(e) => setAcknowledgeLoss(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-700 text-rose-600 focus:ring-rose-500 bg-slate-900 cursor-pointer mt-0.5"
-            />
-            <label htmlFor="acknowledgeDataLossCheck" className="text-xs text-slate-300 cursor-pointer select-none leading-relaxed">
-              Confirmo que comprendo la pérdida irreversible de los archivos, documentos, extracciones y resultados asociados.
-            </label>
+          <div className="space-y-1.5">
+            <div className={`p-3 rounded-xl bg-slate-950 border flex items-start gap-2.5 transition-colors ${
+              acknowledgeLoss ? 'border-emerald-800/80 bg-emerald-950/10' : 'border-slate-800'
+            }`}>
+              <input
+                type="checkbox"
+                id="acknowledgeDataLossCheck"
+                checked={acknowledgeLoss}
+                onChange={(e) => setAcknowledgeLoss(e.target.checked)}
+                className="w-4 h-4 rounded border-slate-700 text-rose-600 focus:ring-rose-500 bg-slate-900 cursor-pointer mt-0.5"
+              />
+              <label htmlFor="acknowledgeDataLossCheck" className="text-xs text-slate-300 cursor-pointer select-none leading-relaxed">
+                Confirmo que comprendo la pérdida irreversible de los archivos, documentos, extracciones y resultados asociados.
+              </label>
+            </div>
+            {!acknowledgeLoss && (
+              <p className="text-[11px] text-amber-400/90 pl-1 flex items-center gap-1">
+                <AlertTriangle className="w-3 h-3 text-amber-400" /> Debes marcar esta casilla para habilitar el botón de confirmación.
+              </p>
+            )}
           </div>
 
+          {/* Banner de resumen de condiciones antes del botón */}
+          {!canSubmit && !isProcessing && (
+            <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] text-slate-400 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="text-slate-300">Pendiente para habilitar: </strong>
+                {!isCodeMatch ? (
+                  <span>Falta escribir el código exacto «{project.code}».</span>
+                ) : !acknowledgeLoss ? (
+                  <span>Falta marcar la casilla de confirmación de pérdida de datos.</span>
+                ) : isHardDeleteBlocked ? (
+                  <span>
+                    Eliminación física bloqueada por tareas activas. Selecciona el modo <em>«Anonimizar»</em> o espera a que finalicen.
+                  </span>
+                ) : (
+                  <span>Completa los pasos requeridos arriba.</span>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Botones de acción */}
-          <div className="pt-2 flex items-center justify-end gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={isProcessing}
-              className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              type="button"
-              onClick={handleAction}
-              disabled={!canSubmit}
-              className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-lg flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
-                activeTab === 'delete'
-                  ? 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 shadow-rose-600/30'
-                  : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 shadow-amber-600/30'
-              }`}
-            >
-              {isProcessing ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  <span>Procesando...</span>
-                </>
-              ) : activeTab === 'delete' ? (
-                <>
-                  <Trash2 className="w-4 h-4" />
-                  <span>Confirmar Eliminación Permanente</span>
-                </>
-              ) : (
-                <>
-                  <Eraser className="w-4 h-4" />
-                  <span>Confirmar Vaciado de Contenido</span>
-                </>
-              )}
-            </button>
+          <div className="pt-2 flex items-center justify-between">
+            <span className="text-[10px] font-mono text-slate-500">
+              Build: fix/project-lifecycle (v0.2.2)
+            </span>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                disabled={isProcessing}
+                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleAction}
+                disabled={!canSubmit}
+                id="btn-confirm-project-lifecycle"
+                className={`px-5 py-2 text-xs font-bold text-white rounded-xl shadow-lg flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed ${
+                  activeTab === 'delete'
+                    ? 'bg-rose-600 hover:bg-rose-500 active:bg-rose-700 shadow-rose-600/30'
+                    : 'bg-amber-600 hover:bg-amber-500 active:bg-amber-700 shadow-amber-600/30'
+                }`}
+              >
+                {isProcessing ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>Procesando...</span>
+                  </>
+                ) : activeTab === 'delete' ? (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Confirmar Eliminación Permanente</span>
+                  </>
+                ) : (
+                  <>
+                    <Eraser className="w-4 h-4" />
+                    <span>Confirmar Vaciado de Contenido</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       </div>
