@@ -806,7 +806,8 @@ class ReviewOrchestrator:
                     "description": f.description,
                     "recommendation": f.recommendation,
                     "bbox": f.bbox,
-                    "navigation_context": f.navigation_context
+                    "navigation_context": f.navigation_context,
+                    "evidence_refs": f.evidence_refs or {}
                 }
                 for f in findings
             ]

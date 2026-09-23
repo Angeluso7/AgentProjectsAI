@@ -2752,6 +2752,7 @@ export interface ReviewFindingDetail {
   description: string;
   recommendation?: string;
   bbox?: number[];
+  evidence_refs?: Record<string, any>;
   navigation_context?: {
     document_id?: string;
     sheet_id?: string;
