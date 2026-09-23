@@ -57,6 +57,10 @@ def validate_postgres(db_url: str):
     print("\n--- 1. Initializing baseline schema via Base.metadata.create_all ---")
     Base.metadata.create_all(bind=engine)
     
+    # Clean up tables that create foreign keys to symbol_template_versions before testing 0025->0022 downgrade
+    with engine.begin() as conn:
+        conn.execute(sa.text("DROP TABLE IF EXISTS symbol_inventory_groups CASCADE"))
+    
     # 2. Stamp at 0025_symbol_source_evidence_metadata (head)
     print("\n--- 2. Stamping Alembic at 0025_symbol_source_evidence_metadata ---")
     run_cmd(f'alembic -x url="{db_url}" stamp 0025_symbol_source_evidence_metadata')
