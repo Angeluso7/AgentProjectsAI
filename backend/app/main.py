@@ -101,6 +101,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["Content-Disposition", "Content-Length", "X-Report-SHA256"],
 )
 
 # Montar ruta estática para previsualización de recortes y renders

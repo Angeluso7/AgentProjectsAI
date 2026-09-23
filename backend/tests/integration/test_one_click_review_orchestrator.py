@@ -693,3 +693,132 @@ def test_test_only_template_and_sandbox_semantics(review_env):
         # Ningún finding basado en sym_sandbox
         assert f.navigation_context.get("symbol_id") != sym_sandbox.id
         assert "[SANDBOX]" not in f.title
+
+
+@pytest.mark.postgres
+def test_review_report_authenticated_download_and_isolation(review_env):
+    """
+    Verifica los requisitos obligatorios de descarga de reportes y detalle de corrida:
+    1. Descarga no autenticada falla con 401 ("Autenticación requerida. Token no provisto.").
+    2. Usuario de otra organización recibe 403 ("No autorizado...").
+    3. Reporte inexistente devuelve 404.
+    4. Descarga legítima entrega 200 con Content-Disposition, Content-Type, Content-Length y X-Report-SHA256.
+    5. Formatos PDF, XLSX y JSON son descargados íntegramente.
+    6. GET /runs/{run_id} entrega snapshot coherente con lista de reportes generados y baseline_catalog_version.
+    """
+    db: Session = review_env["db"]
+    client = review_env["client"]
+    headers = review_env["headers"]
+    project_a = review_env["project_a"]
+    doc_a = review_env["doc_a"]
+    suffix = str(uuid.uuid4())[:8]
+
+    # 1. Ejecutar revisión para tener run con hallazgos
+    run_res = ReviewOrchestrator.execute_review_run(
+        db=db,
+        project_id=project_a.id,
+        discipline_code="PIPING",
+        topic_code="PID_SYMBOLS",
+        document_ids=[doc_a.id],
+        mode="sandbox"
+    )
+    run_id = run_res["review_run_id"]
+
+    # 2. Generar reportes en formatos JSON, PDF y XLSX
+    rep_json = ReviewExportService.create_report(db, run_id, "json")
+    rep_pdf = ReviewExportService.create_report(db, run_id, "pdf")
+    rep_xlsx = ReviewExportService.create_report(db, run_id, "xlsx")
+
+    # 3. Crear usuario y organización ajena (Cross-Org)
+    other_org = Organization(id=f"org-other-{suffix}", name=f"Other Org {suffix}", slug=f"other-{suffix}")
+    other_user = User(
+        id=f"u-other-{suffix}",
+        email=f"intruder-{suffix}@other.com",
+        display_name="Intruder",
+        password_hash="fake",
+        is_active=True
+    )
+    db.add_all([other_org, other_user])
+    db.commit()
+
+    other_mem = OrganizationMembership(
+        organization_id=other_org.id,
+        user_id=other_user.id,
+        role="admin",
+        status="active"
+    )
+    db.add(other_mem)
+    db.commit()
+
+    other_token = create_access_token(other_user.id, email=other_user.email, extra_claims={"role": "admin"})
+    other_headers = {"Authorization": f"Bearer {other_token}", "X-Organization-Id": other_org.id}
+
+    # TEST A: Descarga sin autenticación (401)
+    os.environ["TEST_ENFORCE_AUTH"] = "1"
+    try:
+        res_unauth = client.get(f"/api/v1/review/reports/{rep_pdf.id}/download")
+        assert res_unauth.status_code == 401
+        assert "Autenticación requerida" in res_unauth.json().get("detail", "")
+
+        # Token inválido o malformado (401)
+        res_bad_token = client.get(f"/api/v1/review/reports/{rep_pdf.id}/download", headers={"Authorization": "Bearer token_invalido_expirado"})
+        assert res_bad_token.status_code == 401
+    finally:
+        os.environ.pop("TEST_ENFORCE_AUTH", None)
+
+    # TEST B: Descarga por usuario de otra organización (403)
+    res_cross_org = client.get(f"/api/v1/review/reports/{rep_pdf.id}/download", headers=other_headers)
+    assert res_cross_org.status_code == 403
+    assert "otra organización" in res_cross_org.json().get("detail", "")
+
+    # TEST C: Descarga de reporte inexistente (404)
+    fake_report_id = f"rep-missing-{suffix}"
+    res_not_found = client.get(f"/api/v1/review/reports/{fake_report_id}/download", headers=headers)
+    assert res_not_found.status_code == 404
+
+    # TEST D: Descarga legítima autenticada de PDF (200 con headers correctos)
+    pdf_filename = os.path.basename(rep_pdf.artifact_path)
+    res_pdf = client.get(f"/api/v1/review/reports/{rep_pdf.id}/download", headers=headers)
+    assert res_pdf.status_code == 200
+    assert "application/pdf" in res_pdf.headers.get("content-type", "")
+    assert f'attachment; filename="{pdf_filename}"' in res_pdf.headers.get("content-disposition", "")
+    assert int(res_pdf.headers.get("content-length", 0)) > 0
+    assert res_pdf.headers.get("x-report-sha256") == rep_pdf.sha256
+    assert len(res_pdf.content) == os.path.getsize(rep_pdf.artifact_path)
+
+    # TEST E: Descarga legítima autenticada de XLSX
+    res_xlsx = client.get(f"/api/v1/review/reports/{rep_xlsx.id}/download", headers=headers)
+    assert res_xlsx.status_code == 200
+    assert "openxmlformats-officedocument.spreadsheetml.sheet" in res_xlsx.headers.get("content-type", "")
+    assert int(res_xlsx.headers.get("content-length", 0)) > 0
+    assert len(res_xlsx.content) == os.path.getsize(rep_xlsx.artifact_path)
+
+    # TEST F: Descarga legítima autenticada de JSON
+    res_json = client.get(f"/api/v1/review/reports/{rep_json.id}/download", headers=headers)
+    assert res_json.status_code == 200
+    assert "application/json" in res_json.headers.get("content-type", "")
+    data_json = res_json.json()
+    assert data_json.get("execution_mode") == "sandbox"
+    assert "findings" in data_json
+
+    # TEST G: GET /runs/{run_id} entrega snapshot completo con reportes persistidos
+    res_details = client.get(f"/api/v1/review/runs/{run_id}", headers=headers)
+    assert res_details.status_code == 200
+    details = res_details.json()
+    assert details["id"] == run_id
+    assert details["project_id"] == project_a.id
+    assert details["baseline_catalog_version"] is not None
+    assert len(details["reports"]) >= 3
+    rep_ids = [r["id"] for r in details["reports"]]
+    assert rep_json.id in rep_ids
+    assert rep_pdf.id in rep_ids
+    assert rep_xlsx.id in rep_ids
+    for r in details["reports"]:
+        assert r["format"] in ["json", "pdf", "xlsx"]
+        assert r["file_size_bytes"] > 0
+        assert r["sha256"] is not None
+
+    # TEST H: GET /runs/{run_id} con usuario de otra organización devuelve 403
+    res_details_cross = client.get(f"/api/v1/review/runs/{run_id}", headers=other_headers)
+    assert res_details_cross.status_code == 403
+

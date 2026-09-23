@@ -5,6 +5,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
+from app.db.models.core import Project
 from app.db.models.decision_memory import ReviewRun, ReviewReport
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.orchestrator import ReviewOrchestrator
@@ -116,6 +117,16 @@ def get_review_run_details(
     details = ReviewOrchestrator.get_review_run_details(db=db, review_run_id=run_id)
     if not details:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corrida '{run_id}' no encontrada.")
+    
+    # Aislamiento multi-tenant estricto
+    if tenant and tenant.organization:
+        proj_id = details.get("project_id") if isinstance(details, dict) else getattr(details, "project_id", None)
+        project = db.query(Project).filter(Project.id == proj_id).first()
+        if project and project.organization_id != tenant.organization.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para acceder a corridas de otra organización."
+            )
     return details
 
 
@@ -127,6 +138,15 @@ def list_review_runs(
     tenant: TenantContext = Depends(get_current_tenant)
 ):
     """Lista las últimas corridas de auditoría ejecutadas para un proyecto."""
+    # Validar acceso al proyecto
+    if tenant and tenant.organization:
+        proj = db.query(Project).filter(Project.id == project_id).first()
+        if proj and proj.organization_id != tenant.organization.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para acceder a proyectos de otra organización."
+            )
+
     runs = db.query(ReviewRun).filter(
         ReviewRun.project_id == project_id
     ).order_by(ReviewRun.created_at.desc()).limit(limit).all()
@@ -147,6 +167,18 @@ def create_run_export(
     tenant: TenantContext = Depends(get_current_tenant)
 ):
     """Genera y persiste un reporte físico (JSON, XLSX o PDF) para una corrida de revisión."""
+    run = db.query(ReviewRun).filter(ReviewRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corrida '{run_id}' no encontrada.")
+
+    # Validar pertenencia de organización
+    if tenant and tenant.organization and run.project:
+        if run.project.organization_id != tenant.organization.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para generar exportaciones de otra organización."
+            )
+
     try:
         report = ReviewExportService.create_report(db=db, review_run_id=run_id, export_format=payload.format)
         return report
@@ -167,6 +199,12 @@ def get_review_report_metadata(
     report = ReviewExportService.get_report(db=db, report_id=report_id)
     if not report:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reporte '{report_id}' no encontrado.")
+    
+    if tenant and tenant.organization and report.organization_id != tenant.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado para acceder a reportes de otra organización."
+        )
     return report
 
 
@@ -176,15 +214,32 @@ def download_review_report(
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(get_current_tenant)
 ):
-    """Descarga el artefacto físico del reporte persistido con verificación de integridad."""
+    """Descarga el artefacto físico del reporte persistido con verificación de integridad y aislamiento tenant."""
+    report = ReviewExportService.get_report(db=db, report_id=report_id)
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Reporte '{report_id}' no encontrado.")
+
+    # Aislamiento multi-tenant estricto
+    if tenant and tenant.organization and report.organization_id != tenant.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado para acceder a reportes de otra organización."
+        )
+
     try:
         file_path, filename, media_type = ReviewExportService.get_report_file(db=db, report_id=report_id)
-        report = ReviewExportService.get_report(db=db, report_id=report_id)
+        if not os.path.exists(file_path):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo físico de reporte no encontrado en el servidor.")
+
+        file_size = os.path.getsize(file_path)
         headers = {
             "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Length": str(file_size),
             "X-Report-SHA256": report.sha256 if report else ""
         }
         return FileResponse(path=file_path, filename=filename, media_type=media_type, headers=headers)
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
     except FileNotFoundError as fe:

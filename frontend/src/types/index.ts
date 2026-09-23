@@ -2797,6 +2797,8 @@ export interface ReviewRunDetailResponse {
   steps: ReviewRunStepDetail[];
   executions: RuleExecutionDetail[];
   findings: ReviewFindingDetail[];
+  reports?: ReviewReportItem[];
+  baseline_catalog_version?: string;
 }
 
 export interface ReviewReportItem {
@@ -2808,6 +2810,7 @@ export interface ReviewReportItem {
   artifact_path: string;
   sha256: string;
   status: string;
+  file_size_bytes?: number;
   baseline_catalog_version?: string;
   stats_summary: Record<string, any>;
   created_at: string;

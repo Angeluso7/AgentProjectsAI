@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
@@ -14,7 +15,8 @@ from app.db.models.decision_memory import (
     ReviewRunDocument,
     ReviewRunStep,
     RuleExecution,
-    RuleFinding
+    RuleFinding,
+    ReviewReport
 )
 from app.db.models.core import Project
 from app.db.models.document_memory import (
@@ -734,6 +736,7 @@ class ReviewOrchestrator:
         executions = db.query(RuleExecution).filter(RuleExecution.review_run_id == run.id).order_by(RuleExecution.phase).all()
         findings = db.query(RuleFinding).filter(RuleFinding.review_run_id == run.id).all()
         run_docs = db.query(ReviewRunDocument).filter(ReviewRunDocument.review_run_id == run.id).all()
+        reports = db.query(ReviewReport).filter(ReviewReport.review_run_id == run.id).order_by(ReviewReport.created_at.desc()).all()
 
         doc_ids = [rd.document_id for rd in run_docs]
         docs = db.query(Document).filter(Document.id.in_(doc_ids)).all() if doc_ids else []
@@ -810,5 +813,20 @@ class ReviewOrchestrator:
                     "evidence_refs": f.evidence_refs or {}
                 }
                 for f in findings
-            ]
+            ],
+            "reports": [
+                {
+                    "id": rep.id,
+                    "report_name": rep.report_name,
+                    "format": rep.format,
+                    "artifact_path": rep.artifact_path,
+                    "sha256": rep.sha256,
+                    "status": rep.status,
+                    "file_size_bytes": os.path.getsize(rep.artifact_path) if rep.artifact_path and os.path.exists(rep.artifact_path) else 0,
+                    "created_at": rep.created_at.isoformat() if rep.created_at else None,
+                    "baseline_catalog_version": rep.baseline_catalog_version
+                }
+                for rep in reports
+            ],
+            "baseline_catalog_version": (reports[0].baseline_catalog_version if reports and reports[0].baseline_catalog_version else None) or ("PIP PNC00001 (Sandbox Candidate Baseline v0.1)" if run.execution_mode == "sandbox" else "PIP PNC00001 (Production Formal Baseline)")
         }

@@ -1805,9 +1805,81 @@ export const apiService = {
     return res.data;
   },
 
-  downloadReviewReportUrl: (reportId: string): string => {
-    const baseUrl = (apiClient.defaults.baseURL || '/api/v1').replace(/\/$/, '');
-    return `${baseUrl}/review/reports/${reportId}/download`;
+  downloadReviewReport: async (reportId: string, customFilename?: string): Promise<{ filename: string; size: number }> => {
+    try {
+      const res = await apiClient.get(`/review/reports/${reportId}/download`, {
+        responseType: 'blob'
+      });
+
+      const contentType = String(res.headers['content-type'] || '').toLowerCase();
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/json',
+        'application/octet-stream'
+      ];
+
+      // Extraer nombre de archivo desde cabecera Content-Disposition
+      let filename = customFilename || '';
+      const disposition = res.headers['content-disposition'] || '';
+      if (disposition) {
+        const match = disposition.match(/filename=["']?([^"';]+)["']?/i);
+        if (match && match[1]) {
+          filename = match[1].trim();
+        }
+      }
+
+      if (!filename) {
+        if (contentType.includes('pdf')) filename = `report_${reportId.slice(0, 8)}.pdf`;
+        else if (contentType.includes('spreadsheetml') || contentType.includes('excel')) filename = `report_${reportId.slice(0, 8)}.xlsx`;
+        else if (contentType.includes('json')) filename = `report_${reportId.slice(0, 8)}.json`;
+        else filename = `report_${reportId.slice(0, 8)}`;
+      }
+
+      const blob = new Blob([res.data], { type: contentType || 'application/octet-stream' });
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+
+      return { filename, size: blob.size };
+    } catch (err: any) {
+      let message = 'Error al descargar reporte.';
+      let statusCode = err?.response?.status;
+
+      // Deserializar blob si el servidor retornó JSON con detalle del error
+      if (err?.response?.data instanceof Blob) {
+        try {
+          const errorText = await err.response.data.text();
+          const parsed = JSON.parse(errorText);
+          if (parsed?.detail) message = parsed.detail;
+        } catch {
+          // Mantener mensaje genérico
+        }
+      } else if (err?.response?.data?.detail) {
+        message = err.response.data.detail;
+      }
+
+      if (statusCode === 401) {
+        message = 'Sesión expirada o no autenticada. Inicie sesión nuevamente.';
+      } else if (statusCode === 403) {
+        message = 'No tiene permisos para descargar este reporte técnico.';
+      } else if (statusCode === 404) {
+        message = 'El reporte solicitado no existe o fue eliminado.';
+      } else if (statusCode === 409 || statusCode === 422) {
+        message = 'El reporte aún se está procesando o no está listo.';
+      } else if (statusCode === 500) {
+        message = 'Error interno del servidor al generar la descarga.';
+      }
+
+      const enhancedError = new Error(message);
+      (enhancedError as any).status = statusCode;
+      throw enhancedError;
+    }
   }
 };
 

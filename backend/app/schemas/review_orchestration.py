@@ -106,6 +106,8 @@ class ReviewRunDetailsResponse(BaseModel):
     steps: List[Dict[str, Any]] = []
     executions: List[Dict[str, Any]] = []
     findings: List[Dict[str, Any]] = []
+    reports: List[Dict[str, Any]] = []
+    baseline_catalog_version: Optional[str] = None
 
 
 class ReviewExportCreateRequest(BaseModel):

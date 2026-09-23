@@ -39,7 +39,7 @@ def get_current_user(
     if not auth or not auth.credentials:
         # During pytest runs, allow authentication bypass by returning a superuser.
         import os
-        if os.getenv("PYTEST_CURRENT_TEST"):
+        if os.getenv("PYTEST_CURRENT_TEST") and not os.getenv("TEST_ENFORCE_AUTH"):
             # Try to fetch an existing superuser.
             superuser = db.query(User).filter(User.is_superuser == True).first()
             if not superuser:

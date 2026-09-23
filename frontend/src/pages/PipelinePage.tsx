@@ -6,13 +6,15 @@ import {
   ReviewDisciplineItem,
   ReviewTopicItem,
   ReviewPlanResponse,
-  ReviewRunDetailResponse
+  ReviewRunDetailResponse,
+  ReviewFindingDetail
 } from '../types';
 import {
   Play, RefreshCw, CheckCircle2, XCircle, AlertTriangle, HelpCircle,
   FileText, ShieldCheck, Download, ExternalLink, Clock, Folder,
   FileSpreadsheet, FileCode, CheckSquare, Square, Eye, Sparkles
 } from 'lucide-react';
+import { ReviewRunDetailModal } from '../components/ReviewRunDetailModal';
 
 export interface PipelinePageProps {
   onNavigate?: (
@@ -56,7 +58,10 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
 
   // Exportaciones
   const [exportingFormat, setExportingFormat] = useState<string | null>(null);
-  const [lastExport, setLastExport] = useState<{ id: string; format: string; sha256: string; url: string } | null>(null);
+  const [lastExport, setLastExport] = useState<{ id: string; format: string; sha256: string; filename?: string } | null>(null);
+  const [downloadingReportId, setDownloadingReportId] = useState<string | null>(null);
+  const [downloadFeedback, setDownloadFeedback] = useState<string | null>(null);
+  const [detailModalOpen, setDetailModalOpen] = useState<boolean>(false);
 
   // Estado general de carga inicial
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
@@ -223,24 +228,51 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
     }
   };
 
-  // Generar exportación persistida
+  // Descarga autenticada de reporte persistido
+  const handleDownloadReport = async (reportId: string) => {
+    setDownloadingReportId(reportId);
+    setDownloadFeedback('Preparando descarga autenticada...');
+    try {
+      const { filename } = await apiService.downloadReviewReport(reportId);
+      setDownloadFeedback(`Descargado exitosamente: ${filename}`);
+      setTimeout(() => setDownloadFeedback(null), 4000);
+    } catch (err: any) {
+      console.error('Error descargando reporte:', err);
+      alert(err.message || 'Error al descargar el reporte.');
+      setDownloadFeedback(null);
+    } finally {
+      setDownloadingReportId(null);
+    }
+  };
+
+  // Generar exportación persistida y disparar descarga autenticada directa
   const handleCreateExport = async (format: 'json' | 'xlsx' | 'pdf') => {
     if (!activeRun) return;
     setExportingFormat(format);
+    setDownloadFeedback(`Generando reporte ${format.toUpperCase()}...`);
     try {
       const rep = await apiService.createReviewExport(activeRun.id, format);
-      const downloadUrl = apiService.downloadReviewReportUrl(rep.id);
       setLastExport({
         id: rep.id,
         format: rep.format,
         sha256: rep.sha256,
-        url: downloadUrl
+        filename: rep.report_name
       });
-      // Abrir descarga automática
-      window.open(downloadUrl, '_blank');
+      // Descarga autenticada inmediata vía cliente API (sin window.open)
+      setDownloadFeedback(`Descargando reporte ${format.toUpperCase()}...`);
+      const { filename } = await apiService.downloadReviewReport(rep.id);
+      setDownloadFeedback(`Reporte ${filename} descargado exitosamente.`);
+      setTimeout(() => setDownloadFeedback(null), 4000);
+
+      // Recargar detalles de la corrida activa para actualizar snapshot de reportes
+      if (activeRun.id) {
+        const updated = await apiService.getReviewRunDetails(activeRun.id);
+        setActiveRun(updated);
+      }
     } catch (err: any) {
       console.error('Error exportando reporte:', err);
-      alert(err.response?.data?.detail || 'Error al generar exportación.');
+      alert(err.message || err.response?.data?.detail || 'Error al generar exportación.');
+      setDownloadFeedback(null);
     } finally {
       setExportingFormat(null);
     }
@@ -547,11 +579,26 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                           {r.status.toUpperCase()}
                         </span>
                       </div>
-                      <div className="flex items-center justify-between text-slate-500 text-[11px] mt-1">
+                      <div className="flex items-center justify-between text-slate-500 text-[11px] mt-2 pt-1 border-t border-slate-100 dark:border-slate-800">
                         <span>{r.requested_at ? new Date(r.requested_at).toLocaleTimeString() : 'N/A'}</span>
-                        <span className="font-semibold text-slate-700 dark:text-slate-300">
-                          {r.findings_count} hallazgo(s)
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">
+                            {r.findings_count} hallazgo(s)
+                          </span>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              selectActiveRun(r);
+                              setDetailModalOpen(true);
+                            }}
+                            className="px-2 py-0.5 rounded bg-blue-50 hover:bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:hover:bg-blue-900/50 dark:text-blue-300 font-bold text-[10px] flex items-center gap-1 transition-colors"
+                            title="Ver resultados detallados en pantalla"
+                          >
+                            <Eye className="w-3 h-3 text-blue-600" />
+                            Ver resultados
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -710,8 +757,17 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                     </p>
                   </div>
 
-                  {/* Botones de Exportación Persistida */}
-                  <div className="flex items-center gap-2">
+                  {/* Botones de Acción y Exportación */}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => setDetailModalOpen(true)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:hover:bg-indigo-900/50 dark:text-indigo-300 text-xs font-bold flex items-center gap-1.5 transition-colors"
+                      title="Abrir panel completo de resultados en pantalla"
+                    >
+                      <Eye className="w-3.5 h-3.5 text-indigo-600" />
+                      Ver Resultados
+                    </button>
                     <button
                       type="button"
                       onClick={() => handleCreateExport('json')}
@@ -742,6 +798,14 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                   </div>
                 </div>
 
+                {/* Banner de Descarga / Feedback */}
+                {downloadFeedback && (
+                  <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 flex items-center gap-2 text-xs text-blue-900 dark:text-blue-200">
+                    <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+                    <span>{downloadFeedback}</span>
+                  </div>
+                )}
+
                 {/* Banner de Hash de Exportación Reciente */}
                 {lastExport && (
                   <div className="p-3 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-800 flex items-center justify-between text-xs text-emerald-900 dark:text-emerald-200">
@@ -752,15 +816,15 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                         SHA256: {lastExport.sha256}
                       </code>
                     </div>
-                    <a
-                      href={lastExport.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadReport(lastExport.id)}
+                      disabled={downloadingReportId === lastExport.id}
                       className="text-emerald-700 dark:text-emerald-300 hover:underline font-bold shrink-0 ml-2 flex items-center gap-1"
                     >
                       <Download className="w-3 h-3" />
-                      Descargar
-                    </a>
+                      {downloadingReportId === lastExport.id ? 'Descargando...' : 'Descargar'}
+                    </button>
                   </div>
                 )}
 
@@ -995,6 +1059,21 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
           )}
         </div>
       </div>
+
+      {/* Modal de Detalle Completo de Ejecución de ReviewRun */}
+      <ReviewRunDetailModal
+        isOpen={detailModalOpen}
+        onClose={() => setDetailModalOpen(false)}
+        run={activeRun}
+        projectName={activeProject?.name}
+        onNavigateContext={handleOpenContext}
+        onRefreshRun={async () => {
+          if (activeRun?.id) {
+            const updated = await apiService.getReviewRunDetails(activeRun.id);
+            setActiveRun(updated);
+          }
+        }}
+      />
     </div>
   );
 };
