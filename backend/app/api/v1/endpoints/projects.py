@@ -9,7 +9,9 @@ from app.db.repositories.project_repository import ProjectRepository
 from app.schemas.project import (
     ProjectCreate, ProjectRead, ProjectUpdate,
     ProjectVersionCreate, ProjectVersionRead,
-    ProjectExportPayload
+    ProjectExportPayload, ProjectDeletionImpact,
+    ProjectClearContentRequest, ProjectDeleteConfirmedRequest,
+    ProjectLifecycleResult
 )
 from app.core.deps import get_current_tenant, require_role, TenantContext
 
@@ -131,7 +133,21 @@ def update_project(
 
     return repo.update_project(project, update_in.model_dump(exclude_unset=True))
 
-@router.put("/{project_id}/archive", response_model=ProjectRead)
+@router.get("/{project_id}/deletion-impact", response_model=ProjectDeletionImpact)
+def get_project_deletion_impact(
+    project_id: str,
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
+    db: Session = Depends(get_db)
+):
+    """Calcula y devuelve el resumen del impacto de vaciar o eliminar un proyecto."""
+    repo = ProjectRepository(db)
+    impact = repo.get_deletion_impact(project_id, organization_id=tenant.organization.id)
+    if not impact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+    return impact
+
+@router.patch("/{project_id}/archive", response_model=ProjectRead)
+@router.put("/{project_id}/archive", response_model=ProjectRead, include_in_schema=False)
 def archive_project(
     project_id: str,
     tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
@@ -139,33 +155,114 @@ def archive_project(
 ):
     """Archiva un proyecto para retirarlo del flujo activo normal sin destruirlo."""
     repo = ProjectRepository(db)
-    archived = repo.archive_project(project_id, organization_id=tenant.organization.id)
+    archived = repo.archive_project(
+        project_id,
+        organization_id=tenant.organization.id,
+        user_id=tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+    )
     if not archived:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
     return archived
 
-@router.put("/{project_id}/unarchive", response_model=ProjectRead)
-def unarchive_project(
+@router.patch("/{project_id}/restore", response_model=ProjectRead)
+@router.put("/{project_id}/restore", response_model=ProjectRead, include_in_schema=False)
+@router.put("/{project_id}/unarchive", response_model=ProjectRead, include_in_schema=False)
+def restore_project(
     project_id: str,
     tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
     db: Session = Depends(get_db)
 ):
     """Restaura un proyecto archivado a estado activo."""
     repo = ProjectRepository(db)
-    unarchived = repo.unarchive_project(project_id, organization_id=tenant.organization.id)
-    if not unarchived:
+    restored = repo.restore_project(
+        project_id,
+        organization_id=tenant.organization.id,
+        user_id=tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+    )
+    if not restored:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
-    return unarchived
+    return restored
+
+@router.post("/{project_id}/clear-content", response_model=ProjectLifecycleResult)
+def clear_project_content(
+    project_id: str,
+    payload: ProjectClearContentRequest,
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
+    db: Session = Depends(get_db)
+):
+    """Vacía de forma transaccional todo el contenido del proyecto (documentos, láminas, archivos, hallazgos) conservando su ficha."""
+    repo = ProjectRepository(db)
+    result = repo.clear_project_content(
+        project_id=project_id,
+        organization_id=tenant.organization.id,
+        confirmation_code=payload.confirmation_code,
+        reason=payload.reason,
+        acknowledge_data_loss=payload.acknowledge_data_loss,
+        user_id=tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+    )
+    if not result.success and result.error == "confirmation_code_mismatch":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
+    if not result.success and result.status == "not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.message)
+    return result
+
+@router.post("/{project_id}/delete-confirmed", response_model=ProjectLifecycleResult)
+def delete_project_confirmed(
+    project_id: str,
+    payload: ProjectDeleteConfirmedRequest,
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
+    db: Session = Depends(get_db)
+):
+    """Elimina definitivamente o anonimiza un proyecto con purga exhaustiva de almacenamiento físico y dependencias en BD."""
+    repo = ProjectRepository(db)
+    result = repo.delete_confirmed(
+        project_id=project_id,
+        organization_id=tenant.organization.id,
+        confirmation_code=payload.confirmation_code,
+        mode=payload.mode,
+        reason=payload.reason,
+        acknowledge_data_loss=payload.acknowledge_data_loss,
+        user_id=tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+    )
+    if not result.success and result.error == "confirmation_code_mismatch":
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
+    if not result.success and result.status == "not_found":
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
+    if not result.success:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.message)
+    return result
 
 @router.delete("/{project_id}", status_code=status.HTTP_200_OK)
 def delete_project(
     project_id: str,
+    confirmation_code: Optional[str] = Query(None, description="Código de confirmación para borrado definitivo"),
+    mode: str = Query("hard_delete", description="hard_delete | anonymize"),
+    acknowledge_data_loss: bool = Query(True),
     hard_delete: bool = Query(False, description="True para borrado físico en cascada, False para soft-delete"),
     tenant: TenantContext = Depends(require_role(["admin", "audit_lead"])),
     db: Session = Depends(get_db)
 ):
     """Elimina o marca como eliminado un proyecto dentro de la organización activa."""
     repo = ProjectRepository(db)
+    if confirmation_code:
+        result = repo.delete_confirmed(
+            project_id=project_id,
+            organization_id=tenant.organization.id,
+            confirmation_code=confirmation_code,
+            mode=mode,
+            acknowledge_data_loss=acknowledge_data_loss,
+            user_id=tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+        )
+        if not result.success and result.error == "confirmation_code_mismatch":
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=result.message)
+        if not result.success and result.status == "not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=result.message)
+        if not result.success:
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=result.message)
+        return {"message": result.message, "project_id": project_id, "hard_delete": True, "result": result.model_dump()}
+
     success = repo.delete_project(project_id, organization_id=tenant.organization.id, hard_delete=hard_delete)
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")

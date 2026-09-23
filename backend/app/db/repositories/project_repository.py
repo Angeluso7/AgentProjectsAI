@@ -1,17 +1,26 @@
+import os
 import uuid
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
-from app.db.models.core import Project, ProjectVersion
-from app.db.models.document_memory import Document, DocumentSheet
+from app.db.models.core import Project, ProjectVersion, AuditLog
+from app.db.models.document_memory import Document, DocumentSheet, DetectedSymbol
 from app.db.models.active_learning import ManualAnnotation
-from app.db.models.decision_memory import ReviewRun, RuleFinding
-from app.db.models.reporting import AuditReport
+from app.db.models.decision_memory import ReviewRun, RuleFinding, DecisionPrecedent
+from app.db.models.reporting import AuditReport, ProjectStageReportSnapshot
 from app.db.models.intake import SourceAsset
+from app.db.models.intake_extractions import SourceExtraction
+from app.db.models.operations import ProcessingJob, ReviewTask
+from app.db.models.assistant import AssistantInteraction
 from app.db.repositories.base import BaseRepository
-from app.schemas.project import ProjectCreate, ProjectUpdate, ProjectVersionCreate, ProjectRead, ProjectExportPayload, ProjectExportSummary
+from app.schemas.project import (
+    ProjectCreate, ProjectUpdate, ProjectVersionCreate, ProjectRead,
+    ProjectExportPayload, ProjectExportSummary, ProjectDeletionImpact,
+    ProjectLifecycleResult
+)
+from app.core.logging import logger
 
 class ProjectRepository(BaseRepository[Project]):
     def __init__(self, db: Session):
@@ -64,6 +73,9 @@ class ProjectRepository(BaseRepository[Project]):
             status=project.status or "active",
             is_active=project.is_active if project.is_active is not None else True,
             settings=settings,
+            cleanup_status=getattr(project, "cleanup_status", "none") or "none",
+            cleanup_error=getattr(project, "cleanup_error", None),
+            deletion_job_id=getattr(project, "deletion_job_id", None),
             created_at=project.created_at or datetime.utcnow(),
             updated_at=project.updated_at or datetime.utcnow(),
             versions=[],
@@ -185,27 +197,459 @@ class ProjectRepository(BaseRepository[Project]):
 
         return self._to_read_schema(project)
 
-    def archive_project(self, project_id: str, organization_id: str) -> Optional[ProjectRead]:
+    def _log_audit(
+        self,
+        entity_id: str,
+        action: str,
+        organization_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        details: Optional[Dict[str, Any]] = None
+    ) -> None:
+        try:
+            audit = AuditLog(
+                id=str(uuid.uuid4()),
+                organization_id=organization_id,
+                entity_type="project",
+                entity_id=entity_id,
+                action=action,
+                user_id=user_id,
+                details=details or {},
+                timestamp=datetime.utcnow()
+            )
+            self.db.add(audit)
+            self.db.flush()
+        except Exception as e:
+            logger.warning(f"Error registrando AuditLog para accion '{action}': {e}")
+
+    def _collect_project_file_paths(self, project_id: str) -> List[str]:
+        """Recolecta de forma exhaustiva y deduplicada todas las rutas de archivos físicos vinculados al proyecto."""
+        paths = set()
+        
+        # 1. Documentos originales y láminas renderizadas
+        docs = self.db.query(Document).filter(Document.project_id == project_id).all()
+        for doc in docs:
+            if doc.file_path:
+                paths.add(doc.file_path)
+            for sheet in (doc.sheets or []):
+                if sheet.raster_image_path:
+                    paths.add(sheet.raster_image_path)
+                if sheet.thumbnail_path:
+                    paths.add(sheet.thumbnail_path)
+        
+        # 2. Crops de símbolos detectados
+        symbols = self.db.query(DetectedSymbol).filter(DetectedSymbol.project_id == project_id).all()
+        for sym in symbols:
+            if sym.crop_image_path:
+                paths.add(sym.crop_image_path)
+                
+        # 3. Reportes generados (PDF, JSON, Bundle)
+        reports = self.db.query(AuditReport).join(Document).filter(Document.project_id == project_id).all()
+        for rep in reports:
+            if rep.artifact_pdf_path:
+                paths.add(rep.artifact_pdf_path)
+            if rep.artifact_json_path:
+                paths.add(rep.artifact_json_path)
+            if rep.artifact_bundle_path:
+                paths.add(rep.artifact_bundle_path)
+                
+        # 4. Activos de intake vinculados exclusivamente a este proyecto
+        sources = self.db.query(SourceAsset).filter(SourceAsset.project_id == project_id).all()
+        for src in sources:
+            if src.file_path:
+                paths.add(src.file_path)
+
+        return [p for p in paths if p and isinstance(p, str)]
+
+    def _purge_files(self, file_paths: List[str]) -> Tuple[int, List[str]]:
+        """Elimina físicamente los archivos del sistema de archivos con captura de errores resiliente."""
+        deleted_count = 0
+        errors = []
+        for path in file_paths:
+            try:
+                norm_path = os.path.normpath(path)
+                if os.path.exists(norm_path):
+                    if os.path.isfile(norm_path):
+                        os.remove(norm_path)
+                        deleted_count += 1
+                        logger.info(f"Archivo purgado con éxito: {norm_path}")
+            except Exception as e:
+                err_msg = f"No se pudo eliminar el archivo {path}: {str(e)}"
+                logger.error(err_msg)
+                errors.append(err_msg)
+        return deleted_count, errors
+
+    def get_deletion_impact(self, project_id: str, organization_id: str) -> Optional[ProjectDeletionImpact]:
+        """Calcula el impacto detallado de eliminación o vaciado antes de confirmar."""
+        project = self.get_by_id_and_organization(project_id, organization_id)
+        if not project:
+            return None
+
+        # Contar documentos
+        documents_count = self.db.query(Document).filter(Document.project_id == project_id).count()
+
+        # Contar archivos físicos
+        stored_files = len(self._collect_project_file_paths(project_id))
+
+        # Contar extracciones
+        extractions_count = self.db.query(SourceExtraction).filter(SourceExtraction.project_id == project_id).count()
+
+        # Contar corridas de evaluación
+        evaluation_runs = self.db.query(ReviewRun).filter(ReviewRun.project_id == project_id).count()
+
+        # Contar hallazgos
+        findings_count = self.db.query(RuleFinding).join(ReviewRun).filter(ReviewRun.project_id == project_id).count()
+
+        # Contar reportes
+        reports_count = self.db.query(AuditReport).join(Document).filter(Document.project_id == project_id).count()
+
+        # Contar ocurrencias de símbolos
+        symbol_occurrences = self.db.query(DetectedSymbol).filter(DetectedSymbol.project_id == project_id).count()
+        if symbol_occurrences == 0:
+            symbol_occurrences = self.db.query(ManualAnnotation).filter(ManualAnnotation.project_id == project_id).count()
+
+        # Validar si hay operaciones bloqueantes
+        blocking_reasons: List[str] = []
+        active_jobs = self.db.query(ProcessingJob).filter(
+            ProcessingJob.project_id == project_id,
+            ProcessingJob.status.in_(["queued", "running"])
+        ).all()
+        if active_jobs:
+            types = ", ".join({j.job_type for j in active_jobs})
+            blocking_reasons.append(f"Existen trabajos de procesamiento en ejecución ({types}). Espere su finalización o cancélelos.")
+
+        if project.status == "deleting":
+            blocking_reasons.append("El proyecto ya se encuentra en proceso de eliminación.")
+
+        return ProjectDeletionImpact(
+            project_id=project.id,
+            project_code=project.code,
+            documents=documents_count,
+            stored_files=stored_files,
+            extractions=extractions_count,
+            evaluation_runs=evaluation_runs,
+            findings=findings_count,
+            reports=reports_count,
+            symbol_occurrences=symbol_occurrences,
+            can_hard_delete=len(blocking_reasons) == 0,
+            blocking_reasons=blocking_reasons
+        )
+
+    def archive_project(self, project_id: str, organization_id: str, user_id: Optional[str] = None) -> Optional[ProjectRead]:
         project = self.get_by_id_and_organization(project_id, organization_id)
         if not project:
             return None
         project.status = "archived"
         project.is_active = False
         project.updated_at = datetime.utcnow()
+        self._log_audit(
+            entity_id=project.id,
+            action="archive_project",
+            organization_id=organization_id,
+            user_id=user_id,
+            details={"previous_status": "active", "code": project.code}
+        )
         self.db.commit()
         self.db.refresh(project)
         return self._to_read_schema(project)
 
-    def unarchive_project(self, project_id: str, organization_id: str) -> Optional[ProjectRead]:
+    def restore_project(self, project_id: str, organization_id: str, user_id: Optional[str] = None) -> Optional[ProjectRead]:
         project = self.get_by_id_and_organization(project_id, organization_id)
         if not project:
             return None
         project.status = "active"
         project.is_active = True
         project.updated_at = datetime.utcnow()
+        self._log_audit(
+            entity_id=project.id,
+            action="restore_project",
+            organization_id=organization_id,
+            user_id=user_id,
+            details={"previous_status": "archived", "code": project.code}
+        )
         self.db.commit()
         self.db.refresh(project)
         return self._to_read_schema(project)
+
+    def unarchive_project(self, project_id: str, organization_id: str, user_id: Optional[str] = None) -> Optional[ProjectRead]:
+        """Alias para mantener compatibilidad hacia atrás con endpoints heredados."""
+        return self.restore_project(project_id, organization_id, user_id)
+
+    def clear_project_content(
+        self,
+        project_id: str,
+        organization_id: str,
+        confirmation_code: str,
+        reason: Optional[str] = None,
+        acknowledge_data_loss: bool = True,
+        user_id: Optional[str] = None
+    ) -> ProjectLifecycleResult:
+        project = self.get_by_id_and_organization(project_id, organization_id)
+        if not project:
+            return ProjectLifecycleResult(
+                success=False,
+                message="Proyecto no encontrado.",
+                project_id=project_id,
+                status="not_found",
+                error="Proyecto no existe en la organización"
+            )
+
+        if project.code.strip().upper() != confirmation_code.strip().upper():
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Código de confirmación inválido. Se esperaba '{project.code}'.",
+                project_id=project_id,
+                status=project.status or "active",
+                error="confirmation_code_mismatch"
+            )
+
+        if not acknowledge_data_loss:
+            return ProjectLifecycleResult(
+                success=False,
+                message="Debe confirmar explícitamente la pérdida irreversible de datos.",
+                project_id=project_id,
+                status=project.status or "active",
+                error="acknowledgement_required"
+            )
+
+        file_paths = self._collect_project_file_paths(project_id)
+        files_deleted, purge_errors = self._purge_files(file_paths)
+
+        if purge_errors:
+            project.cleanup_status = "failed_cleanup"
+            project.cleanup_error = "; ".join(purge_errors[:3])
+            project.updated_at = datetime.utcnow()
+            self.db.commit()
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Fallo en la purga de almacenamiento: {len(purge_errors)} errores detectados.",
+                project_id=project_id,
+                status=project.status or "active",
+                files_deleted=files_deleted,
+                cleanup_status="failed_cleanup",
+                error=project.cleanup_error
+            )
+
+        records_affected = 0
+        try:
+            jobs_del = self.db.query(ProcessingJob).filter(ProcessingJob.project_id == project_id).delete(synchronize_session=False)
+            tasks_del = self.db.query(ReviewTask).filter(ReviewTask.project_id == project_id).delete(synchronize_session=False)
+            records_affected += (jobs_del + tasks_del)
+
+            ext_del = self.db.query(SourceExtraction).filter(SourceExtraction.project_id == project_id).delete(synchronize_session=False)
+            records_affected += ext_del
+
+            self.db.query(SourceAsset).filter(SourceAsset.project_id == project_id).update({"project_id": None}, synchronize_session=False)
+
+            anno_del = self.db.query(ManualAnnotation).filter(ManualAnnotation.project_id == project_id).delete(synchronize_session=False)
+            records_affected += anno_del
+
+            snap_del = self.db.query(ProjectStageReportSnapshot).filter(ProjectStageReportSnapshot.project_id == project_id).delete(synchronize_session=False)
+            records_affected += snap_del
+
+            traces_del = self.db.query(DecisionPrecedent).filter(DecisionPrecedent.project_id == project_id).delete(synchronize_session=False)
+            records_affected += traces_del
+
+            runs_del = self.db.query(ReviewRun).filter(ReviewRun.project_id == project_id).delete(synchronize_session=False)
+            records_affected += runs_del
+
+            docs_del = self.db.query(Document).filter(Document.project_id == project_id).delete(synchronize_session=False)
+            records_affected += docs_del
+
+            project.cleanup_status = "completed"
+            project.cleanup_error = None
+            project.updated_at = datetime.utcnow()
+
+            self._log_audit(
+                entity_id=project.id,
+                action="clear_project_content",
+                organization_id=organization_id,
+                user_id=user_id,
+                details={
+                    "reason": reason,
+                    "files_deleted": files_deleted,
+                    "records_affected": records_affected
+                }
+            )
+            self.db.commit()
+
+            return ProjectLifecycleResult(
+                success=True,
+                message=f"Contenido del proyecto '{project.code}' vaciado exitosamente.",
+                project_id=project_id,
+                status=project.status or "active",
+                files_deleted=files_deleted,
+                records_affected=records_affected,
+                cleanup_status="completed"
+            )
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error vaciando contenido del proyecto {project_id}: {e}")
+            project.cleanup_status = "failed_cleanup"
+            project.cleanup_error = str(e)
+            try:
+                self.db.commit()
+            except Exception:
+                pass
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Error en base de datos al vaciar contenido: {str(e)}",
+                project_id=project_id,
+                status=project.status or "active",
+                cleanup_status="failed_cleanup",
+                error=str(e)
+            )
+
+    def delete_confirmed(
+        self,
+        project_id: str,
+        organization_id: str,
+        confirmation_code: str,
+        mode: str = "hard_delete",
+        reason: Optional[str] = None,
+        acknowledge_data_loss: bool = True,
+        user_id: Optional[str] = None
+    ) -> ProjectLifecycleResult:
+        project = self.get_by_id_and_organization(project_id, organization_id)
+        if not project:
+            return ProjectLifecycleResult(
+                success=False,
+                message="Proyecto no encontrado.",
+                project_id=project_id,
+                status="not_found",
+                error="Proyecto no existe en la organización"
+            )
+
+        if project.code.strip().upper() != confirmation_code.strip().upper():
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Código de confirmación inválido. Se esperaba '{project.code}'.",
+                project_id=project_id,
+                status=project.status or "active",
+                error="confirmation_code_mismatch"
+            )
+
+        if not acknowledge_data_loss:
+            return ProjectLifecycleResult(
+                success=False,
+                message="Debe confirmar explícitamente la pérdida irreversible de datos.",
+                project_id=project_id,
+                status=project.status or "active",
+                error="acknowledgement_required"
+            )
+
+        file_paths = self._collect_project_file_paths(project_id)
+        files_deleted, purge_errors = self._purge_files(file_paths)
+
+        if purge_errors:
+            project.cleanup_status = "failed_cleanup"
+            project.cleanup_error = "; ".join(purge_errors[:3])
+            project.updated_at = datetime.utcnow()
+            self.db.commit()
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Fallo en la purga de almacenamiento: {len(purge_errors)} errores detectados.",
+                project_id=project_id,
+                status=project.status or "active",
+                files_deleted=files_deleted,
+                cleanup_status="failed_cleanup",
+                error=project.cleanup_error
+            )
+
+        records_affected = 0
+        try:
+            jobs_del = self.db.query(ProcessingJob).filter(ProcessingJob.project_id == project_id).delete(synchronize_session=False)
+            tasks_del = self.db.query(ReviewTask).filter(ReviewTask.project_id == project_id).delete(synchronize_session=False)
+            records_affected += (jobs_del + tasks_del)
+
+            ext_del = self.db.query(SourceExtraction).filter(SourceExtraction.project_id == project_id).delete(synchronize_session=False)
+            records_affected += ext_del
+
+            self.db.query(SourceAsset).filter(SourceAsset.project_id == project_id).update({"project_id": None}, synchronize_session=False)
+
+            anno_del = self.db.query(ManualAnnotation).filter(ManualAnnotation.project_id == project_id).delete(synchronize_session=False)
+            records_affected += anno_del
+
+            snap_del = self.db.query(ProjectStageReportSnapshot).filter(ProjectStageReportSnapshot.project_id == project_id).delete(synchronize_session=False)
+            records_affected += snap_del
+
+            traces_del = self.db.query(DecisionPrecedent).filter(DecisionPrecedent.project_id == project_id).delete(synchronize_session=False)
+            records_affected += traces_del
+
+            runs_del = self.db.query(ReviewRun).filter(ReviewRun.project_id == project_id).delete(synchronize_session=False)
+            records_affected += runs_del
+
+            docs_del = self.db.query(Document).filter(Document.project_id == project_id).delete(synchronize_session=False)
+            records_affected += docs_del
+
+            conv_del = self.db.query(AssistantInteraction).filter(AssistantInteraction.project_id == project_id).delete(synchronize_session=False)
+            records_affected += conv_del
+
+            vers_del = self.db.query(ProjectVersion).filter(ProjectVersion.project_id == project_id).delete(synchronize_session=False)
+            records_affected += vers_del
+
+            self._log_audit(
+                entity_id=project.id,
+                action="delete_project_confirmed",
+                organization_id=organization_id,
+                user_id=user_id,
+                details={
+                    "code": project.code,
+                    "mode": mode,
+                    "reason": reason,
+                    "files_deleted": files_deleted,
+                    "records_affected": records_affected
+                }
+            )
+
+            if mode == "anonymize":
+                project.status = "deleted"
+                project.is_active = False
+                project.name = f"[ANONYMIZED-{project.id[:8]}]"
+                project.client_name = "[ANONYMIZED]"
+                project.description = "[ANONYMIZED]"
+                project.cleanup_status = "completed"
+                project.cleanup_error = None
+                project.updated_at = datetime.utcnow()
+                self.db.commit()
+                return ProjectLifecycleResult(
+                    success=True,
+                    message=f"Proyecto '{confirmation_code}' anonimizado y marcado como eliminado.",
+                    project_id=project_id,
+                    status="deleted",
+                    files_deleted=files_deleted,
+                    records_affected=records_affected,
+                    cleanup_status="completed"
+                )
+            else:
+                self.db.delete(project)
+                self.db.commit()
+                return ProjectLifecycleResult(
+                    success=True,
+                    message=f"Proyecto '{confirmation_code}' eliminado definitivamente junto con todo su almacenamiento y entidades.",
+                    project_id=project_id,
+                    status="hard_deleted",
+                    files_deleted=files_deleted,
+                    records_affected=records_affected,
+                    cleanup_status="completed"
+                )
+
+        except Exception as e:
+            self.db.rollback()
+            logger.error(f"Error eliminando proyecto {project_id}: {e}")
+            project.cleanup_status = "failed_cleanup"
+            project.cleanup_error = str(e)
+            try:
+                self.db.commit()
+            except Exception:
+                pass
+            return ProjectLifecycleResult(
+                success=False,
+                message=f"Error en base de datos al eliminar proyecto: {str(e)}",
+                project_id=project_id,
+                status=project.status or "active",
+                cleanup_status="failed_cleanup",
+                error=str(e)
+            )
 
     def delete_project(self, project_id: str, organization_id: str, hard_delete: bool = False) -> bool:
         project = self.get_by_id_and_organization(project_id, organization_id)
@@ -213,30 +657,26 @@ class ProjectRepository(BaseRepository[Project]):
             return False
 
         if not hard_delete:
-            # Soft delete seguro
             project.status = "deleted"
             project.is_active = False
             project.updated_at = datetime.utcnow()
+            self._log_audit(
+                entity_id=project.id,
+                action="soft_delete_project",
+                organization_id=organization_id,
+                details={"code": project.code}
+            )
             self.db.commit()
             return True
 
-        # Hard delete protegido en cascada
-        # 1. Eliminar anotaciones manuales del proyecto
-        self.db.query(ManualAnnotation).filter(
-            ManualAnnotation.project_id == project_id,
-            ManualAnnotation.organization_id == organization_id
-        ).delete(synchronize_session=False)
-
-        # 2. Desvincular o eliminar fuentes de intake vinculadas
-        self.db.query(SourceAsset).filter(
-            SourceAsset.project_id == project_id,
-            SourceAsset.organization_id == organization_id
-        ).update({"project_id": None}, synchronize_session=False)
-
-        # 3. Eliminar el proyecto (cascada automática a Document, Version, ReviewRun)
-        self.db.delete(project)
-        self.db.commit()
-        return True
+        result = self.delete_confirmed(
+            project_id=project_id,
+            organization_id=organization_id,
+            confirmation_code=project.code,
+            mode="hard_delete",
+            acknowledge_data_loss=True
+        )
+        return result.success
 
     def add_version(self, project_id: str, version_in: ProjectVersionCreate) -> ProjectVersion:
         db_version = ProjectVersion(

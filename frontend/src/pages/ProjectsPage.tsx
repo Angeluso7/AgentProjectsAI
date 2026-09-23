@@ -7,7 +7,7 @@ import {
   RefreshCw, Eye, AlertCircle, Clock, ExternalLink, Plus, Trash2,
   FolderKanban, Archive, ArchiveRestore, Download, Edit3, Check, Search,
   Filter, Building2, Shield, Calendar, BarChart3, ChevronRight, HardDriveDownload,
-  Compass, SquareCheck, UploadCloud
+  Compass, SquareCheck, UploadCloud, Eraser
 } from 'lucide-react';
 import { DeleteDocumentModal } from '../components/DeleteDocumentModal';
 import { ProjectFormModal, PROJECT_STAGES, PROJECT_DISCIPLINES } from '../components/ProjectFormModal';
@@ -28,7 +28,10 @@ export const ProjectsPage: React.FC = () => {
     createProject,
     updateProject,
     archiveProject,
+    restoreProject,
     unarchiveProject,
+    clearProjectContent,
+    deleteProjectConfirmed,
     deleteProject,
     exportProject,
     error: projectContextError,
@@ -47,6 +50,7 @@ export const ProjectsPage: React.FC = () => {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [projectToEdit, setProjectToEdit] = useState<Project | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteModalMode, setDeleteModalMode] = useState<'clear_content' | 'delete'>('delete');
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
   const [docToDelete, setDocToDelete] = useState<DocumentItem | null>(null);
   const [isDocDeleteModalOpen, setIsDocDeleteModalOpen] = useState(false);
@@ -416,21 +420,33 @@ export const ProjectsPage: React.FC = () => {
                     >
                       {/* Estado */}
                       <td className="py-3.5 px-4">
-                        {isActive ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-bold">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                            ACTIVO
-                          </span>
-                        ) : isArchived ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-950 text-amber-400 border border-amber-800 text-[10px] font-bold">
-                            <Archive className="w-3 h-3" />
-                            ARCHIVADO
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-medium">
-                            DISPONIBLE
-                          </span>
-                        )}
+                        <div className="flex flex-col gap-1 items-start">
+                          {isActive ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-950 text-emerald-300 border border-emerald-700 text-[10px] font-bold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                              ACTIVO
+                            </span>
+                          ) : isArchived ? (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-950 text-amber-400 border border-amber-800 text-[10px] font-bold">
+                              <Archive className="w-3 h-3" />
+                              ARCHIVADO
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-800 text-slate-300 border border-slate-700 text-[10px] font-medium">
+                              DISPONIBLE
+                            </span>
+                          )}
+
+                          {p.cleanup_status === 'failed_cleanup' && (
+                            <span
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-950 text-rose-400 border border-rose-800 text-[9px] font-semibold"
+                              title={`Error de limpieza: ${p.cleanup_error || 'Fallo de almacenamiento'}`}
+                            >
+                              <AlertCircle className="w-2.5 h-2.5" />
+                              LIMPIEZA PENDIENTE
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Código y Nombre */}
@@ -533,14 +549,28 @@ export const ProjectsPage: React.FC = () => {
                             </button>
                           )}
 
-                          {/* Botón Eliminar */}
+                          {/* Botón Vaciar Contenido */}
                           <button
                             onClick={() => {
                               setProjectToDelete(p);
+                              setDeleteModalMode('clear_content');
+                              setIsDeleteModalOpen(true);
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-800 hover:bg-amber-950 hover:text-amber-300 text-slate-400 transition-colors"
+                            title="Vaciar contenido del proyecto (documentos, extracciones, hallazgos)"
+                          >
+                            <Eraser className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Botón Eliminar Permanentemente */}
+                          <button
+                            onClick={() => {
+                              setProjectToDelete(p);
+                              setDeleteModalMode('delete');
                               setIsDeleteModalOpen(true);
                             }}
                             className="p-1.5 rounded-lg bg-slate-800 hover:bg-rose-950 hover:text-rose-300 text-slate-400 transition-colors"
-                            title="Eliminar proyecto"
+                            title="Eliminar proyecto permanentemente"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -839,14 +869,30 @@ export const ProjectsPage: React.FC = () => {
         }}
       />
 
-      {/* Modal de Eliminación Protegida de Proyecto */}
+      {/* Modal de Ciclo de Vida: Vaciar Contenido y Eliminación Definitiva */}
       <ProjectDeleteModal
         isOpen={isDeleteModalOpen}
         project={projectToDelete}
+        initialMode={deleteModalMode}
+        isActiveProject={projectToDelete?.id === activeProjectId}
         onClose={() => setIsDeleteModalOpen(false)}
-        onConfirm={async (projectId, hardDelete) => {
-          await deleteProject(projectId, hardDelete);
-          setSuccessMessage('Proyecto eliminado correctamente.');
+        onClearContent={async (projectId, confirmationCode, reason) => {
+          await clearProjectContent(projectId, confirmationCode, reason);
+          setSuccessMessage(`Contenido del proyecto «${projectToDelete?.name || confirmationCode}» vaciado correctamente.`);
+          if (inspectedProjectId === projectId) {
+            await loadDocuments(projectId);
+          }
+          setCompletenessRefreshKey((prev) => prev + 1);
+        }}
+        onDeleteConfirmed={async (projectId, confirmationCode, mode, reason) => {
+          await deleteProjectConfirmed(projectId, confirmationCode, mode, reason);
+          setSuccessMessage(`Proyecto «${projectToDelete?.name || confirmationCode}» eliminado exitosamente (${mode === 'hard_delete' ? 'definitivo' : 'anonimizado'}).`);
+          if (inspectedProjectId === projectId) {
+            setInspectedProjectId('');
+            setDocuments([]);
+            setSelectedDocId(null);
+            setDocSheets([]);
+          }
         }}
       />
 

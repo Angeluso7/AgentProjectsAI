@@ -19,6 +19,7 @@ data/processed/*
 data/exports/*
 data/evaluations/*
 data/rendered/*
+data/test_fixtures/*
 !data/**/.gitkeep
 storage/raw/*
 storage/rendered/*

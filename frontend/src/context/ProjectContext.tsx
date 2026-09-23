@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { Project } from '../types';
+import { Project, ProjectLifecycleResult } from '../types';
 import { apiService } from '../services/api';
 
 interface ProjectContextType {
@@ -13,8 +13,11 @@ interface ProjectContextType {
   createProject: (data: Partial<Project>, setAsActive?: boolean) => Promise<Project>;
   updateProject: (id: string, data: Partial<Project>) => Promise<Project>;
   archiveProject: (id: string) => Promise<void>;
+  restoreProject: (id: string) => Promise<void>;
   unarchiveProject: (id: string) => Promise<void>;
-  deleteProject: (id: string, hardDelete?: boolean) => Promise<void>;
+  clearProjectContent: (id: string, confirmationCode: string, reason?: string) => Promise<ProjectLifecycleResult>;
+  deleteProjectConfirmed: (id: string, confirmationCode: string, mode?: 'hard_delete' | 'anonymize', reason?: string) => Promise<ProjectLifecycleResult>;
+  deleteProject: (id: string, hardDelete?: boolean, confirmationCode?: string) => Promise<void>;
   exportProject: (id: string) => Promise<void>;
 }
 
@@ -98,13 +101,23 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const archiveProject = async (id: string) => {
     await apiService.archiveProject(id);
-    // Si el proyecto que se archiva es el activo, cambiar automáticamente al siguiente activo disponible
     if (activeProjectId === id) {
       const remainingActive = projects.filter((p) => p.id !== id && p.status !== 'archived' && p.status !== 'deleted');
       if (remainingActive.length > 0) {
         setActiveProjectId(remainingActive[0].id);
+      } else {
+        setActiveProjectIdState('');
+        localStorage.removeItem(STORAGE_KEY_ACTIVE_PROJECT);
+        window.dispatchEvent(new CustomEvent('active-project-changed', {
+          detail: { projectId: '', project: null }
+        }));
       }
     }
+    await reloadProjects();
+  };
+
+  const restoreProject = async (id: string) => {
+    await apiService.restoreProject(id);
     await reloadProjects();
   };
 
@@ -113,16 +126,53 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await reloadProjects();
   };
 
-  const deleteProject = async (id: string, hardDelete = false) => {
-    await apiService.deleteProject(id, hardDelete);
+  const clearProjectContent = async (id: string, confirmationCode: string, reason?: string): Promise<ProjectLifecycleResult> => {
+    const result = await apiService.clearProjectContent(id, {
+      confirmation_code: confirmationCode,
+      reason: reason || 'Vaciado de contenido solicitado desde UI',
+      acknowledge_data_loss: true,
+    });
+    await reloadProjects();
+    return result;
+  };
+
+  const deleteProjectConfirmed = async (
+    id: string,
+    confirmationCode: string,
+    mode: 'hard_delete' | 'anonymize' = 'hard_delete',
+    reason?: string
+  ): Promise<ProjectLifecycleResult> => {
+    const result = await apiService.deleteProjectConfirmed(id, {
+      confirmation_code: confirmationCode,
+      mode,
+      reason: reason || 'Eliminación confirmada desde UI',
+      acknowledge_data_loss: true,
+    });
+
     if (activeProjectId === id) {
-      const remaining = projects.filter((p) => p.id !== id && p.status !== 'deleted');
-      if (remaining.length > 0) {
-        setActiveProjectId(remaining[0].id);
-      } else {
-        setActiveProjectIdState('');
-        localStorage.removeItem(STORAGE_KEY_ACTIVE_PROJECT);
-      }
+      setActiveProjectIdState('');
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_PROJECT);
+      localStorage.removeItem('viewer_target_doc_id');
+      localStorage.removeItem('viewer_target_sheet_id');
+      window.dispatchEvent(new CustomEvent('active-project-changed', {
+        detail: { projectId: '', project: null }
+      }));
+    }
+
+    await reloadProjects();
+    return result;
+  };
+
+  const deleteProject = async (id: string, hardDelete = false, confirmationCode?: string) => {
+    await apiService.deleteProject(id, hardDelete, confirmationCode);
+    if (activeProjectId === id) {
+      setActiveProjectIdState('');
+      localStorage.removeItem(STORAGE_KEY_ACTIVE_PROJECT);
+      localStorage.removeItem('viewer_target_doc_id');
+      localStorage.removeItem('viewer_target_sheet_id');
+      window.dispatchEvent(new CustomEvent('active-project-changed', {
+        detail: { projectId: '', project: null }
+      }));
     }
     await reloadProjects();
   };
@@ -158,7 +208,10 @@ export const ProjectProvider: React.FC<{ children: React.ReactNode }> = ({ child
         createProject,
         updateProject,
         archiveProject,
+        restoreProject,
         unarchiveProject,
+        clearProjectContent,
+        deleteProjectConfirmed,
         deleteProject,
         exportProject,
       }}

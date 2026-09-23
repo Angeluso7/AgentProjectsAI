@@ -1,6 +1,8 @@
 import axios from 'axios';
 import {
-  Project, DocumentItem, DocumentSheet, DocumentImpact, ReviewRun,
+  Project, ProjectDeletionImpact, ProjectClearContentRequest,
+  ProjectDeleteConfirmedRequest, ProjectLifecycleResult,
+  DocumentItem, DocumentSheet, DocumentImpact, ReviewRun,
   MemoriesStats, RuleDefinition, RuleFinding, ExtractedTextItem,
   SheetRegionItem, TitleBlockExtractionItem, SourceAssetItem,
   ProcessingJobItem, JobEventItem, ReviewTaskItem, ReviewDecisionItem,
@@ -391,14 +393,36 @@ export const apiService = {
     return res.data;
   },
   archiveProject: async (id: string): Promise<Project> => {
-    const res = await apiClient.put<Project>(`/projects/${id}/archive`);
+    const res = await apiClient.patch<Project>(`/projects/${id}/archive`);
+    return res.data;
+  },
+  restoreProject: async (id: string): Promise<Project> => {
+    const res = await apiClient.patch<Project>(`/projects/${id}/restore`);
     return res.data;
   },
   unarchiveProject: async (id: string): Promise<Project> => {
-    const res = await apiClient.put<Project>(`/projects/${id}/unarchive`);
+    const res = await apiClient.patch<Project>(`/projects/${id}/restore`);
     return res.data;
   },
-  deleteProject: async (id: string, hardDelete = false): Promise<any> => {
+  getProjectDeletionImpact: async (id: string): Promise<ProjectDeletionImpact> => {
+    const res = await apiClient.get<ProjectDeletionImpact>(`/projects/${id}/deletion-impact`);
+    return res.data;
+  },
+  clearProjectContent: async (id: string, payload: ProjectClearContentRequest): Promise<ProjectLifecycleResult> => {
+    const res = await apiClient.post<ProjectLifecycleResult>(`/projects/${id}/clear-content`, payload);
+    return res.data;
+  },
+  deleteProjectConfirmed: async (id: string, payload: ProjectDeleteConfirmedRequest): Promise<ProjectLifecycleResult> => {
+    const res = await apiClient.post<ProjectLifecycleResult>(`/projects/${id}/delete-confirmed`, payload);
+    return res.data;
+  },
+  deleteProject: async (id: string, hardDelete = false, confirmationCode?: string): Promise<any> => {
+    if (confirmationCode) {
+      const res = await apiClient.delete(`/projects/${id}`, {
+        params: { confirmation_code: confirmationCode, mode: hardDelete ? 'hard_delete' : 'anonymize' }
+      });
+      return res.data;
+    }
     const res = await apiClient.delete(`/projects/${id}`, {
       params: { hard_delete: hardDelete }
     });

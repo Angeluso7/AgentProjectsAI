@@ -50,6 +50,9 @@ class ProjectRead(ProjectBase):
     organization_id: str
     normalized_code: Optional[str] = None
     is_active: bool
+    cleanup_status: Optional[str] = "none"
+    cleanup_error: Optional[str] = None
+    deletion_job_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     versions: List[ProjectVersionRead] = []
@@ -59,6 +62,40 @@ class ProjectRead(ProjectBase):
 
     class Config:
         from_attributes = True
+
+class ProjectDeletionImpact(BaseModel):
+    project_id: str
+    project_code: str
+    documents: int = 0
+    stored_files: int = 0
+    extractions: int = 0
+    evaluation_runs: int = 0
+    findings: int = 0
+    reports: int = 0
+    symbol_occurrences: int = 0
+    can_hard_delete: bool = True
+    blocking_reasons: List[str] = []
+
+class ProjectDeleteConfirmedRequest(BaseModel):
+    confirmation_code: str
+    mode: str = Field(default="hard_delete", description="hard_delete | anonymize")
+    reason: Optional[str] = Field(default="Eliminación solicitada por usuario")
+    acknowledge_data_loss: bool = Field(default=True)
+
+class ProjectClearContentRequest(BaseModel):
+    confirmation_code: str
+    reason: Optional[str] = Field(default="Vaciado de contenido solicitado por usuario")
+    acknowledge_data_loss: bool = Field(default=True)
+
+class ProjectLifecycleResult(BaseModel):
+    success: bool = True
+    message: str
+    project_id: str
+    status: str
+    files_deleted: int = 0
+    records_affected: int = 0
+    cleanup_status: Optional[str] = "completed"
+    error: Optional[str] = None
 
 class ProjectConflictItem(BaseModel):
     id: str

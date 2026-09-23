@@ -79,6 +79,10 @@ class Project(Base):
     is_active = Column(Boolean, default=True)
     normalized_code = Column(String(50), nullable=False, index=True)
     
+    cleanup_status = Column(String(30), default="none", nullable=True) # none, in_progress, completed, failed
+    cleanup_error = Column(Text, nullable=True)
+    deletion_job_id = Column(String(36), nullable=True)
+    
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

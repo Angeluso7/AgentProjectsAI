@@ -557,6 +557,8 @@ export interface ResearchQueryDetail {
   updated_at: string;
 }
 
+export type ProjectStatus = 'active' | 'archived' | 'deleting' | 'deleted' | 'failed_cleanup';
+
 export interface Project {
   id: string;
   organization_id?: string;
@@ -568,7 +570,10 @@ export interface Project {
   discipline_scope?: string[];
   stage?: string;
   project_type?: string;
-  status?: string;
+  status?: ProjectStatus | string;
+  cleanup_status?: string;
+  cleanup_error?: string;
+  deletion_job_id?: string;
   settings?: Record<string, any>;
   is_active: boolean;
   created_at: string;
@@ -577,6 +582,44 @@ export interface Project {
   documents_count?: number;
   sheets_count?: number;
   findings_count?: number;
+}
+
+export interface ProjectDeletionImpact {
+  project_id: string;
+  project_code: string;
+  documents: number;
+  stored_files: number;
+  extractions: number;
+  evaluation_runs: number;
+  findings: number;
+  reports: number;
+  symbol_occurrences: number;
+  can_hard_delete: boolean;
+  blocking_reasons: string[];
+}
+
+export interface ProjectClearContentRequest {
+  confirmation_code: string;
+  reason?: string;
+  acknowledge_data_loss?: boolean;
+}
+
+export interface ProjectDeleteConfirmedRequest {
+  confirmation_code: string;
+  mode?: 'hard_delete' | 'anonymize';
+  reason?: string;
+  acknowledge_data_loss?: boolean;
+}
+
+export interface ProjectLifecycleResult {
+  success: boolean;
+  message: string;
+  project_id: string;
+  status: string;
+  files_deleted?: number;
+  records_affected?: number;
+  cleanup_status?: string;
+  error?: string;
 }
 
 export interface ProjectVersion {
