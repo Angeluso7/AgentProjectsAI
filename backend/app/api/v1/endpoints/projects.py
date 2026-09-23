@@ -1,17 +1,23 @@
+import os
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, status, Query, Response, UploadFile, File, Form
+from fastapi.responses import JSONResponse, FileResponse
 from sqlalchemy.orm import Session
 import json
 
 from app.db.session import get_db
 from app.db.repositories.project_repository import ProjectRepository
+from app.db.repositories.document_repository import DocumentRepository
+from app.services.ingest.service import IngestService
 from app.schemas.project import (
     ProjectCreate, ProjectRead, ProjectUpdate,
     ProjectVersionCreate, ProjectVersionRead,
     ProjectExportPayload, ProjectDeletionImpact,
     ProjectClearContentRequest, ProjectDeleteConfirmedRequest,
     ProjectLifecycleResult
+)
+from app.schemas.document import (
+    ProjectDocumentView, to_project_document_view, DocumentProcessRequest
 )
 from app.core.deps import get_current_tenant, require_role, TenantContext
 
@@ -294,3 +300,240 @@ def add_project_version(
     if not project:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
     return repo.add_version(project_id, version_in)
+
+
+# ====================================================================
+# Ciclo Operativo de Documentos por Proyecto
+# ====================================================================
+
+@router.post("/{project_id}/documents", response_model=ProjectDocumentView, status_code=status.HTTP_201_CREATED)
+async def upload_project_document(
+    project_id: str,
+    file: UploadFile = File(...),
+    discipline: Optional[str] = Form(None),
+    document_type: Optional[str] = Form(None),
+    auto_process: bool = Form(True),
+    dpi: Optional[int] = Form(None),
+    metadata_json: Optional[str] = Form(None),
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "contributor"])),
+    db: Session = Depends(get_db)
+):
+    """Carga y asocia un documento técnico al proyecto indicado dentro de la organización activa."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado en esta organización")
+
+    if not file or not file.filename:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Archivo no enviado o nombre de archivo vacío."
+        )
+
+    content = await file.read()
+    ingest_svc = IngestService(db)
+
+    meta_extra: dict = {
+        "original_filename": file.filename,
+        "uploaded_by": tenant.user.email if hasattr(tenant, "user") and tenant.user else None
+    }
+    if metadata_json:
+        try:
+            parsed = json.loads(metadata_json)
+            if isinstance(parsed, dict):
+                meta_extra.update(parsed)
+        except Exception:
+            meta_extra["raw_metadata"] = metadata_json
+
+    if discipline:
+        meta_extra["discipline"] = discipline
+    elif project.discipline:
+        meta_extra["discipline"] = project.discipline
+
+    if document_type:
+        meta_extra["document_type"] = document_type
+
+    try:
+        doc = ingest_svc.ingest_file(
+            project_id=project_id,
+            filename=file.filename or "document.pdf",
+            file_bytes=content,
+            auto_process=auto_process,
+            dpi=dpi,
+            metadata_extra=meta_extra
+        )
+        return to_project_document_view(doc, project)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al cargar documento: {str(e)}")
+
+
+@router.get("/{project_id}/documents", response_model=List[ProjectDocumentView])
+def list_project_documents(
+    project_id: str,
+    status_filter: Optional[str] = Query(None, alias="status", description="Filtrar por processing_status opcional"),
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """Lista todos los documentos del proyecto con todos sus estados operativos (uploaded, queued, processing, processed, failed)."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado en esta organización")
+
+    doc_repo = DocumentRepository(db)
+    docs = doc_repo.list_by_project_all_statuses(project_id=project_id, organization_id=tenant.organization.id)
+    
+    views = [to_project_document_view(d, project) for d in docs]
+    if status_filter:
+        views = [
+            v for v in views
+            if v.processing_status == status_filter or (status_filter == "processed" and v.processing_status in ("processed", "ready"))
+        ]
+    return views
+
+
+@router.get("/{project_id}/documents/{document_id}", response_model=ProjectDocumentView)
+def get_project_document(
+    project_id: str,
+    document_id: str,
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """Consulta la ficha unificada de un documento de proyecto."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    doc_repo = DocumentRepository(db)
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
+
+    return to_project_document_view(doc, project)
+
+
+@router.post("/{project_id}/documents/{document_id}/process", response_model=ProjectDocumentView)
+def process_project_document(
+    project_id: str,
+    document_id: str,
+    request: Optional[DocumentProcessRequest] = None,
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "contributor"])),
+    db: Session = Depends(get_db)
+):
+    """Procesa o reprocesa un documento de proyecto."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    doc_repo = DocumentRepository(db)
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
+
+    ingest_svc = IngestService(db)
+    target_dpi = request.dpi if request else None
+    try:
+        updated_doc = ingest_svc.process_document(document_id=document_id, dpi=target_dpi)
+        return to_project_document_view(updated_doc, project)
+    except Exception as e:
+        doc.status = "failed"
+        doc.error_message = str(e)
+        db.commit()
+        db.refresh(doc)
+        return to_project_document_view(doc, project)
+
+
+@router.post("/{project_id}/documents/{document_id}/retry", response_model=ProjectDocumentView)
+def retry_project_document(
+    project_id: str,
+    document_id: str,
+    request: Optional[DocumentProcessRequest] = None,
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "contributor"])),
+    db: Session = Depends(get_db)
+):
+    """Reintenta el procesamiento de un documento en estado failed conservando su identidad."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    doc_repo = DocumentRepository(db)
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
+
+    # Limpiar láminas previas si hubiesen quedado incompletas
+    doc_repo.delete_sheets_by_document(document_id)
+
+    ingest_svc = IngestService(db)
+    target_dpi = request.dpi if request else None
+    try:
+        updated_doc = ingest_svc.process_document(document_id=document_id, dpi=target_dpi)
+        return to_project_document_view(updated_doc, project)
+    except Exception as e:
+        doc.status = "failed"
+        doc.error_message = str(e)
+        db.commit()
+        db.refresh(doc)
+        return to_project_document_view(doc, project)
+
+
+@router.delete("/{project_id}/documents/{document_id}")
+def delete_project_document(
+    project_id: str,
+    document_id: str,
+    hard_delete: bool = Query(True, description="Eliminar físicamente registro y archivos"),
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "contributor"])),
+    db: Session = Depends(get_db)
+):
+    """Elimina un documento del proyecto y limpia sus hojas y archivos físicos asociados de forma segura."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    doc_repo = DocumentRepository(db)
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
+
+    user_id = tenant.user.id if hasattr(tenant, "user") and tenant.user else None
+    if hard_delete:
+        result = doc_repo.hard_delete_document(document_id=document_id, user_id=user_id)
+        return {"success": True, "document_id": document_id, "message": "Documento y archivos eliminados exitosamente", "result": result}
+    else:
+        archived = doc_repo.soft_delete_document(document_id=document_id, user_id=user_id)
+        return {"success": True, "document_id": document_id, "message": f"Documento '{archived.filename}' archivado exitosamente."}
+
+
+@router.get("/{project_id}/documents/{document_id}/download")
+def download_project_document(
+    project_id: str,
+    document_id: str,
+    tenant: TenantContext = Depends(get_current_tenant),
+    db: Session = Depends(get_db)
+):
+    """Descarga de forma segura el archivo técnico original del documento."""
+    proj_repo = ProjectRepository(db)
+    project = proj_repo.get_by_id_and_organization(project_id, organization_id=tenant.organization.id)
+    if not project:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Proyecto no encontrado")
+
+    doc_repo = DocumentRepository(db)
+    doc = doc_repo.get_by_id(document_id)
+    if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
+
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Archivo físico no encontrado en almacenamiento.")
+
+    return FileResponse(
+        doc.file_path,
+        filename=doc.filename,
+        media_type=doc.mime_type or "application/octet-stream"
+    )
+

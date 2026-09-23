@@ -226,3 +226,120 @@ class CadEntitiesSummaryRead(BaseModel):
     error: Optional[str] = None
 
 
+class ProjectDocumentView(BaseModel):
+    """Contrato de lectura unificado para documentos de proyecto en la UI."""
+    id: str
+    project_id: str
+    organization_id: str
+    filename: str
+    original_filename: str
+    content_type: str
+    size_bytes: int
+    sha256: str
+    document_type: str = "unknown"  # "pid" | "legend" | "specification" | "unknown"
+    discipline: str = "general"
+    storage_status: str = "stored"  # "stored" | "failed" | "pending_cleanup"
+    processing_status: str = "uploaded"  # "uploaded" | "queued" | "processing" | "processed" | "failed" | "cancelled"
+    processing_error_summary: Optional[str] = None
+    uploaded_at: datetime
+    uploaded_by: Optional[str] = None
+    page_count: Optional[int] = 1
+    can_process: bool = True
+    can_retry: bool = False
+    can_open: bool = True
+    sheets_count: int = 0
+    sheets: Optional[List[DocumentSheetRead]] = []
+    context_metadata: Optional[Dict[str, Any]] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Alias unificado
+UnifiedDocumentRead = ProjectDocumentView
+
+
+def to_project_document_view(doc: Any, project: Optional[Any] = None) -> ProjectDocumentView:
+    """Convierte un modelo Document de SQLAlchemy a ProjectDocumentView normalizado."""
+    import os
+
+    meta = doc.metadata_info or {}
+    
+    # 1. Determinar storage_status
+    storage_status = "stored"
+    if not doc.file_path or not os.path.exists(doc.file_path):
+        storage_status = "failed"
+
+    # 2. Normalizar processing_status
+    raw_status = (doc.status or "uploaded").lower()
+    if raw_status in ("ready", "processed"):
+        proc_status = "processed"
+    elif raw_status == "processing":
+        proc_status = "processing"
+    elif raw_status == "failed":
+        proc_status = "failed"
+    elif raw_status == "queued":
+        proc_status = "queued"
+    elif raw_status == "cancelled":
+        proc_status = "cancelled"
+    else:
+        proc_status = "uploaded"
+
+    # 3. Document Type
+    doc_type = meta.get("document_type")
+    if not doc_type:
+        fname_lower = (doc.filename or "").lower()
+        if "pid" in fname_lower or "p&id" in fname_lower:
+            doc_type = "pid"
+        elif "leyenda" in fname_lower or "legend" in fname_lower:
+            doc_type = "legend"
+        elif "spec" in fname_lower or "especificaci" in fname_lower or "memoria" in fname_lower:
+            doc_type = "specification"
+        else:
+            doc_type = "unknown"
+
+    # 4. Disciplina
+    disc = meta.get("discipline")
+    if not disc and project and hasattr(project, "discipline"):
+        disc = project.discipline
+    if not disc:
+        disc = "general"
+
+    # 5. Capacidades operativas
+    can_process = proc_status in ("uploaded", "failed")
+    can_retry = proc_status == "failed"
+    can_open = storage_status == "stored"
+
+    # 6. Sábanas / láminas
+    sheet_list = []
+    if hasattr(doc, "sheets") and doc.sheets:
+        sheet_list = [DocumentSheetRead.model_validate(s) for s in doc.sheets]
+    sheets_count = len(sheet_list) if sheet_list else (doc.page_count or 1)
+
+    return ProjectDocumentView(
+        id=doc.id,
+        project_id=doc.project_id,
+        organization_id=doc.organization_id,
+        filename=doc.filename,
+        original_filename=meta.get("original_filename") or doc.filename,
+        content_type=doc.mime_type or "application/pdf",
+        size_bytes=doc.file_size_bytes or 0,
+        sha256=doc.file_hash_sha256,
+        document_type=doc_type,
+        discipline=disc,
+        storage_status=storage_status,
+        processing_status=proc_status,
+        processing_error_summary=doc.error_message if proc_status == "failed" else None,
+        uploaded_at=doc.created_at or datetime.utcnow(),
+        uploaded_by=meta.get("uploaded_by"),
+        page_count=doc.page_count,
+        can_process=can_process,
+        can_retry=can_retry,
+        can_open=can_open,
+        sheets_count=sheets_count,
+        sheets=sheet_list,
+        context_metadata=meta
+    )
+
+
+

@@ -2,7 +2,7 @@ import axios from 'axios';
 import {
   Project, ProjectDeletionImpact, ProjectClearContentRequest,
   ProjectDeleteConfirmedRequest, ProjectLifecycleResult,
-  DocumentItem, DocumentSheet, DocumentImpact, ReviewRun,
+  DocumentItem, ProjectDocumentView, UnifiedDocument, DocumentSheet, DocumentImpact, ReviewRun,
   MemoriesStats, RuleDefinition, RuleFinding, ExtractedTextItem,
   SheetRegionItem, TitleBlockExtractionItem, SourceAssetItem,
   ProcessingJobItem, JobEventItem, ReviewTaskItem, ReviewDecisionItem,
@@ -433,10 +433,87 @@ export const apiService = {
     return res.data;
   },
 
-  // Documentos
+  // Documentos de Proyecto (Contrato Unificado)
+  getProjectDocuments: async (projectId: string, statusFilter?: string): Promise<UnifiedDocument[]> => {
+    const res = await apiClient.get<UnifiedDocument[]>(`/projects/${projectId}/documents`, {
+      params: statusFilter ? { status: statusFilter } : {}
+    });
+    return res.data;
+  },
+  uploadProjectDocument: async (
+    projectId: string,
+    file: File,
+    discipline?: string,
+    documentType?: string,
+    onProgress?: (percent: number) => void
+  ): Promise<UnifiedDocument> => {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (discipline) formData.append('discipline', discipline);
+    if (documentType) formData.append('document_type', documentType);
+    const res = await apiClient.post<UnifiedDocument>(`/projects/${projectId}/documents`, formData, {
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return res.data;
+  },
+  getProjectDocument: async (projectId: string, documentId: string): Promise<UnifiedDocument> => {
+    const res = await apiClient.get<UnifiedDocument>(`/projects/${projectId}/documents/${documentId}`);
+    return res.data;
+  },
+  processProjectDocument: async (projectId: string, documentId: string, dpi?: number): Promise<UnifiedDocument> => {
+    const res = await apiClient.post<UnifiedDocument>(`/projects/${projectId}/documents/${documentId}/process`, dpi ? { dpi } : {});
+    return res.data;
+  },
+  retryProjectDocument: async (projectId: string, documentId: string, dpi?: number): Promise<UnifiedDocument> => {
+    const res = await apiClient.post<UnifiedDocument>(`/projects/${projectId}/documents/${documentId}/retry`, dpi ? { dpi } : {});
+    return res.data;
+  },
+  deleteProjectDocument: async (projectId: string, documentId: string, hardDelete = true): Promise<any> => {
+    const res = await apiClient.delete(`/projects/${projectId}/documents/${documentId}`, {
+      params: { hard_delete: hardDelete }
+    });
+    return res.data;
+  },
+  getProjectDocumentDownloadUrl: (projectId: string, documentId: string): string => {
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+    return `${baseUrl}/projects/${projectId}/documents/${documentId}/download`;
+  },
+  downloadProjectDocumentFile: async (projectId: string, documentId: string, filename: string): Promise<void> => {
+    const res = await apiClient.get(`/projects/${projectId}/documents/${documentId}/download`, {
+      responseType: 'blob',
+    });
+    const blob = new Blob([res.data]);
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+
+  // Documentos (Wrappers retrocompatibles)
   getDocuments: async (projectId?: string, includeArchived = false): Promise<DocumentItem[]> => {
+    if (projectId) {
+      try {
+        const res = await apiClient.get<DocumentItem[]>(`/projects/${projectId}/documents`);
+        return res.data;
+      } catch {
+        const res = await apiClient.get<DocumentItem[]>('/documents/', {
+          params: { project_id: projectId, include_archived: includeArchived },
+        });
+        return res.data;
+      }
+    }
     const res = await apiClient.get<DocumentItem[]>('/documents/', {
-      params: { project_id: projectId, include_archived: includeArchived },
+      params: { include_archived: includeArchived },
     });
     return res.data;
   },
@@ -463,12 +540,19 @@ export const apiService = {
     return `${baseUrl}/documents/sheets/${sheetId}/thumbnail`;
   },
   uploadDocument: async (projectId: string, file: File, versionId?: string): Promise<DocumentItem> => {
-    const formData = new FormData();
-    formData.append('project_id', projectId);
-    if (versionId) formData.append('version_id', versionId);
-    formData.append('file', file);
-    const res = await apiClient.post<DocumentItem>('/documents/upload', formData);
-    return res.data;
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await apiClient.post<DocumentItem>(`/projects/${projectId}/documents`, formData);
+      return res.data;
+    } catch {
+      const formData = new FormData();
+      formData.append('project_id', projectId);
+      if (versionId) formData.append('version_id', versionId);
+      formData.append('file', file);
+      const res = await apiClient.post<DocumentItem>('/documents/upload', formData);
+      return res.data;
+    }
   },
   batchUploadDocuments: async (
     projectId: string,
@@ -496,6 +580,7 @@ export const apiService = {
     const res = await apiClient.post<DocumentItem>(`/documents/${documentId}/process`, dpi ? { dpi } : {});
     return res.data;
   },
+
 
 
 

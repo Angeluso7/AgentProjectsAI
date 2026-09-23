@@ -13,8 +13,23 @@ class DocumentRepository(BaseRepository[Document]):
     def get_by_hash(self, hash_sha256: str) -> Optional[Document]:
         return self.db.query(Document).filter(Document.file_hash_sha256 == hash_sha256).first()
 
+    def get_by_project_and_hash(self, project_id: str, hash_sha256: str) -> Optional[Document]:
+        """Obtiene un documento por su hash SHA-256 dentro del ámbito exclusivo del proyecto."""
+        return (
+            self.db.query(Document)
+            .filter(Document.project_id == project_id, Document.file_hash_sha256 == hash_sha256)
+            .first()
+        )
+
     def list_by_project(self, project_id: str) -> List[Document]:
         return self.db.query(Document).filter(Document.project_id == project_id).all()
+
+    def list_by_project_all_statuses(self, project_id: str, organization_id: Optional[str] = None) -> List[Document]:
+        """Lista todos los documentos de un proyecto en cualquier estado (uploaded, processing, ready, failed)."""
+        query = self.db.query(Document).filter(Document.project_id == project_id)
+        if organization_id:
+            query = query.filter(Document.organization_id == organization_id)
+        return query.order_by(Document.created_at.desc()).all()
 
     def get_sheet_by_id(self, sheet_id: str) -> Optional[DocumentSheet]:
         return self.db.query(DocumentSheet).filter(DocumentSheet.id == sheet_id).first()

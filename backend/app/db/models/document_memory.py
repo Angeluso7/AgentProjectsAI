@@ -1,12 +1,15 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey
+from sqlalchemy import Column, String, Integer, Float, Boolean, DateTime, Text, JSON, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.db.session import Base
 
 class Document(Base):
     """Documento técnico raíz (PDF cargado en el sistema)."""
     __tablename__ = "documents"
+    __table_args__ = (
+        UniqueConstraint("project_id", "file_hash_sha256", name="uq_documents_project_file_hash"),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -15,7 +18,7 @@ class Document(Base):
     
     filename = Column(String(255), nullable=False)
     file_path = Column(String(500), nullable=False)
-    file_hash_sha256 = Column(String(64), unique=True, index=True, nullable=False)
+    file_hash_sha256 = Column(String(64), index=True, nullable=False)
     file_size_bytes = Column(Integer, nullable=False)
     mime_type = Column(String(100), default="application/pdf", nullable=False)
     page_count = Column(Integer, default=1, nullable=False)

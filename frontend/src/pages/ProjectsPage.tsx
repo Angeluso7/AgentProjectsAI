@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { apiService } from '../services/api';
-import { Project, DocumentItem, DocumentSheet, Discipline } from '../types';
+import { Project, DocumentItem, DocumentSheet, Discipline, ProjectDocumentView } from '../types';
 import { useProject } from '../context/ProjectContext';
 import {
   FolderPlus, Upload, FileText, CheckCircle2, Layers,
   RefreshCw, Eye, AlertCircle, Clock, ExternalLink, Plus, Trash2,
   FolderKanban, Archive, ArchiveRestore, Download, Edit3, Check, Search,
   Filter, Building2, Shield, Calendar, BarChart3, ChevronRight, HardDriveDownload,
-  Compass, SquareCheck, UploadCloud, Eraser
+  Compass, SquareCheck, UploadCloud, Eraser, Play, RotateCcw, FileDown, HardDrive
 } from 'lucide-react';
 import { DeleteDocumentModal } from '../components/DeleteDocumentModal';
 import { ProjectFormModal, PROJECT_STAGES, PROJECT_DISCIPLINES } from '../components/ProjectFormModal';
@@ -67,7 +67,7 @@ export const ProjectsPage: React.FC = () => {
 
   // Proyecto seleccionado para inspección en el panel inferior
   const [inspectedProjectId, setInspectedProjectId] = useState<string>(activeProjectId);
-  const [projectDetailTab, setProjectDetailTab] = useState<'maturity' | 'completeness' | 'documents'>('maturity');
+  const [projectDetailTab, setProjectDetailTab] = useState<'maturity' | 'completeness' | 'documents'>('documents');
 
   useEffect(() => {
     if (activeProjectId && !inspectedProjectId) {
@@ -86,15 +86,15 @@ export const ProjectsPage: React.FC = () => {
   const loadDocuments = async (projectId: string) => {
     try {
       setLoadingDocs(true);
-      const docs = await apiService.getDocuments(projectId);
-      setDocuments(docs);
+      const docs = await apiService.getProjectDocuments(projectId);
+      setDocuments(docs as any);
 
       if (docs.length > 0) {
         const targetDoc = docs.find((d) => d.id === selectedDocId) || docs[0];
         setSelectedDocId(targetDoc.id);
 
-        if (targetDoc.sheets && targetDoc.sheets.length > 0) {
-          setDocSheets(targetDoc.sheets);
+        if ((targetDoc as any).sheets && (targetDoc as any).sheets.length > 0) {
+          setDocSheets((targetDoc as any).sheets);
         } else {
           try {
             const sheets = await apiService.getDocumentSheets(targetDoc.id);
@@ -129,6 +129,7 @@ export const ProjectsPage: React.FC = () => {
   };
 
   const [reprocessingDocId, setReprocessingDocId] = useState<string | null>(null);
+  const [processingDocId, setProcessingDocId] = useState<string | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -139,8 +140,9 @@ export const ProjectsPage: React.FC = () => {
       setUploading(true);
       setErrorMessage(null);
       setSuccessMessage(null);
-      await apiService.uploadDocument(targetProjId, file);
-      setSuccessMessage(`Documento «${file.name}» (${(file.size / 1024).toFixed(1)} KB) cargado e indexado exitosamente.`);
+      await apiService.uploadProjectDocument(targetProjId, file);
+      setSuccessMessage(`Documento «${file.name}» (${(file.size / 1024).toFixed(1)} KB) cargado exitosamente.`);
+      setProjectDetailTab('documents');
       await loadDocuments(targetProjId);
       await reloadProjects();
       setCompletenessRefreshKey(prev => prev + 1);
@@ -153,21 +155,51 @@ export const ProjectsPage: React.FC = () => {
     }
   };
 
-  const handleReprocessDoc = async (docId: string) => {
+  const handleProcessDoc = async (docId: string) => {
+    const targetProjId = inspectedProjectId || activeProjectId;
+    if (!targetProjId) return;
+    try {
+      setProcessingDocId(docId);
+      setErrorMessage(null);
+      await apiService.processProjectDocument(targetProjId, docId);
+      setSuccessMessage('Procesamiento de documento iniciado/ejecutado exitosamente.');
+      await loadDocuments(targetProjId);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Error al procesar documento.';
+      setErrorMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    } finally {
+      setProcessingDocId(null);
+    }
+  };
+
+  const handleRetryDoc = async (docId: string) => {
+    const targetProjId = inspectedProjectId || activeProjectId;
+    if (!targetProjId) return;
     try {
       setReprocessingDocId(docId);
       setErrorMessage(null);
-      await apiService.reprocessDocument(docId);
-      setSuccessMessage('Documento reprocesado exitosamente.');
-      const targetProjId = inspectedProjectId || activeProjectId;
-      if (targetProjId) await loadDocuments(targetProjId);
+      await apiService.retryProjectDocument(targetProjId, docId);
+      setSuccessMessage('Reintento de procesamiento iniciado.');
+      await loadDocuments(targetProjId);
     } catch (err: any) {
-      const msg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Error al reprocesar documento.';
+      const msg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Error al reintentar documento.';
       setErrorMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
     } finally {
       setReprocessingDocId(null);
     }
   };
+
+  const handleDownloadDoc = async (doc: any) => {
+    const targetProjId = inspectedProjectId || activeProjectId;
+    if (!targetProjId) return;
+    try {
+      await apiService.downloadProjectDocumentFile(targetProjId, doc.id, doc.original_filename || doc.filename || 'documento.pdf');
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.response?.data?.detail || err.message || 'Error al descargar documento.';
+      setErrorMessage(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    }
+  };
+
 
 
   // Filtrado de proyectos
@@ -262,14 +294,24 @@ export const ProjectsPage: React.FC = () => {
       )}
 
       {successMessage && (
-        <div className="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-800 text-xs text-emerald-300 flex items-center justify-between">
+        <div className="p-3.5 rounded-xl bg-emerald-950/70 border border-emerald-800 text-xs text-emerald-300 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-400 hover:text-emerald-200 text-xs font-bold">
-            ✕
-          </button>
+          <div className="flex items-center gap-2.5">
+            {projectDetailTab !== 'documents' && (
+              <button
+                onClick={() => setProjectDetailTab('documents')}
+                className="px-2.5 py-1 text-[11px] font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition-colors cursor-pointer"
+              >
+                Ver documentos
+              </button>
+            )}
+            <button onClick={() => setSuccessMessage(null)} className="text-emerald-400 hover:text-emerald-200 text-xs font-bold cursor-pointer">
+              ✕
+            </button>
+          </div>
         </div>
       )}
 
@@ -637,188 +679,265 @@ export const ProjectsPage: React.FC = () => {
             />
           )}
 
-          <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-mono font-bold text-blue-400">{inspectedProject.code}</span>
-                  <h2 className="text-base font-bold text-slate-100">
-                    Documentos & Entregables de «{inspectedProject.name}»
-                  </h2>
+          {projectDetailTab === 'documents' && (
+            <div className="rounded-2xl bg-slate-900/80 border border-slate-800 p-6 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono font-bold text-blue-400">{inspectedProject.code}</span>
+                    <h2 className="text-base font-bold text-slate-100">
+                      Biblioteca de Documentos & Entregables de «{inspectedProject.name}»
+                    </h2>
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    Planos, memorias y especificaciones técnicas asociados exclusivamente a este proyecto.
+                  </p>
                 </div>
-                <p className="text-xs text-slate-400">
-                  Planos, memorias de cálculo y especificaciones técnicas asociados al proyecto.
-                </p>
+
+                {/* Subir Documentos al proyecto */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBatchUploadModalOpen(true)}
+                    className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
+                    title="Abrir asistente de carga múltiple de documentos y planos"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Carga por Lotes / Planos</span>
+                  </button>
+
+                  <label
+                    className={`px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors ${
+                      uploading ? 'opacity-50 pointer-events-none' : ''
+                    }`}
+                    title="Carga instantánea de un único archivo"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{uploading ? 'Cargando...' : 'Carga Rápida'}</span>
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.dxf,.dwg,.docx,.xlsx,.txt,.csv,.zip"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      disabled={uploading}
+                    />
+                  </label>
+                </div>
               </div>
 
-              {/* Subir Documentos al proyecto */}
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsBatchUploadModalOpen(true)}
-                  className="px-3.5 py-1.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 active:bg-blue-700 rounded-xl shadow-md shadow-blue-600/20 flex items-center gap-1.5 transition-all cursor-pointer"
-                  title="Abrir asistente de carga múltiple de documentos y planos"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Carga por Lotes / Planos</span>
-                </button>
+              {/* Listado de Documentos del Proyecto */}
+              {loadingDocs ? (
+                <div className="py-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
+                  <span>Cargando documentos del proyecto...</span>
+                </div>
+              ) : documents.length === 0 ? (
+                <div className="py-8 text-center rounded-xl bg-slate-950/40 border border-dashed border-slate-800">
+                  <FileText className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                  <p className="text-xs text-slate-400 font-medium">Este proyecto aún no contiene documentos cargados.</p>
+                  <p className="text-[11px] text-slate-500 mt-1">Haz clic en «Carga Rápida» o «Carga por Lotes» para añadir planos o especificaciones en PDF.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {documents.map((doc) => {
+                    const isDocSelected = doc.id === selectedDocId;
+                    const procStatus = doc.processing_status || doc.status || 'uploaded';
+                    const storStatus = doc.storage_status || 'stored';
 
-                <label
-                  className={`px-3 py-1.5 text-xs font-semibold text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl flex items-center gap-1.5 cursor-pointer transition-colors ${
-                    uploading ? 'opacity-50 pointer-events-none' : ''
-                  }`}
-                  title="Carga instantánea de un único archivo"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{uploading ? 'Cargando...' : 'Carga Rápida'}</span>
-                  <input
-                    type="file"
-                    accept=".pdf,.png,.jpg,.jpeg,.webp,.bmp,.dxf,.dwg,.docx,.xlsx,.txt,.csv,.zip"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={uploading}
-                  />
-                </label>
-              </div>
-            </div>
+                    return (
+                      <div
+                        key={doc.id}
+                        onClick={() => handleSelectDoc(doc)}
+                        className={`p-4 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                          isDocSelected
+                            ? 'bg-blue-950/40 border-blue-600/50 shadow-md'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <div>
+                          {/* Encabezado con Nombre y Tipo */}
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <FileText className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                              <div className="min-w-0">
+                                <span className="text-xs font-bold text-slate-100 truncate block" title={doc.original_filename || doc.filename}>
+                                  {doc.original_filename || doc.filename}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono block">
+                                  {doc.document_type || doc.content_type || 'Documento técnico'}
+                                </span>
+                              </div>
+                            </div>
 
+                            {/* Botón Eliminar Documento */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDocToDelete(doc);
+                                setIsDocDeleteModalOpen(true);
+                              }}
+                              className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors shrink-0"
+                              title="Eliminar documento del proyecto"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
 
-            {/* Listado de Documentos del Proyecto */}
-            {loadingDocs ? (
-              <div className="py-8 text-center text-xs text-slate-400 flex items-center justify-center gap-2">
-                <RefreshCw className="w-4 h-4 animate-spin text-blue-400" />
-                <span>Cargando documentos del proyecto...</span>
-              </div>
-            ) : documents.length === 0 ? (
-              <div className="py-8 text-center rounded-xl bg-slate-950/40 border border-dashed border-slate-800">
-                <FileText className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <p className="text-xs text-slate-400 font-medium">Este proyecto aún no contiene documentos cargados.</p>
-                <p className="text-[11px] text-slate-500 mt-1">Haz clic en «Cargar Documento» para añadir planos o especificaciones en PDF.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {documents.map((doc) => {
-                  const isDocSelected = doc.id === selectedDocId;
-
-                  return (
-                    <div
-                      key={doc.id}
-                      onClick={() => handleSelectDoc(doc)}
-                      className={`p-4 rounded-xl border transition-all cursor-pointer ${
-                        isDocSelected
-                          ? 'bg-blue-950/40 border-blue-600/50 shadow-md'
-                          : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <FileText className="w-4 h-4 text-blue-400 shrink-0" />
-                          <div className="min-w-0">
-                            <span className="text-xs font-bold text-slate-100 truncate block">
-                              {(doc as any).title || doc.filename}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {((doc.file_size_bytes || 0) / 1024).toFixed(1)} KB · {doc.mime_type?.split('/')[1] || 'doc'}
+                          {/* Metadatos Técnicos: Tamaño, Fecha, Disciplina */}
+                          <div className="mt-2.5 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                            <span>{((doc.size_bytes || doc.file_size_bytes || 0) / 1024).toFixed(1)} KB</span>
+                            <span>{doc.uploaded_at ? new Date(doc.uploaded_at).toLocaleDateString() : 'Reciente'}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-slate-800/80 text-slate-300 font-sans font-medium">
+                              {doc.discipline || 'General'}
                             </span>
                           </div>
+
+                          {/* Badges de Estado de Almacenamiento y Procesamiento */}
+                          <div className="mt-2.5 flex items-center gap-1.5 flex-wrap">
+                            {/* Estado Storage */}
+                            {storStatus === 'stored' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60" title="Almacenamiento físico verificado">
+                                <HardDrive className="w-2.5 h-2.5" />
+                                <span>Almacenado</span>
+                              </span>
+                            )}
+                            {storStatus === 'failed' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60" title="Error en almacenamiento físico">
+                                <AlertCircle className="w-2.5 h-2.5" />
+                                <span>Storage Falló</span>
+                              </span>
+                            )}
+
+                            {/* Estado Processing */}
+                            {(procStatus === 'ready' || procStatus === 'processed') && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60" title="Procesado e indexado">
+                                <CheckCircle2 className="w-2.5 h-2.5" />
+                                <span>Listo</span>
+                              </span>
+                            )}
+                            {procStatus === 'processing' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60 animate-pulse" title="Procesando contenido">
+                                <RefreshCw className="w-2.5 h-2.5 animate-spin" />
+                                <span>Procesando</span>
+                              </span>
+                            )}
+                            {procStatus === 'queued' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-950/60 text-purple-400 border border-purple-800/60" title="En cola de procesamiento">
+                                <Clock className="w-2.5 h-2.5" />
+                                <span>En cola</span>
+                              </span>
+                            )}
+                            {procStatus === 'uploaded' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-950/60 text-blue-400 border border-blue-800/60" title="Subido y disponible">
+                                <Check className="w-2.5 h-2.5" />
+                                <span>Subido</span>
+                              </span>
+                            )}
+                            {procStatus === 'failed' && (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60" title={doc.processing_error_summary || doc.error_message || 'Fallo de procesamiento'}>
+                                <AlertCircle className="w-2.5 h-2.5" />
+                                <span>Falló</span>
+                              </span>
+                            )}
+
+                            {/* Indicador de Páginas / Láminas */}
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono bg-slate-800/80 text-slate-300">
+                              <span>Págs: {doc.page_count ?? doc.sheets_count ?? 1}</span>
+                            </span>
+                          </div>
+
+                          {/* Detalle de error si falló */}
+                          {procStatus === 'failed' && (
+                            <div className="mt-2 p-2 rounded bg-rose-950/30 border border-rose-900/50 text-[11px] text-rose-300 flex items-center justify-between gap-2">
+                              <span className="truncate" title={doc.processing_error_summary || doc.error_message || 'Error en procesamiento'}>
+                                {doc.processing_error_summary || doc.error_message || 'Fallo durante el procesamiento.'}
+                              </span>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleRetryDoc(doc.id);
+                                }}
+                                disabled={reprocessingDocId === doc.id}
+                                className="px-2 py-0.5 text-[10px] font-bold text-white bg-rose-700 hover:bg-rose-600 rounded flex items-center gap-1 shrink-0 transition"
+                              >
+                                <RotateCcw className={`w-2.5 h-2.5 ${reprocessingDocId === doc.id ? 'animate-spin' : ''}`} />
+                                <span>Reintentar</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {doc.status === 'ready' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-950/60 text-emerald-400 border border-emerald-800/60" title="Procesado e indexado">
-                              <CheckCircle2 className="w-3 h-3" />
-                              <span>Listo</span>
-                            </span>
-                          )}
-                          {doc.status === 'processing' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-950/60 text-amber-400 border border-amber-800/60 animate-pulse" title="Procesando">
-                              <RefreshCw className="w-3 h-3 animate-spin" />
-                              <span>Procesando</span>
-                            </span>
-                          )}
-                          {doc.status === 'uploaded' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-950/60 text-blue-400 border border-blue-800/60" title="Cargado, pendiente de análisis">
-                              <Clock className="w-3 h-3" />
-                              <span>Cargado</span>
-                            </span>
-                          )}
-                          {doc.status === 'failed' && (
-                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-rose-950/60 text-rose-400 border border-rose-800/60" title={doc.error_message || 'Fallo de procesamiento'}>
-                              <AlertCircle className="w-3 h-3" />
-                              <span>Falló</span>
-                            </span>
-                          )}
+
+                        {/* Barra de Acciones: Abrir, Descargar, Procesar, Clasificar */}
+                        <div className="mt-3 pt-2.5 border-t border-slate-800/70 flex items-center justify-between gap-1.5 flex-wrap">
+                          <div className="flex items-center gap-1.5">
+                            {/* Botón Abrir / Visor */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                localStorage.setItem('viewer_target_doc_id', doc.id);
+                                if (doc.sheets && doc.sheets.length > 0) {
+                                  localStorage.setItem('viewer_target_sheet_id', doc.sheets[0].id);
+                                }
+                                window.dispatchEvent(new CustomEvent('navigate-tab', { detail: { tab: 'viewer' } }));
+                              }}
+                              className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 px-2 py-1 rounded bg-blue-950/40 hover:bg-blue-900/40 border border-blue-800/40 transition-colors"
+                              title="Abrir en Visor de Planos"
+                            >
+                              <span>Abrir</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+
+                            {/* Botón Descargar */}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDownloadDoc(doc);
+                              }}
+                              className="text-[11px] font-medium text-slate-300 hover:text-white flex items-center gap-1 px-2 py-1 rounded bg-slate-800/80 hover:bg-slate-700 border border-slate-700 transition-colors"
+                              title="Descargar archivo original"
+                            >
+                              <FileDown className="w-2.5 h-2.5" />
+                              <span>Descargar</span>
+                            </button>
+
+                            {/* Botón Procesar si está en uploaded o can_process */}
+                            {(procStatus === 'uploaded' || (doc as any).can_process) && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleProcessDoc(doc.id);
+                                }}
+                                disabled={processingDocId === doc.id}
+                                className="text-[11px] font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1 px-2 py-1 rounded bg-emerald-950/40 hover:bg-emerald-900/40 border border-emerald-800/40 transition-colors"
+                                title="Procesar e indexar láminas y texto"
+                              >
+                                <Play className={`w-2.5 h-2.5 ${processingDocId === doc.id ? 'animate-spin' : ''}`} />
+                                <span>Procesar</span>
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Botón Clasificar / Estado */}
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              setDocToDelete(doc);
-                              setIsDocDeleteModalOpen(true);
+                              setDocToClassify(doc);
+                              setIsClassifyModalOpen(true);
                             }}
-                            className="p-1 rounded text-slate-500 hover:text-rose-400 hover:bg-slate-800 transition-colors"
-                            title="Eliminar documento"
+                            className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-700/50 px-2 py-1 rounded-lg flex items-center gap-1 transition"
+                            title="Clasificar entregable y estado de suficiencia"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Layers className="w-3 h-3" />
+                            <span>Clasificar</span>
                           </button>
                         </div>
                       </div>
-
-                      {doc.status === 'failed' && (
-                        <div className="mt-2 p-2 rounded bg-rose-950/30 border border-rose-900/50 text-[11px] text-rose-300 flex items-center justify-between gap-2">
-                          <span className="truncate" title={doc.error_message || 'Error en procesamiento'}>
-                            {doc.error_message || 'Fallo durante el procesamiento.'}
-                          </span>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleReprocessDoc(doc.id);
-                            }}
-                            disabled={reprocessingDocId === doc.id}
-                            className="px-2 py-0.5 text-[10px] font-bold text-white bg-rose-700 hover:bg-rose-600 rounded flex items-center gap-1 shrink-0 transition"
-                          >
-                            <RefreshCw className={`w-2.5 h-2.5 ${reprocessingDocId === doc.id ? 'animate-spin' : ''}`} />
-                            <span>Reintentar</span>
-                          </button>
-                        </div>
-                      )}
-
-                      <div className="mt-3 flex items-center justify-between text-[11px] text-slate-400 border-t border-slate-800/80 pt-2 font-mono">
-                        <span>Láminas: <strong>{(doc as any).total_sheets || doc.sheets?.length || doc.page_count || 1}</strong></span>
-                        <span className="capitalize">{(doc as any).discipline || ''}</span>
-                      </div>
-
-                      <div className="mt-3 pt-2 border-t border-slate-800/60 flex items-center justify-between gap-2">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDocToClassify(doc);
-                            setIsClassifyModalOpen(true);
-                          }}
-                          className="text-[11px] font-semibold text-indigo-400 hover:text-indigo-300 bg-indigo-950/40 hover:bg-indigo-900/60 border border-indigo-700/50 px-2.5 py-1 rounded-lg flex items-center gap-1 transition"
-                        >
-                          <Layers className="w-3 h-3" />
-                          <span>Clasificar / Estado</span>
-                        </button>
-
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            localStorage.setItem('viewer_target_doc_id', doc.id);
-                            if (doc.sheets && doc.sheets.length > 0) {
-                              localStorage.setItem('viewer_target_sheet_id', doc.sheets[0].id);
-                            }
-                            window.dispatchEvent(new CustomEvent('navigate-tab', { detail: { tab: 'viewer' } }));
-                          }}
-                          className="text-[11px] font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1 transition-colors"
-                        >
-                          <span>Visor</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

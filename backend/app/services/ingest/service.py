@@ -148,10 +148,10 @@ class IngestService:
         """Ingesta una imagen de plano/croquis, creando una lámina lista para el visor."""
         file_hash = self.calculate_file_hash(file_bytes)
         
-        # Verificar duplicado
-        existing = self.repo.get_by_hash(file_hash)
+        # Verificar duplicado exclusivamente en el ámbito del proyecto
+        existing = self.repo.get_by_project_and_hash(project_id, file_hash)
         if existing:
-            logger.info(f"Imagen '{filename}' ya existe con hash SHA-256: {file_hash} (ID: {existing.id})")
+            logger.info(f"Imagen '{filename}' ya existe en el proyecto {project_id} con hash: {file_hash} (ID: {existing.id})")
             return existing
 
         try:
@@ -234,10 +234,10 @@ class IngestService:
         """Ingesta un documento técnico no gráfico (CAD, especificación, cálculo)."""
         file_hash = self.calculate_file_hash(file_bytes)
         
-        # Verificar duplicado
-        existing = self.repo.get_by_hash(file_hash)
+        # Verificar duplicado exclusivamente en el ámbito del proyecto
+        existing = self.repo.get_by_project_and_hash(project_id, file_hash)
         if existing:
-            logger.info(f"Documento '{filename}' ya existe con hash SHA-256: {file_hash} (ID: {existing.id})")
+            logger.info(f"Documento '{filename}' ya existe en el proyecto {project_id} con hash: {file_hash} (ID: {existing.id})")
             return existing
 
         # Determinar mime_type según extensión
@@ -320,10 +320,10 @@ class IngestService:
 
         file_hash = self.calculate_file_hash(file_bytes)
         
-        # Verificar si ya existe el documento con el mismo hash en la base de datos
-        existing = self.repo.get_by_hash(file_hash)
+        # Verificar si ya existe el documento con el mismo hash dentro de este proyecto
+        existing = self.repo.get_by_project_and_hash(project_id, file_hash)
         if existing:
-            logger.info(f"Documento '{filename}' ya existe con hash SHA-256: {file_hash} (ID: {existing.id})")
+            logger.info(f"Documento '{filename}' ya existe en el proyecto {project_id} con hash: {file_hash} (ID: {existing.id})")
             if auto_process and existing.status in ["uploaded", "failed"]:
                 return self.process_document(existing.id, dpi=dpi)
             return existing

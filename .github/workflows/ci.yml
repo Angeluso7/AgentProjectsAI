@@ -2,9 +2,9 @@ name: CI Quality Gates
 
 'on':
   push:
-    branches: [ main, master, develop, 'chore/**', 'feat/**' ]
+    branches: [ main, master, develop, 'chore/**', 'feat/**', 'fix/**' ]
   pull_request:
-    branches: [ main, master, develop, 'chore/**', 'feat/**' ]
+    branches: [ main, master, develop, 'chore/**', 'feat/**', 'fix/**' ]
 
 jobs:
   frontend-gates:

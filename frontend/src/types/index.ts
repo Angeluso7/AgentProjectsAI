@@ -775,28 +775,63 @@ export interface DocumentSheet {
   symbols?: DetectedSymbolItem[];
 }
 
+export interface ProjectDocumentView {
+  id: string;
+  project_id: string;
+  organization_id: string;
+  filename: string;
+  original_filename: string;
+  content_type: string;
+  size_bytes: number;
+  sha256: string;
+  document_type: 'pid' | 'legend' | 'specification' | 'unknown' | string;
+  discipline: string;
+  storage_status: 'stored' | 'failed' | 'pending_cleanup' | string;
+  processing_status: 'uploaded' | 'queued' | 'processing' | 'processed' | 'failed' | 'cancelled' | string;
+  processing_error_summary?: string | null;
+  uploaded_at: string;
+  uploaded_by?: string | null;
+  page_count?: number | null;
+  can_process: boolean;
+  can_retry: boolean;
+  can_open: boolean;
+  sheets_count: number;
+  sheets?: DocumentSheet[];
+  context_metadata?: Record<string, any>;
+}
+
+export type UnifiedDocument = ProjectDocumentView;
+
 export interface DocumentItem {
   id: string;
   document_id?: string;
   project_id: string;
+  organization_id?: string;
   filename: string;
-  file_hash_sha256: string;
+  original_filename?: string;
+  file_hash_sha256?: string;
   sha256?: string;
-  file_size_bytes: number;
+  file_size_bytes?: number;
   size_bytes?: number;
   mime_type?: string;
   content_type?: string;
-  page_count: number;
+  page_count?: number;
   status: string;
   processing_status?: string;
   storage_status?: string;
   error_message?: string;
-  created_at: string;
+  processing_error_summary?: string | null;
+  created_at?: string;
+  uploaded_at?: string;
   upload_timestamp?: string;
   discipline?: string;
   document_type?: string;
   warnings?: string[];
   sheets?: DocumentSheet[];
+  sheets_count?: number;
+  can_process?: boolean;
+  can_retry?: boolean;
+  can_open?: boolean;
 }
 
 export interface BatchFileResultItem {
