@@ -4,9 +4,10 @@ import hashlib
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.db.models.document_memory import DetectedSymbol, Document, DocumentSheet
-from app.db.models.decision_memory import ReviewRun, SymbolInventoryGroup, ReviewRunDocument, RuleFinding
+from app.db.models.decision_memory import ReviewRun, SymbolInventoryGroup, ReviewRunDocument, RuleFinding, ReviewRunStep
 from app.db.models.template_memory import SymbolTemplate
 from app.db.models.symbol_catalog import SymbolTemplateVersion
 from app.services.symbols.geometric_validator import (
@@ -36,6 +37,40 @@ class SymbolInventoryService:
     """
 
     CROPS_BASE_PATH = os.environ.get("SYMBOL_CROPS_STORAGE_PATH", os.path.join(os.getcwd(), "storage", "crops"))
+    ALGORITHM_VERSION = "v1.0"
+
+    @classmethod
+    def compute_source_snapshot_hash(cls, db: Session, review_run: ReviewRun) -> str:
+        """Calcula un hash determinista e inmutable del snapshot de datos fuente para la corrida."""
+        run_docs = db.query(ReviewRunDocument).filter(
+            ReviewRunDocument.review_run_id == review_run.id,
+            ReviewRunDocument.status == "included"
+        ).order_by(ReviewRunDocument.document_id.asc()).all()
+        doc_ids = [rd.document_id for rd in run_docs]
+
+        symbols = db.query(
+            DetectedSymbol.id,
+            DetectedSymbol.sheet_id,
+            DetectedSymbol.classification,
+            DetectedSymbol.matching_status,
+            DetectedSymbol.matched_template_id,
+            DetectedSymbol.matched_template_version_id
+        ).filter(
+            DetectedSymbol.document_id.in_(doc_ids)
+        ).order_by(DetectedSymbol.id.asc()).all() if doc_ids else []
+
+        hasher = hashlib.sha256()
+        hasher.update(cls.ALGORITHM_VERSION.encode("utf-8"))
+        for d_id in doc_ids:
+            hasher.update(str(d_id).encode("utf-8"))
+        for s in symbols:
+            hasher.update(str(s.id).encode("utf-8"))
+            hasher.update(str(s.sheet_id or "").encode("utf-8"))
+            hasher.update(str(s.classification or "").encode("utf-8"))
+            hasher.update(str(s.matching_status or "").encode("utf-8"))
+            hasher.update(str(s.matched_template_id or "").encode("utf-8"))
+            hasher.update(str(s.matched_template_version_id or "").encode("utf-8"))
+        return hasher.hexdigest()
 
     @classmethod
     def _ensure_dir(cls, directory: str) -> None:
@@ -131,7 +166,8 @@ class SymbolInventoryService:
         cls,
         db: Session,
         review_run: ReviewRun,
-        force_rebuild: bool = False
+        force_rebuild: bool = False,
+        requested_by: str = "system"
     ) -> Tuple[List[SymbolInventoryGroup], Dict[str, Any]]:
         """
         Construye y persiste el inventario consolidado de simbología para una corrida de revisión.
@@ -146,16 +182,21 @@ class SymbolInventoryService:
                 metrics = cls.compute_inventory_metrics(db, review_run, existing)
                 return existing, metrics
 
-        # Eliminar grupos previos si force_rebuild
-        db.query(SymbolInventoryGroup).filter(SymbolInventoryGroup.review_run_id == review_run.id).delete()
-        db.flush()
-
         # Recopilar documentos y láminas incluidas en la corrida
         run_docs = db.query(ReviewRunDocument).filter(
             ReviewRunDocument.review_run_id == review_run.id,
             ReviewRunDocument.status == "included"
         ).all()
         doc_ids = [rd.document_id for rd in run_docs]
+
+        # Desvincular ocurrencias y eliminar grupos previos si force_rebuild
+        if doc_ids:
+            db.query(DetectedSymbol).filter(DetectedSymbol.document_id.in_(doc_ids)).update(
+                {DetectedSymbol.inventory_group_id: None},
+                synchronize_session=False
+            )
+        db.query(SymbolInventoryGroup).filter(SymbolInventoryGroup.review_run_id == review_run.id).delete(synchronize_session=False)
+        db.flush()
 
         docs = db.query(Document).filter(Document.id.in_(doc_ids)).all() if doc_ids else []
         doc_name_map = {d.id: d.filename for d in docs}
@@ -387,6 +428,54 @@ class SymbolInventoryService:
                 s.inventory_group_id = group_record.id
 
             created_groups.append(group_record)
+
+        # Persistir metadatos versionados del inventario en review_run.summary
+        source_snapshot_hash = cls.compute_source_snapshot_hash(db, review_run)
+        run_summary = dict(review_run.summary or {})
+        old_meta = run_summary.get("symbol_inventory_meta", {})
+        recalc_count = old_meta.get("inventory_recalculation_count", 0) + (1 if force_rebuild and old_meta else 0)
+        version_num = f"v{recalc_count + 1}"
+        now_iso = datetime.utcnow().isoformat()
+
+        audit_entry = {
+            "action": "recalculated" if force_rebuild and old_meta else "initial_build",
+            "version": version_num,
+            "recalculation_count": recalc_count,
+            "generated_at": now_iso,
+            "generated_by": requested_by,
+            "source_snapshot_hash": source_snapshot_hash,
+            "groups_count": len(created_groups)
+        }
+        history = list(old_meta.get("audit_history", []))
+        history.append(audit_entry)
+
+        new_meta = {
+            "status": "available",
+            "inventory_build_completed": True,
+            "inventory_version": version_num,
+            "inventory_generated_at": now_iso,
+            "inventory_generated_by": requested_by,
+            "inventory_source_snapshot_hash": source_snapshot_hash,
+            "inventory_recalculation_count": recalc_count,
+            "inventory_algorithm_version": cls.ALGORITHM_VERSION,
+            "audit_history": history
+        }
+        run_summary["symbol_inventory_meta"] = new_meta
+        review_run.summary = run_summary
+        flag_modified(review_run, "summary")
+        db.add(review_run)
+
+        # Actualizar paso 4 si existe
+        step4 = db.query(ReviewRunStep).filter(
+            ReviewRunStep.review_run_id == review_run.id,
+            ReviewRunStep.phase == 4
+        ).first()
+        if step4:
+            s4_out = dict(step4.output_summary or {})
+            s4_out["symbol_inventory_version"] = version_num
+            s4_out["symbol_inventory_built"] = True
+            step4.output_summary = s4_out
+            db.add(step4)
 
         db.commit()
 
@@ -620,3 +709,176 @@ class SymbolInventoryService:
 
         db.flush()
         return findings
+
+    @classmethod
+    def get_default_metrics(cls) -> Dict[str, Any]:
+        """Retorna la estructura de métricas de inventario inicializada con ceros seguros."""
+        return {
+            "documents_reviewed": 0,
+            "sheets_reviewed": 0,
+            "geometric_candidates": 0,
+            "valid_symbol_occurrences": 0,
+            "inventory_groups": 0,
+            "recognized_production": 0,
+            "recognized_sandbox": 0,
+            "recognized_reference_only": 0,
+            "unknown": 0,
+            "ambiguous": 0,
+            "requires_review": 0,
+            "figures_excluded": 0,
+            "not_symbols": 0,
+            "inventory_coverage": 0.0,
+            "production_coverage": 0.0,
+            "sandbox_coverage": 0.0,
+            "unknown_rate": 0.0,
+            "review_required_rate": 0.0,
+            "exclusion_rate": 0.0,
+            "by_document": {}
+        }
+
+    @classmethod
+    def format_group_item(cls, db: Session, g: SymbolInventoryGroup) -> Dict[str, Any]:
+        """Formatea un grupo persistido SymbolInventoryGroup a diccionario seguro."""
+        rep_crop = None
+        if g.representative_occurrence_id:
+            rep_occ = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first()
+            if rep_occ:
+                rep_crop = rep_occ.crop_image_path or rep_occ.occurrence_context_crop_path
+
+        return {
+            "id": g.id,
+            "review_run_id": g.review_run_id,
+            "grouping_key": g.grouping_key,
+            "grouping_method": g.grouping_method,
+            "grouping_confidence": g.grouping_confidence,
+            "grouping_version": g.grouping_version,
+            "display_code": g.display_code,
+            "unknown_group_id": g.unknown_group_id,
+            "representative_occurrence_id": g.representative_occurrence_id,
+            "representative_selection_reason": g.representative_selection_reason,
+            "representative_crop_path": rep_crop,
+            "matched_template_id": g.matched_template_id,
+            "matched_template_version_id": g.matched_template_version_id,
+            "canonical_name": g.canonical_name,
+            "description": g.description,
+            "technical_function": g.technical_function,
+            "standard_reference": g.standard_reference,
+            "catalog_status": g.catalog_status,
+            "confidence_summary": g.confidence_summary or {},
+            "total_occurrences": g.total_occurrences,
+            "occurrences_by_document": g.occurrences_by_document or {},
+            "occurrences_by_sheet": g.occurrences_by_sheet or {},
+            "requires_human_review": g.requires_human_review,
+            "explanation": g.explanation,
+            "created_at": g.created_at.isoformat() if g.created_at else None
+        }
+
+    @classmethod
+    def format_run_inventory(cls, db: Session, review_run: ReviewRun) -> Dict[str, Any]:
+        """
+        Retorna la estructura segura de inventario de simbología garantizando el contrato de API:
+        - status: available | pending | unavailable | failed
+        - metrics con defaults seguros
+        - groups y excluded_groups como listas
+        - versionado e historial de snapshot
+        """
+        default_metrics = cls.get_default_metrics()
+        run_summary = dict(review_run.summary or {})
+        inv_meta = run_summary.get("symbol_inventory_meta", {})
+
+        # Caso 1: Corrida en proceso
+        if review_run.status in ["pending", "running"]:
+            return {
+                "status": "pending",
+                "metrics": default_metrics,
+                "groups": [],
+                "excluded_groups": [],
+                "reason_code": "RUN_IN_PROGRESS",
+                "reason_message": "La corrida de revisión está en ejecución.",
+                "can_generate": False,
+                "inventory_version": None,
+                "inventory_generated_at": None,
+                "inventory_source_snapshot_hash": None
+            }
+
+        # Consultar grupos persistidos
+        existing_groups = db.query(SymbolInventoryGroup).filter(
+            SymbolInventoryGroup.review_run_id == review_run.id
+        ).order_by(SymbolInventoryGroup.display_code.asc()).all()
+
+        if existing_groups:
+            metrics = cls.compute_inventory_metrics(db, review_run, existing_groups)
+            active_groups = []
+            excluded_groups = []
+            for g in existing_groups:
+                item = cls.format_group_item(db, g)
+                if g.catalog_status in ["figure_excluded", "not_symbol"]:
+                    excluded_groups.append(item)
+                else:
+                    active_groups.append(item)
+
+            gen_at = inv_meta.get("inventory_generated_at") or (
+                existing_groups[0].created_at.isoformat() if existing_groups and existing_groups[0].created_at else None
+            )
+
+            return {
+                "status": "available",
+                "metrics": metrics,
+                "groups": active_groups,
+                "excluded_groups": excluded_groups,
+                "reason_code": None,
+                "reason_message": None,
+                "can_generate": True,
+                "inventory_version": inv_meta.get("inventory_version", "v1"),
+                "inventory_generated_at": gen_at,
+                "inventory_source_snapshot_hash": inv_meta.get("inventory_source_snapshot_hash")
+            }
+
+        # Caso sin grupos: ¿Se completó el build o es corrida histórica o corrida fallida?
+        if inv_meta.get("inventory_build_completed") is True:
+            # Corrida procesada pero con 0 símbolos detectados
+            return {
+                "status": "available",
+                "metrics": default_metrics,
+                "groups": [],
+                "excluded_groups": [],
+                "reason_code": None,
+                "reason_message": None,
+                "can_generate": True,
+                "inventory_version": inv_meta.get("inventory_version", "v1"),
+                "inventory_generated_at": inv_meta.get("inventory_generated_at"),
+                "inventory_source_snapshot_hash": inv_meta.get("inventory_source_snapshot_hash")
+            }
+
+        if inv_meta.get("status") == "failed":
+            return {
+                "status": "failed",
+                "metrics": default_metrics,
+                "groups": [],
+                "excluded_groups": [],
+                "reason_code": inv_meta.get("reason_code", "INVENTORY_BUILD_FAILED"),
+                "reason_message": inv_meta.get("reason_message", "Error al procesar inventario."),
+                "can_generate": True,
+                "inventory_version": None,
+                "inventory_generated_at": None,
+                "inventory_source_snapshot_hash": None
+            }
+
+        # Corrida histórica (previa al inventario o sin generación)
+        has_docs = db.query(ReviewRunDocument).filter(
+            ReviewRunDocument.review_run_id == review_run.id
+        ).count() > 0
+
+        return {
+            "status": "unavailable",
+            "metrics": default_metrics,
+            "groups": [],
+            "excluded_groups": [],
+            "reason_code": "INVENTORY_NOT_GENERATED",
+            "reason_message": "Esta corrida fue creada antes del inventario de simbología.",
+            "can_generate": has_docs,
+            "inventory_version": None,
+            "inventory_generated_at": None,
+            "inventory_source_snapshot_hash": None
+        }
+

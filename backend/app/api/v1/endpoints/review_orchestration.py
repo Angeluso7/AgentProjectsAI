@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models.core import Project
-from app.db.models.decision_memory import ReviewRun, ReviewReport
+from app.db.models.decision_memory import ReviewRun, ReviewReport, ReviewRunDocument
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.orchestrator import ReviewOrchestrator
 from app.services.review.export_service import ReviewExportService
@@ -153,50 +153,67 @@ def get_run_symbol_inventory(
             detail="No autorizado para acceder a corridas de otra organización."
         )
 
-    groups, metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+    return SymbolInventoryService.format_run_inventory(db, run)
 
-    active_groups = []
-    excluded_groups = []
-    for g in groups:
-        rep_occ = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first() if g.representative_occurrence_id else None
-        rep_crop = rep_occ.crop_image_path if rep_occ else None
-        item = {
-            "id": g.id,
-            "review_run_id": g.review_run_id,
-            "grouping_key": g.grouping_key,
-            "grouping_method": g.grouping_method,
-            "grouping_confidence": g.grouping_confidence,
-            "grouping_version": g.grouping_version,
-            "display_code": g.display_code,
-            "unknown_group_id": g.unknown_group_id,
-            "representative_occurrence_id": g.representative_occurrence_id,
-            "representative_selection_reason": g.representative_selection_reason,
-            "representative_crop_path": rep_crop,
-            "matched_template_id": g.matched_template_id,
-            "matched_template_version_id": g.matched_template_version_id,
-            "canonical_name": g.canonical_name,
-            "description": g.description,
-            "technical_function": g.technical_function,
-            "standard_reference": g.standard_reference,
-            "catalog_status": g.catalog_status,
-            "confidence_summary": g.confidence_summary or {},
-            "total_occurrences": g.total_occurrences,
-            "occurrences_by_document": g.occurrences_by_document or {},
-            "occurrences_by_sheet": g.occurrences_by_sheet or {},
-            "requires_human_review": g.requires_human_review,
-            "explanation": g.explanation,
-            "created_at": g.created_at.isoformat() if g.created_at else None
-        }
-        if g.catalog_status in ["figure_excluded", "not_symbol"]:
-            excluded_groups.append(item)
-        else:
-            active_groups.append(item)
 
-    return {
-        "metrics": metrics,
-        "groups": active_groups,
-        "excluded_groups": excluded_groups
-    }
+@router.post("/runs/{run_id}/symbol-inventory/regenerate", response_model=SymbolInventoryResponse)
+def regenerate_run_symbol_inventory(
+    run_id: str,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    """
+    Regenera de forma controlada e idempotente el inventario de simbología para una corrida de revisión.
+    No permite ejecución en corridas pending/running.
+    Si los datos fuente y versión del algoritmo no cambiaron y el inventario ya existe, es idempotente.
+    Registra audit trail, versión y timestamp de recálculo.
+    """
+    run = db.query(ReviewRun).filter(ReviewRun.id == run_id).first()
+    if not run:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Corrida '{run_id}' no encontrada.")
+
+    if tenant and tenant.organization and run.organization_id != tenant.organization.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado para regenerar inventario de otra organización."
+        )
+
+    if run.status in ["pending", "running"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se puede regenerar el inventario mientras la corrida de revisión esté en ejecución."
+        )
+
+    has_docs = db.query(ReviewRunDocument).filter(
+        ReviewRunDocument.review_run_id == run.id,
+        ReviewRunDocument.status == "included"
+    ).count() > 0
+
+    if not has_docs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La corrida no contiene documentos válidos para regenerar el inventario."
+        )
+
+    current_source_hash = SymbolInventoryService.compute_source_snapshot_hash(db, run)
+    run_summary = dict(run.summary or {})
+    inv_meta = run_summary.get("symbol_inventory_meta", {})
+    existing_hash = inv_meta.get("inventory_source_snapshot_hash")
+
+    # Idempotencia: si el snapshot no cambió y ya se completó el inventario
+    if existing_hash == current_source_hash and inv_meta.get("inventory_build_completed") is True:
+        logger.info(f"Inventario para run {run.id} ya está actualizado con snapshot {current_source_hash}.")
+        return SymbolInventoryService.format_run_inventory(db, run)
+
+    user_name = getattr(tenant.user, "email", None) or getattr(tenant.user, "username", None) or "user"
+    SymbolInventoryService.build_run_inventory(
+        db=db,
+        review_run=run,
+        force_rebuild=True,
+        requested_by=user_name
+    )
+
+    return SymbolInventoryService.format_run_inventory(db, run)
 
 
 @router.get("/runs/{run_id}/symbol-inventory/groups/{group_id}/occurrences", response_model=List[SymbolOccurrenceSummary])

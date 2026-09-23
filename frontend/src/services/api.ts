@@ -1810,6 +1810,11 @@ export const apiService = {
     return res.data;
   },
 
+  regenerateSymbolInventory: async (runId: string): Promise<import('../types').SymbolInventoryResponse> => {
+    const res = await apiClient.post<import('../types').SymbolInventoryResponse>(`/review/runs/${runId}/symbol-inventory/regenerate`);
+    return res.data;
+  },
+
   getSymbolGroupOccurrences: async (runId: string, groupId: string): Promise<import('../types').SymbolOccurrenceSummaryItem[]> => {
     const res = await apiClient.get<import('../types').SymbolOccurrenceSummaryItem[]>(`/review/runs/${runId}/symbol-inventory/groups/${groupId}/occurrences`);
     return res.data;

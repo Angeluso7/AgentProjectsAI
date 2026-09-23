@@ -155,6 +155,8 @@ class ReviewExportService:
         # Cargar inventario técnico de simbología (Tabla 1 y Tabla 2)
         from app.services.symbols.symbol_inventory_service import SymbolInventoryService
         inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+        inv_meta = (run.summary or {}).get("symbol_inventory_meta", {})
+        inventory_version = inv_meta.get("inventory_version", "v1")
 
         all_occurrences = []
         groups_summary = []
@@ -183,6 +185,7 @@ class ReviewExportService:
             })
 
         run_data["symbol_inventory"] = {
+            "version": inventory_version,
             "metrics": inv_metrics,
             "groups": groups_summary,
             "occurrences": all_occurrences
@@ -220,7 +223,7 @@ class ReviewExportService:
             status="ready",
             documents_snapshot=documents_snapshot,
             baseline_catalog_version="ISA-5.1-2009-CANONICAL-V1",
-            stats_summary=stats
+            stats_summary={**stats, "inventory_version": inventory_version}
         )
         db.add(report)
         db.commit()

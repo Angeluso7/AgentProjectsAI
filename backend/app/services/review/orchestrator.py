@@ -754,7 +754,7 @@ class ReviewOrchestrator:
         doc_map = {d.id: d for d in docs}
 
         from app.services.symbols.symbol_inventory_service import SymbolInventoryService
-        inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, run, force_rebuild=False)
+        formatted_inventory = SymbolInventoryService.format_run_inventory(db, run)
 
         return {
             "id": run.id,
@@ -843,36 +843,5 @@ class ReviewOrchestrator:
                 for rep in reports
             ],
             "baseline_catalog_version": (reports[0].baseline_catalog_version if reports and reports[0].baseline_catalog_version else None) or ("PIP PNC00001 (Sandbox Candidate Baseline v0.1)" if run.execution_mode == "sandbox" else "PIP PNC00001 (Production Formal Baseline)"),
-            "symbol_inventory": {
-                "metrics": inv_metrics,
-                "groups": [
-                    {
-                        "id": g.id,
-                        "review_run_id": g.review_run_id,
-                        "grouping_key": g.grouping_key,
-                        "grouping_method": g.grouping_method,
-                        "grouping_confidence": g.grouping_confidence,
-                        "grouping_version": g.grouping_version,
-                        "display_code": g.display_code,
-                        "unknown_group_id": g.unknown_group_id,
-                        "representative_occurrence_id": g.representative_occurrence_id,
-                        "representative_selection_reason": g.representative_selection_reason,
-                        "matched_template_id": g.matched_template_id,
-                        "matched_template_version_id": g.matched_template_version_id,
-                        "canonical_name": g.canonical_name,
-                        "description": g.description,
-                        "technical_function": g.technical_function,
-                        "standard_reference": g.standard_reference,
-                        "catalog_status": g.catalog_status,
-                        "confidence_summary": g.confidence_summary or {},
-                        "total_occurrences": g.total_occurrences,
-                        "occurrences_by_document": g.occurrences_by_document or {},
-                        "occurrences_by_sheet": g.occurrences_by_sheet or {},
-                        "requires_human_review": g.requires_human_review,
-                        "explanation": g.explanation,
-                        "created_at": g.created_at.isoformat() if g.created_at else None
-                    }
-                    for g in inv_groups
-                ]
-            }
+            "symbol_inventory": formatted_inventory
         }

@@ -533,7 +533,220 @@ async function runTestSuite() {
   }
   console.log('✅ ReviewRunDetailModal rendered with complete KPIs, tabs, sandbox banner, and documents.');
 
-  console.log('\n🎉 ALL 8 COMPREHENSIVE TESTS PASSED SUCCESSFULLY! No router errors or conflicts.');
+  // ====================================================================
+  // TEST: CRASH RESILIENCE & SYMBOL INVENTORY UI STATES
+  // ====================================================================
+  console.log('\n--- Running Symbol Inventory Crash Resilience & UI States Tests ---');
+
+  // 1. run = null: Must not throw, renders empty
+  const nullModalHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={null} onClose={() => {}} />
+  );
+  if (nullModalHtml !== '') {
+    throw new Error('ReviewRunDetailModal should return null when run=null.');
+  }
+  console.log('  ✓ [CRASH TEST 1] run=null does not crash and safely returns empty.');
+
+  // 2. Legacy run with symbol_inventory = null: Must not throw
+  const legacyRun = { ...mockDetailData, symbol_inventory: null as any };
+  const legacyModalHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={legacyRun} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!legacyModalHtml.includes('Inventario')) {
+    throw new Error('ReviewRunDetailModal crashed on legacy run with symbol_inventory=null.');
+  }
+  console.log('  ✓ [CRASH TEST 2] Legacy run with symbol_inventory=null renders safely.');
+
+  // 3. UI State A: available con grupos
+  const runWithGroups = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'available' as const,
+      inventory_version: 'v1',
+      inventory_generated_at: '2026-09-23T12:00:00Z',
+      inventory_source_snapshot_hash: 'hash-abc-123',
+      can_generate: true,
+      metrics: {
+        documents_reviewed: 2,
+        sheets_reviewed: 2,
+        geometric_candidates: 10,
+        valid_symbol_occurrences: 8,
+        inventory_groups: 2,
+        recognized_production: 6,
+        recognized_sandbox: 2,
+        recognized_reference_only: 0,
+        unknown: 0,
+        ambiguous: 0,
+        requires_review: 0,
+        figures_excluded: 2,
+        not_symbols: 0,
+        inventory_coverage: 1.0,
+        production_coverage: 0.75,
+        sandbox_coverage: 0.25,
+        unknown_rate: 0.0,
+        review_required_rate: 0.0,
+        exclusion_rate: 0.2,
+        by_document: {}
+      },
+      groups: [
+        {
+          id: 'grp-01',
+          review_run_id: mockDetailData.id,
+          grouping_key: 'VALVE_GATE',
+          grouping_method: 'template_match',
+          grouping_confidence: 0.98,
+          display_code: 'SYM-V-01',
+          canonical_name: 'Válvula de Compuerta',
+          catalog_status: 'recognized_production',
+          total_occurrences: 6,
+          requires_human_review: false,
+          occurrences_by_document: { '001-PID-PROCESO.pdf': 6 }
+        }
+      ],
+      excluded_groups: []
+    }
+  };
+  const availableGroupsHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runWithGroups} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!availableGroupsHtml.includes('SYM-V-01') || !availableGroupsHtml.includes('Válvula de Compuerta')) {
+    throw new Error('Available with groups failed to render group code or name.');
+  }
+  if (!availableGroupsHtml.includes('Cob. Productiva') || !availableGroupsHtml.includes('Recalcular')) {
+    throw new Error('Available with groups missing metric card or Recalcular button.');
+  }
+  console.log('  ✓ [UI STATE A] available con grupos renders metrics, table, display codes and recalculate action.');
+
+  // 4. UI State B: available vacío (0 símbolos detectados)
+  const runAvailableEmpty = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'available' as const,
+      inventory_version: 'v1',
+      inventory_generated_at: '2026-09-23T12:00:00Z',
+      can_generate: true,
+      metrics: {
+        documents_reviewed: 2,
+        sheets_reviewed: 2,
+        geometric_candidates: 3,
+        valid_symbol_occurrences: 0,
+        inventory_groups: 0,
+        recognized_production: 0,
+        recognized_sandbox: 0,
+        recognized_reference_only: 0,
+        unknown: 0,
+        ambiguous: 0,
+        requires_review: 0,
+        figures_excluded: 2,
+        not_symbols: 1,
+        inventory_coverage: 0.0,
+        production_coverage: 0.0,
+        sandbox_coverage: 0.0,
+        unknown_rate: 0.0,
+        review_required_rate: 0.0,
+        exclusion_rate: 0.67,
+        by_document: {}
+      },
+      groups: [],
+      excluded_groups: []
+    }
+  };
+  const availableEmptyHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runAvailableEmpty} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!availableEmptyHtml.includes('No se detectaron símbolos geométricos válidos')) {
+    throw new Error('Available empty failed to render expected empty state message.');
+  }
+  if (!availableEmptyHtml.includes('Figuras excluidas:') || !availableEmptyHtml.includes('Regenerar Inventario')) {
+    throw new Error('Available empty missing figure counts or regenerate button.');
+  }
+  console.log('  ✓ [UI STATE B] available vacío renders non-error message, candidate/figure counts, and regenerate action.');
+
+  // 5. UI State C: pending
+  const runPending = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'pending' as const,
+      can_generate: false,
+      reason_code: 'RUN_IN_PROGRESS',
+      reason_message: 'La corrida de revisión está en ejecución.',
+      metrics: {} as any,
+      groups: [],
+      excluded_groups: []
+    }
+  };
+  const pendingHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runPending} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!pendingHtml.includes('Inventario de simbología en proceso...')) {
+    throw new Error('Pending state missing loader text.');
+  }
+  console.log('  ✓ [UI STATE C] pending renders in-progress loader and explanation.');
+
+  // 6. UI State D: unavailable (corrida histórica)
+  const runUnavailable = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'unavailable' as const,
+      can_generate: true,
+      reason_code: 'INVENTORY_NOT_GENERATED',
+      reason_message: 'Esta corrida fue creada antes del inventario de simbología.',
+      metrics: {} as any,
+      groups: [],
+      excluded_groups: []
+    }
+  };
+  const unavailableHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runUnavailable} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!unavailableHtml.includes('Inventario no generado en esta corrida') || !unavailableHtml.includes('Generar Inventario Ahora')) {
+    throw new Error('Unavailable state missing historical explanation or Generar Inventario Ahora button.');
+  }
+  console.log('  ✓ [UI STATE D] unavailable renders historical explanation and "Generar Inventario Ahora" action.');
+
+  // 7. UI State E: failed (error técnico con reintento)
+  const runFailed = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'failed' as const,
+      can_generate: true,
+      reason_code: 'INVENTORY_BUILD_FAILED',
+      reason_message: 'Fallo al procesar geometrías de lámina 2.',
+      metrics: {} as any,
+      groups: [],
+      excluded_groups: []
+    }
+  };
+  const failedHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runFailed} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!failedHtml.includes('Error al Cargar o Generar Inventario') || !failedHtml.includes('INVENTORY_BUILD_FAILED') || !failedHtml.includes('Reintentar Generación')) {
+    throw new Error('Failed state missing technical error, reason code, or retry button.');
+  }
+  console.log('  ✓ [UI STATE E] failed renders safe technical error, reason code, and retry actions.');
+
+  // 8. UI State F: API error (status visual failed con reason INVENTORY_API_ERROR)
+  const runApiError = {
+    ...mockDetailData,
+    symbol_inventory: {
+      status: 'failed' as const,
+      can_generate: true,
+      reason_code: 'INVENTORY_API_ERROR',
+      reason_message: 'Error de conexión con el servicio de simbología.',
+      metrics: {} as any,
+      groups: [],
+      excluded_groups: []
+    }
+  };
+  const apiErrorHtml = ReactDOMServer.renderToString(
+    <ReviewRunDetailModal isOpen={true} run={runApiError} initialTab="inventory" onClose={() => {}} />
+  );
+  if (!apiErrorHtml.includes('INVENTORY_API_ERROR') || !apiErrorHtml.includes('Reintentar Consulta')) {
+    throw new Error('API error state missing INVENTORY_API_ERROR code or Reintentar Consulta button.');
+  }
+  console.log('  ✓ [UI STATE F] API error renders failed visual status, INVENTORY_API_ERROR, and retry button.');
+
+  console.log('\n🎉 ALL 15 FRONTEND & SYMBOL INVENTORY COMPONENT TESTS PASSED SUCCESSFULLY! No crashes or unhandled nulls.');
 }
 
 runTestSuite().catch((err) => {

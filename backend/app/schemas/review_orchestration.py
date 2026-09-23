@@ -84,33 +84,6 @@ class ReviewRunExecuteResponse(BaseModel):
     report_sha256: Optional[str] = None
 
 
-class ReviewRunDetailsResponse(BaseModel):
-    id: str
-    project_id: str
-    run_name: str
-    discipline_code: str
-    discipline_name: str
-    topic_code: str
-    topic_name: str
-    execution_mode: str
-    status: str
-    requested_by: str
-    requested_at: Optional[str] = None
-    completed_at: Optional[str] = None
-    execution_time_sec: float
-    rule_count: int
-    document_count: int
-    findings_count: int
-    summary_stats: Dict[str, Any] = {}
-    documents: List[Dict[str, Any]] = []
-    steps: List[Dict[str, Any]] = []
-    executions: List[Dict[str, Any]] = []
-    findings: List[Dict[str, Any]] = []
-    reports: List[Dict[str, Any]] = []
-    baseline_catalog_version: Optional[str] = None
-    symbol_inventory: Optional[Dict[str, Any]] = None
-
-
 class SymbolOccurrenceSummary(BaseModel):
     occurrence_id: str
     inventory_group_id: Optional[str] = None
@@ -199,9 +172,46 @@ class SymbolInventoryMetricsResponse(BaseModel):
 
 
 class SymbolInventoryResponse(BaseModel):
-    metrics: SymbolInventoryMetricsResponse
-    groups: List[SymbolInventoryGroupResponse] = []
-    excluded_groups: List[SymbolInventoryGroupResponse] = []
+    status: str = Field("available", description="Estado del inventario: available | pending | unavailable | failed")
+    metrics: SymbolInventoryMetricsResponse = Field(default_factory=SymbolInventoryMetricsResponse)
+    groups: List[SymbolInventoryGroupResponse] = Field(default_factory=list)
+    excluded_groups: List[SymbolInventoryGroupResponse] = Field(default_factory=list)
+    reason_code: Optional[str] = None
+    reason_message: Optional[str] = None
+    can_generate: bool = False
+    inventory_version: Optional[str] = None
+    inventory_generated_at: Optional[str] = None
+    inventory_source_snapshot_hash: Optional[str] = None
+
+
+class ReviewRunDetailsResponse(BaseModel):
+    id: str
+    project_id: str
+    run_name: str
+    discipline_code: str
+    discipline_name: str
+    topic_code: str
+    topic_name: str
+    execution_mode: str
+    status: str
+    requested_by: str
+    requested_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    execution_time_sec: float
+    rule_count: int
+    document_count: int
+    findings_count: int
+    summary_stats: Dict[str, Any] = {}
+    documents: List[Dict[str, Any]] = []
+    steps: List[Dict[str, Any]] = []
+    executions: List[Dict[str, Any]] = []
+    findings: List[Dict[str, Any]] = []
+    reports: List[Dict[str, Any]] = []
+    baseline_catalog_version: Optional[str] = None
+    symbol_inventory: SymbolInventoryResponse = Field(default_factory=SymbolInventoryResponse)
+
+
+ReviewRunDetailResponse = ReviewRunDetailsResponse
 
 
 class ReviewExportCreateRequest(BaseModel):

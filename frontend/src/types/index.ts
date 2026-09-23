@@ -2900,9 +2900,16 @@ export interface SymbolInventoryMetrics {
 }
 
 export interface SymbolInventoryResponse {
+  status: 'available' | 'pending' | 'unavailable' | 'failed';
   metrics: SymbolInventoryMetrics;
   groups: SymbolInventoryGroupItem[];
   excluded_groups?: SymbolInventoryGroupItem[];
+  reason_code?: string | null;
+  reason_message?: string | null;
+  can_generate?: boolean;
+  inventory_version?: string | null;
+  inventory_generated_at?: string | null;
+  inventory_source_snapshot_hash?: string | null;
 }
 
 export interface ReviewReportItem {

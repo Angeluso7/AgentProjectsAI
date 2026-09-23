@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldCheck,
   AlertTriangle,
+  AlertCircle,
   CheckCircle2,
   XCircle,
   HelpCircle,
@@ -34,6 +35,29 @@ import {
 } from '../types';
 import { apiService } from '../services/api';
 
+const defaultMetrics: SymbolInventoryMetrics = {
+  documents_reviewed: 0,
+  sheets_reviewed: 0,
+  geometric_candidates: 0,
+  valid_symbol_occurrences: 0,
+  inventory_groups: 0,
+  recognized_production: 0,
+  recognized_sandbox: 0,
+  recognized_reference_only: 0,
+  unknown: 0,
+  ambiguous: 0,
+  requires_review: 0,
+  figures_excluded: 0,
+  not_symbols: 0,
+  inventory_coverage: 0,
+  production_coverage: 0,
+  sandbox_coverage: 0,
+  unknown_rate: 0,
+  review_required_rate: 0,
+  exclusion_rate: 0,
+  by_document: {}
+};
+
 interface ReviewRunDetailModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -41,6 +65,7 @@ interface ReviewRunDetailModalProps {
   projectName?: string;
   onNavigateContext?: (finding: ReviewFindingDetail) => void;
   onRefreshRun?: () => void;
+  initialTab?: TabType;
 }
 
 type TabType = 'overview' | 'phases' | 'rules' | 'findings' | 'inventory' | 'exports';
@@ -51,36 +76,94 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
   run,
   projectName,
   onNavigateContext,
-  onRefreshRun
+  onRefreshRun,
+  initialTab = 'overview'
 }) => {
-  const [activeTab, setActiveTab] = useState<TabType>('overview');
+  const [activeTab, setActiveTab] = useState<TabType>(initialTab);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [generatingFormat, setGeneratingFormat] = useState<'json' | 'xlsx' | 'pdf' | null>(null);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'info' | 'success' | 'error' } | null>(null);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
 
   // Estados para Inventario de Simbología y Ocurrencias (Tabla 1 y Tabla 2)
-  const [inventoryData, setInventoryData] = useState<SymbolInventoryResponse | null>(run.symbol_inventory || null);
+  // Inicialización completamente defensiva: nunca lee run.symbol_inventory si run es null
+  const [inventoryData, setInventoryData] = useState<SymbolInventoryResponse | null>(() => run?.symbol_inventory ?? null);
   const [isLoadingInventory, setIsLoadingInventory] = useState<boolean>(false);
+  const [isRegeneratingInventory, setIsRegeneratingInventory] = useState<boolean>(false);
   const [selectedGroup, setSelectedGroup] = useState<SymbolInventoryGroupItem | null>(null);
   const [groupOccurrences, setGroupOccurrences] = useState<SymbolOccurrenceSummaryItem[]>([]);
   const [isLoadingOccurrences, setIsLoadingOccurrences] = useState<boolean>(false);
   const [inventoryFilter, setInventoryFilter] = useState<'all' | 'production' | 'sandbox' | 'unknown' | 'excluded'>('all');
 
-  const loadInventory = async () => {
-    if (inventoryData) return;
+  useEffect(() => {
+    if (run?.symbol_inventory) {
+      setInventoryData(run.symbol_inventory);
+    } else if (!run) {
+      setInventoryData(null);
+    }
+  }, [run?.id, run?.symbol_inventory]);
+
+  const loadInventory = async (force = false) => {
+    if (!run?.id) return;
+    if (!force && inventoryData) return;
     setIsLoadingInventory(true);
     try {
       const data = await apiService.getSymbolInventory(run.id);
       setInventoryData(data);
     } catch (err: any) {
       console.error('Error cargando inventario de simbología:', err);
+      setInventoryData({
+        status: 'failed',
+        metrics: defaultMetrics,
+        groups: [],
+        excluded_groups: [],
+        reason_code: 'INVENTORY_API_ERROR',
+        reason_message: err?.response?.data?.detail || err?.message || 'Error al consultar inventario de simbología.',
+        can_generate: true
+      });
     } finally {
       setIsLoadingInventory(false);
     }
   };
 
+  const handleRegenerateInventory = async () => {
+    if (!run?.id) return;
+    setIsRegeneratingInventory(true);
+    setStatusMessage({ text: 'Regenerando inventario técnico de simbología...', type: 'info' });
+    try {
+      const data = await apiService.regenerateSymbolInventory(run.id);
+      setInventoryData(data);
+      setStatusMessage({
+        text: `Inventario de simbología generado exitosamente (Versión ${data.inventory_version || 'v1'}).`,
+        type: 'success'
+      });
+      if (onRefreshRun) {
+        await onRefreshRun();
+      }
+      setTimeout(() => setStatusMessage(null), 5000);
+    } catch (err: any) {
+      console.error('Error regenerando inventario de simbología:', err);
+      const errMsg = err?.response?.data?.detail || err?.message || 'Error al regenerar inventario.';
+      setStatusMessage({
+        text: errMsg,
+        type: 'error'
+      });
+      setInventoryData({
+        status: 'failed',
+        metrics: defaultMetrics,
+        groups: [],
+        excluded_groups: [],
+        reason_code: 'INVENTORY_BUILD_FAILED',
+        reason_message: errMsg,
+        can_generate: true
+      });
+    } finally {
+      setIsRegeneratingInventory(false);
+    }
+  };
+
   const handleSelectGroup = async (group: SymbolInventoryGroupItem) => {
+    if (!run?.id) return;
     setSelectedGroup(group);
     setIsLoadingOccurrences(true);
     try {
@@ -97,6 +180,32 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
   if (!isOpen || !run) return null;
 
   const isSandbox = run.execution_mode === 'sandbox';
+
+  // Fallback seguro defensivo para inventario
+  const rawInventory = inventoryData ?? run?.symbol_inventory;
+  const inventory: SymbolInventoryResponse = {
+    status: rawInventory?.status ?? 'unavailable',
+    metrics: rawInventory?.metrics ?? defaultMetrics,
+    groups: rawInventory?.groups ?? [],
+    excluded_groups: rawInventory?.excluded_groups ?? [],
+    reason_code: rawInventory?.reason_code ?? (run?.id ? 'INVENTORY_NOT_AVAILABLE' : null),
+    reason_message: rawInventory?.reason_message ?? 'Inventario no disponible.',
+    can_generate: rawInventory?.can_generate ?? Boolean(run?.id),
+    inventory_version: rawInventory?.inventory_version ?? null,
+    inventory_generated_at: rawInventory?.inventory_generated_at ?? null,
+    inventory_source_snapshot_hash: rawInventory?.inventory_source_snapshot_hash ?? null
+  };
+
+  const metrics = inventory.metrics ?? defaultMetrics;
+  const groups = inventory.groups ?? [];
+  const excludedGroups = inventory.excluded_groups ?? [];
+
+  // Derivación de estado empty según requisito 3:
+  // status=available + inventory_generated_at != null + valid_symbol_occurrences=0
+  const isAvailableEmpty = inventory.status === 'available' &&
+    inventory.inventory_generated_at != null &&
+    (metrics.valid_symbol_occurrences ?? 0) === 0 &&
+    groups.length === 0;
 
   const handleDownload = async (reportId: string, format: string) => {
     setDownloadingId(reportId);
@@ -295,7 +404,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
             }`}
           >
             <Shapes className="w-4 h-4" />
-            Inventario de Simbología ({inventoryData?.groups?.length ?? run.symbol_inventory?.groups?.length ?? 0})
+            Inventario de Simbología ({inventory.groups?.length ?? 0})
           </button>
           <button
             type="button"
@@ -737,22 +846,135 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                   </div>
                 </div>
               ) : (
-                /* TABLA 1: INVENTARIO CONSOLIDADO DE SIMBOLOGÍA */
+                /* TABLA 1: INVENTARIO CONSOLIDADO O ESTADOS ALTERNATIVOS */
                 <div className="space-y-6">
-                  {/* Tarjetas de Métricas de Cobertura */}
-                  {(() => {
-                    const metrics: Partial<SymbolInventoryMetrics> = inventoryData?.metrics || {
-                      production_coverage: 0,
-                      sandbox_coverage: 0,
-                      unknown_rate: 0,
-                      valid_symbol_occurrences: 0,
-                      inventory_groups: 0,
-                      figures_excluded: 0,
-                      recognized_production: 0,
-                      recognized_sandbox: 0,
-                      unknown: 0
-                    };
-                    return (
+                  {/* ESTADO 1: PENDING (En proceso) */}
+                  {inventory.status === 'pending' && (
+                    <div className="py-16 flex flex-col items-center justify-center gap-3 text-slate-500">
+                      <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+                      <p className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                        Inventario de simbología en proceso...
+                      </p>
+                      <span className="text-xs text-slate-400">
+                        La corrida de revisión o el recálculo está en ejecución.
+                      </span>
+                    </div>
+                  )}
+
+                  {/* ESTADO 2: UNAVAILABLE (Corrida histórica sin inventario) */}
+                  {inventory.status === 'unavailable' && (
+                    <div className="p-8 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/40 dark:bg-amber-950/20 text-center space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/40 flex items-center justify-center mx-auto text-amber-600 dark:text-amber-400">
+                        <Clock className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-md mx-auto space-y-1">
+                        <h3 className="text-sm font-bold text-amber-900 dark:text-amber-100">
+                          Inventario no generado en esta corrida
+                        </h3>
+                        <p className="text-xs text-amber-700 dark:text-amber-300">
+                          {inventory.reason_message || 'Esta corrida fue creada antes del inventario de simbología.'}
+                        </p>
+                        <p className="text-[11px] text-amber-600/80 dark:text-amber-400/80 pt-1">
+                          Puedes generar el inventario técnico consolidado bajo demanda a partir de las geometrías y documentos existentes sin necesidad de reprocesar toda la auditoría.
+                        </p>
+                      </div>
+                      {inventory.can_generate && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={handleRegenerateInventory}
+                            disabled={isRegeneratingInventory}
+                            className="px-4 py-2 text-xs font-bold rounded-xl bg-amber-600 hover:bg-amber-700 text-white shadow-sm inline-flex items-center gap-2 transition-all disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingInventory ? 'animate-spin' : ''}`} />
+                            {isRegeneratingInventory ? 'Generando Inventario...' : 'Generar Inventario Ahora'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ESTADO 3: FAILED (Error técnico seguro) */}
+                  {inventory.status === 'failed' && (
+                    <div className="p-8 rounded-2xl border border-rose-200 dark:border-rose-900/40 bg-rose-50/40 dark:bg-rose-950/20 text-center space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-rose-100 dark:bg-rose-900/40 flex items-center justify-center mx-auto text-rose-600 dark:text-rose-400">
+                        <AlertCircle className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-md mx-auto space-y-1">
+                        <h3 className="text-sm font-bold text-rose-900 dark:text-rose-100">
+                          Error al Cargar o Generar Inventario
+                        </h3>
+                        <p className="text-xs text-rose-700 dark:text-rose-300">
+                          {inventory.reason_message || 'Ocurrió un error técnico al procesar el inventario de simbología.'}
+                        </p>
+                        {inventory.reason_code && (
+                          <span className="inline-block mt-1 px-2 py-0.5 rounded font-mono text-[10px] bg-rose-200/60 dark:bg-rose-900/60 text-rose-800 dark:text-rose-200">
+                            Código: {inventory.reason_code}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-center gap-3 pt-2">
+                        <button
+                          type="button"
+                          onClick={() => loadInventory(true)}
+                          className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-rose-300 dark:border-rose-800 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/40 transition-colors"
+                        >
+                          Reintentar Consulta
+                        </button>
+                        {inventory.can_generate && (
+                          <button
+                            type="button"
+                            onClick={handleRegenerateInventory}
+                            disabled={isRegeneratingInventory}
+                            className="px-3.5 py-1.5 text-xs font-bold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-sm inline-flex items-center gap-1.5 transition-all disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingInventory ? 'animate-spin' : ''}`} />
+                            {isRegeneratingInventory ? 'Reintentando...' : 'Reintentar Generación'}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ESTADO 4: AVAILABLE PERO VACÍO (0 símbolos detectados) */}
+                  {inventory.status === 'available' && isAvailableEmpty && (
+                    <div className="p-8 rounded-2xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50 text-center space-y-4">
+                      <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto text-slate-500">
+                        <Shapes className="w-6 h-6" />
+                      </div>
+                      <div className="max-w-md mx-auto space-y-1">
+                        <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                          No se detectaron símbolos geométricos válidos
+                        </h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          La corrida de revisión evaluó los documentos pero no identificó geometrías coincidentes con el catálogo de símbolos ni candidatos geométricos válidos.
+                        </p>
+                      </div>
+                      <div className="inline-flex flex-wrap items-center justify-center gap-4 text-xs font-mono text-slate-600 dark:text-slate-400 pt-2 border-t border-slate-200 dark:border-slate-800">
+                        <span>Figuras excluidas: <strong>{metrics.figures_excluded || 0}</strong></span>
+                        <span>No-símbolos: <strong>{metrics.not_symbols || 0}</strong></span>
+                        <span>Láminas revisadas: <strong>{metrics.sheets_reviewed || 0}</strong></span>
+                      </div>
+                      {inventory.can_generate && (
+                        <div className="pt-2">
+                          <button
+                            type="button"
+                            onClick={handleRegenerateInventory}
+                            disabled={isRegeneratingInventory}
+                            className="px-4 py-2 text-xs font-bold rounded-xl bg-blue-600 hover:bg-blue-700 text-white shadow-sm inline-flex items-center gap-2 transition-all disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingInventory ? 'animate-spin' : ''}`} />
+                            {isRegeneratingInventory ? 'Regenerando...' : 'Regenerar Inventario'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ESTADO 5: AVAILABLE CON GRUPOS */}
+                  {inventory.status === 'available' && !isAvailableEmpty && (
+                    <>
+                      {/* Tarjetas de Métricas de Cobertura */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20">
                           <span className="text-[11px] font-bold uppercase text-emerald-700 dark:text-emerald-300">
@@ -802,66 +1024,69 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                           </span>
                         </div>
                       </div>
-                    );
-                  })()}
 
-                  {/* Filtros de la Tabla */}
-                  <div className="flex items-center justify-between flex-wrap gap-2">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold">
-                      {(['all', 'production', 'sandbox', 'unknown', 'excluded'] as const).map((flt) => (
-                        <button
-                          key={flt}
-                          type="button"
-                          onClick={() => setInventoryFilter(flt)}
-                          className={`px-3 py-1 rounded-lg transition-colors ${
-                            inventoryFilter === flt
-                              ? 'bg-blue-600 text-white font-bold'
-                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300'
-                          }`}
-                        >
-                          {flt === 'all' ? 'Todos los Grupos' :
-                           flt === 'production' ? 'Productivos' :
-                           flt === 'sandbox' ? 'Sandbox' :
-                           flt === 'unknown' ? 'Desconocidos' : 'Excluidos'}
-                        </button>
-                      ))}
-                    </div>
+                      {/* Barra de Versión y Filtros de la Tabla */}
+                      <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold">
+                          {(['all', 'production', 'sandbox', 'unknown', 'excluded'] as const).map((flt) => (
+                            <button
+                              key={flt}
+                              type="button"
+                              onClick={() => setInventoryFilter(flt)}
+                              className={`px-3 py-1 rounded-lg transition-colors ${
+                                inventoryFilter === flt
+                                  ? 'bg-blue-600 text-white font-bold'
+                                  : 'bg-slate-100 hover:bg-slate-200 text-slate-700 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300'
+                              }`}
+                            >
+                              {flt === 'all' ? 'Todos los Grupos' :
+                               flt === 'production' ? 'Productivos' :
+                               flt === 'sandbox' ? 'Sandbox' :
+                               flt === 'unknown' ? 'Desconocidos' : 'Excluidos'}
+                            </button>
+                          ))}
+                        </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInventoryData(null);
-                        loadInventory();
-                      }}
-                      className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      Recalcular
-                    </button>
-                  </div>
+                        <div className="flex items-center gap-2">
+                          {inventory.inventory_version && (
+                            <span className="px-2 py-0.5 rounded text-[11px] font-mono bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                              Versión: {inventory.inventory_version}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={handleRegenerateInventory}
+                            disabled={isRegeneratingInventory}
+                            className="px-2.5 py-1 text-xs text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white flex items-center gap-1 rounded bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 transition-colors disabled:opacity-50"
+                          >
+                            <RefreshCw className={`w-3.5 h-3.5 ${isRegeneratingInventory ? 'animate-spin' : ''}`} />
+                            {isRegeneratingInventory ? 'Recalculando...' : 'Recalcular'}
+                          </button>
+                        </div>
+                      </div>
 
-                  {/* Tabla 1: Inventario Consolidado */}
-                  <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs">
-                        <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-500">
-                          <tr>
-                            <th className="px-4 py-3">Código</th>
-                            <th className="px-4 py-3">Identidad & Función Técnica</th>
-                            <th className="px-4 py-3">Estado Catálogo</th>
-                            <th className="px-4 py-3">Norma</th>
-                            <th className="px-4 py-3">Conteo Documentos</th>
-                            <th className="px-4 py-3 text-right">Total</th>
-                            <th className="px-4 py-3 text-right">Confianza</th>
-                            <th className="px-4 py-3 text-center">Acción</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                          {(() => {
-                            const allGroups = [
-                              ...(inventoryData?.groups || run.symbol_inventory?.groups || []),
-                              ...(inventoryFilter === 'all' || inventoryFilter === 'excluded' ? (inventoryData?.excluded_groups || []) : [])
-                            ];
+                      {/* Tabla 1: Inventario Consolidado */}
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900">
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs">
+                            <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-500">
+                              <tr>
+                                <th className="px-4 py-3">Código</th>
+                                <th className="px-4 py-3">Identidad & Función Técnica</th>
+                                <th className="px-4 py-3">Estado Catálogo</th>
+                                <th className="px-4 py-3">Norma</th>
+                                <th className="px-4 py-3">Conteo Documentos</th>
+                                <th className="px-4 py-3 text-right">Total</th>
+                                <th className="px-4 py-3 text-right">Confianza</th>
+                                <th className="px-4 py-3 text-center">Acción</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                              {(() => {
+                                const allGroups = [
+                                  ...groups,
+                                  ...(inventoryFilter === 'all' || inventoryFilter === 'excluded' ? excludedGroups : [])
+                                ];
 
                             const filtered = allGroups.filter((g) => {
                               if (inventoryFilter === 'production') return g.catalog_status === 'recognized_production';
@@ -949,8 +1174,10 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                       </table>
                     </div>
                   </div>
-                </div>
+                </>
               )}
+            </div>
+          )}
             </div>
           )}
 
