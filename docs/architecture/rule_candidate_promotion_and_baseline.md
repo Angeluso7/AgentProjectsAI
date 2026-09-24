@@ -57,8 +57,11 @@ El motor no admite disciplinas ni tópicos huérfanos o no homologados:
 - El tópico debe pertenecer a la disciplina seleccionada.
 - Se verifica la fase de ejecución (`execution_phase`) válida.
 - La fuente canónica de aplicabilidad es `RuleApplicability`, generada con:
-  - `applicability_role = 'governing'`
-  - `approval_status = 'approved'` (para promoción activa) o `'pending'` (para promoción a revisión).
+  - `applicability_role = 'primary'` (vocabulario unificado: `primary`, `secondary`, `general`)
+  - `approval_status = 'approved'` (para promoción activa) o `'proposed'` / `'pending'` (para promoción a revisión).
+- **Validación Estricta de Compatibilidad:**
+  - Si un tópico es específico (no transversal) y no pertenece a la disciplina seleccionada, el backend rechaza la solicitud con `HTTP 422 Unprocessable Entity`.
+  - No se crea `RuleDefinition`, no se crea `RuleApplicability`, no se altera `RuleCandidate` ni se registra decisión de aprobación ante combinaciones incompatibles.
 
 ### 2.5 Exclusión Estricta de Símbolos
 - Los símbolos (`item_type in ('symbol', 'symbol_template', 'legend_symbol')`) **nunca** son promovidos a `RuleDefinition`.

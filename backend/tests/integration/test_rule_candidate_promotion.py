@@ -336,3 +336,188 @@ def test_symbol_cannot_be_promoted_as_rule(client, sample_normative_setup):
     res = client.post(f"/api/v1/rule-candidates/{symbol_cand_id}/promote", headers=headers, json=payload)
     assert res.status_code == status.HTTP_400_BAD_REQUEST
     assert "símbolo" in res.json()["detail"].lower()
+
+
+# ====================================================================
+# PRUEBAS DE VALIDACIÓN DE TAXONOMÍA (Sección B)
+# ====================================================================
+
+def test_taxonomy_piping_pid_symbols_valid(client, sample_normative_setup, db_session):
+    """B.1 PIPING + PID_SYMBOLS: combinación válida (HTTP 200)."""
+    headers = {"x-organization-id": "org_test_promotion", "x-user-id": "lead_1", "x-user-role": "audit_lead"}
+    item_id = sample_normative_setup["item_rule"].id
+
+    payload = {
+        "decision": "approve",
+        "action": "promote_and_activate",
+        "reviewer_rationale": "Validación de simbología en diagramas P&ID de piping.",
+        "rule_code": "PIP-PID-VALV-01",
+        "title": "Válvulas P&ID en Líneas de Proceso",
+        "severity": "high",
+        "discipline_ids": ["PIPING"],
+        "topic_ids": ["PID_SYMBOLS"],
+        "execution_phase": 6,
+        "enabled": True
+    }
+
+    res = client.post(f"/api/v1/rule-candidates/{item_id}/promote", headers=headers, json=payload)
+    assert res.status_code == status.HTTP_200_OK, res.text
+    data = res.json()
+    assert data["rule_code"] == "PIP-PID-VALV-01"
+    assert any(a["discipline"] == "PIPING" and a["topic"] == "PID_SYMBOLS" for a in data["applicabilities"])
+
+
+def test_taxonomy_architecture_pid_symbols_invalid(client, sample_normative_setup, db_session):
+    """B.2 ARCHITECTURE + PID_SYMBOLS: combinación incompatible (HTTP 422). No crea RuleDefinition ni altera candidato."""
+    headers = {"x-organization-id": "org_test_promotion", "x-user-id": "lead_1", "x-user-role": "audit_lead"}
+    
+    # Crear un candidato específico para esta prueba
+    cand_doc = sample_normative_setup["doc"]
+    cand = RuleDocumentItem(
+        id="item-cand-incompat-tax",
+        rule_document_id=cand_doc.id,
+        item_type="rule",
+        title="Regla con Taxonomía Incompatible",
+        code_or_number="INCOMPAT-01",
+        content_text="Texto incompatible",
+        status="validada",
+        promotion_status="pending"
+    )
+    db_session.add(cand)
+    db_session.commit()
+
+    payload = {
+        "decision": "approve",
+        "action": "promote_and_activate",
+        "reviewer_rationale": "Intento inválido de combinar arquitectura con simbología P&ID.",
+        "rule_code": "ARQ-ILLEGAL-PID-01",
+        "title": "Regla Inválida",
+        "severity": "high",
+        "discipline_ids": ["ARCHITECTURE"],
+        "topic_ids": ["PID_SYMBOLS"],
+        "execution_phase": 6,
+        "enabled": True
+    }
+
+    res = client.post(f"/api/v1/rule-candidates/{cand.id}/promote", headers=headers, json=payload)
+    assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, res.text
+    detail = res.json()["detail"]
+    assert detail["error"] == "invalid_taxonomy_combination"
+    assert "PID_SYMBOLS" in detail["message"]
+    assert "PIPING" in detail["message"]
+
+    # Verificar que NO se creó RuleDefinition
+    rule_def = db_session.query(RuleDefinition).filter(RuleDefinition.code == "ARQ-ILLEGAL-PID-01").first()
+    assert rule_def is None
+
+    # Verificar que NO se crearon RuleApplicability
+    apps = db_session.query(RuleApplicability).filter(RuleApplicability.rule_id == "ARQ-ILLEGAL-PID-01").all()
+    assert len(apps) == 0
+
+    # Verificar que el candidato permanece intacto (no promovido)
+    db_session.refresh(cand)
+    assert cand.promotion_status == "pending"
+    assert cand.promoted_rule_definition_id is None
+
+    # Verificar que no se registró decisión de aprobación
+    decision = db_session.query(RuleReviewDecision).filter(RuleReviewDecision.candidate_id == cand.id).first()
+    assert decision is None
+
+
+def test_taxonomy_general_document_completeness_valid(client, sample_normative_setup, db_session):
+    """B.3 GENERAL + DOCUMENT_COMPLETENESS: combinación transversal válida (HTTP 200)."""
+    headers = {"x-organization-id": "org_test_promotion", "x-user-id": "lead_1", "x-user-role": "audit_lead"}
+    item_id = sample_normative_setup["item_rule"].id
+
+    payload = {
+        "decision": "approve",
+        "action": "promote_and_activate",
+        "reviewer_rationale": "Verificación general de suficiencia documental del legajo.",
+        "rule_code": "GEN-DOC-COMP-01",
+        "title": "Completitud de Entregables Generales",
+        "severity": "medium",
+        "discipline_ids": ["GENERAL"],
+        "topic_ids": ["DOCUMENT_COMPLETENESS"],
+        "execution_phase": 3,
+        "enabled": True
+    }
+
+    res = client.post(f"/api/v1/rule-candidates/{item_id}/promote", headers=headers, json=payload)
+    assert res.status_code == status.HTTP_200_OK, res.text
+    data = res.json()
+    assert data["rule_code"] == "GEN-DOC-COMP-01"
+    assert any(a["discipline"] == "GENERAL" and a["topic"] == "DOCUMENT_COMPLETENESS" for a in data["applicabilities"])
+
+
+def test_taxonomy_nonexistent_topic_invalid(client, sample_normative_setup, db_session):
+    """B.4 Topic inexistente en catálogo: retorna HTTP 422 estructurado sin crear regla."""
+    headers = {"x-organization-id": "org_test_promotion", "x-user-id": "lead_1", "x-user-role": "audit_lead"}
+    item_id = sample_normative_setup["item_rule"].id
+
+    payload = {
+        "decision": "approve",
+        "action": "promote_and_activate",
+        "reviewer_rationale": "Prueba con tópico ficticio.",
+        "rule_code": "GEN-FAKE-TOPIC-01",
+        "title": "Regla con Tópico Inexistente",
+        "severity": "medium",
+        "discipline_ids": ["GENERAL"],
+        "topic_ids": ["TOPICO_COMPLETAMENTE_INEXISTENTE_XYZ"],
+        "execution_phase": 3,
+        "enabled": True
+    }
+
+    res = client.post(f"/api/v1/rule-candidates/{item_id}/promote", headers=headers, json=payload)
+    assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, res.text
+    detail = res.json()["detail"]
+    assert detail["error"] == "topic_not_found"
+    assert "TOPICO_COMPLETAMENTE_INEXISTENTE_XYZ" in detail["message"]
+
+    # Verificar que no se creó RuleDefinition
+    assert db_session.query(RuleDefinition).filter(RuleDefinition.code == "GEN-FAKE-TOPIC-01").first() is None
+
+
+def test_taxonomy_inactive_discipline_invalid(client, sample_normative_setup, db_session):
+    """B.5 Disciplina inactiva: retorna HTTP 422 estructurado sin crear regla."""
+    from app.db.models.decision_memory import ReviewDiscipline
+
+    # Marcar una disciplina temporal como inactiva
+    inactive_disc = db_session.query(ReviewDiscipline).filter(ReviewDiscipline.code == "CIVIL").first()
+    if not inactive_disc:
+        inactive_disc = ReviewDiscipline(code="CIVIL", name="Obras Civiles", is_active=False)
+        db_session.add(inactive_disc)
+        db_session.commit()
+    else:
+        inactive_disc.is_active = False
+        db_session.commit()
+
+    headers = {"x-organization-id": "org_test_promotion", "x-user-id": "lead_1", "x-user-role": "audit_lead"}
+    item_id = sample_normative_setup["item_rule"].id
+
+    payload = {
+        "decision": "approve",
+        "action": "promote_and_activate",
+        "reviewer_rationale": "Prueba con disciplina inactiva.",
+        "rule_code": "CIV-INACTIVE-01",
+        "title": "Regla en Disciplina Inactiva",
+        "severity": "medium",
+        "discipline_ids": ["CIVIL"],
+        "topic_ids": ["DOCUMENT_COMPLETENESS"],
+        "execution_phase": 3,
+        "enabled": True
+    }
+
+    try:
+        res = client.post(f"/api/v1/rule-candidates/{item_id}/promote", headers=headers, json=payload)
+        assert res.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY, res.text
+        detail = res.json()["detail"]
+        assert detail["error"] == "inactive_discipline"
+        assert "CIVIL" in detail["message"]
+
+        # Verificar que no se creó RuleDefinition
+        assert db_session.query(RuleDefinition).filter(RuleDefinition.code == "CIV-INACTIVE-01").first() is None
+    finally:
+        # Restaurar estado activo de la disciplina
+        inactive_disc.is_active = True
+        db_session.commit()
+

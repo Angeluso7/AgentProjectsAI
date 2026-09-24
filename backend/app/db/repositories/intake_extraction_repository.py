@@ -793,20 +793,26 @@ class IntakeExtractionRepository:
 
         # Determinar especialidad técnica y tópico para aplicabilidad canónica
         doc_disc_str = (doc.discipline or "general").upper()
+        norm_disc_code = RulePromotionService.DISCIPLINE_ALIASES.get(doc_disc_str, doc_disc_str)
         matched_disc = self.db.query(ReviewDiscipline).filter(
-            or_(ReviewDiscipline.code == doc_disc_str, ReviewDiscipline.code == "GENERAL")
+            or_(ReviewDiscipline.code == norm_disc_code, ReviewDiscipline.code == "GENERAL"),
+            ReviewDiscipline.is_active.is_(True)
         ).first()
         disc_code = matched_disc.code if matched_disc else "GENERAL"
 
-        # Buscar tópico correspondiente o transversal
-        topic = self.db.query(ReviewTopic).filter(
-            or_(
-                ReviewTopic.discipline_id == (matched_disc.id if matched_disc else None),
+        # Buscar tópico correspondiente o transversal compatible
+        topic = None
+        if matched_disc and matched_disc.code != "GENERAL":
+            topic = self.db.query(ReviewTopic).filter(
+                ReviewTopic.discipline_id == matched_disc.id,
+                ReviewTopic.is_active.is_(True)
+            ).first()
+        if not topic:
+            topic = self.db.query(ReviewTopic).filter(
                 ReviewTopic.is_transversal.is_(True),
-                ReviewTopic.code == "PID_SYMBOLS"
-            )
-        ).first()
-        topic_code = topic.code if topic else "PID_SYMBOLS"
+                ReviewTopic.is_active.is_(True)
+            ).first()
+        topic_code = topic.code if topic else "DOCUMENT_COMPLETENESS"
 
         promoted_codes: List[str] = []
         for idx, item in enumerate(valid_items, 1):

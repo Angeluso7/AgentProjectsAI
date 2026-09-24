@@ -418,8 +418,12 @@ class RulePromotionService:
         topic_ids: List[str]
     ) -> Tuple[List[ReviewDiscipline], List[ReviewTopic], List[Tuple[ReviewDiscipline, ReviewTopic]]]:
         """
-        Valida que cada disciplina y tópico existan, estén activos y sean compatibles entre sí.
-        Normaliza alias habituales y asegura auto-siembra si la taxonomía no está inicializada.
+        Valida que cada disciplina y tópico existan, estén activos y sean estrictamente compatibles entre sí.
+        - Cada topic_id debe pertenecer a una disciplina seleccionada O ser transversal (o disciplina GENERAL/all).
+        - Si la disciplina está inactiva o no existe: HTTP 422.
+        - Si el tópico está inactivo o no existe: HTTP 422.
+        - Si la combinación disciplina/tópico es incompatible: HTTP 422 estructurado.
+        - No se crean definiciones ni aplicabilidades huérfanas o erróneas.
         """
         if db.query(ReviewDiscipline).count() == 0:
             try:
@@ -428,38 +432,67 @@ class RulePromotionService:
             except Exception as e:
                 logger.warning(f"No se pudo sembrar taxonomía automáticamente: {e}")
 
+        if not discipline_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "missing_discipline",
+                    "message": "Debe especificar al menos una disciplina técnica válida.",
+                    "field": "discipline_ids"
+                }
+            )
+
+        if not topic_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "missing_topic",
+                    "message": "Debe especificar al menos un tópico técnico de revisión.",
+                    "field": "topic_ids"
+                }
+            )
+
+        # 1. Resolver y validar Disciplinas
         resolved_disciplines: List[ReviewDiscipline] = []
         for d in discipline_ids:
             clean_d = d.strip()
             norm_code = cls.DISCIPLINE_ALIASES.get(clean_d.upper(), clean_d.upper())
+            
             disc = db.query(ReviewDiscipline).filter(
                 or_(
                     ReviewDiscipline.code == norm_code,
                     ReviewDiscipline.code == clean_d.upper(),
                     ReviewDiscipline.id == clean_d,
-                    ReviewDiscipline.name.ilike(f"%{clean_d}%")
-                ),
-                ReviewDiscipline.is_active.is_(True)
+                    ReviewDiscipline.name.ilike(f"{clean_d}")
+                )
             ).first()
 
             if not disc:
-                disc = db.query(ReviewDiscipline).filter(
-                    ReviewDiscipline.code == "GENERAL",
-                    ReviewDiscipline.is_active.is_(True)
-                ).first()
-
-            if not disc:
-                disc = ReviewDiscipline(
-                    code=norm_code[:32] if norm_code else "GENERAL",
-                    name=clean_d,
-                    is_active=True
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "discipline_not_found",
+                        "message": f"La disciplina '{d}' no existe en el catálogo de taxonomía.",
+                        "field": "discipline_ids",
+                        "value": d
+                    }
                 )
-                db.add(disc)
-                db.flush()
+
+            if not disc.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "inactive_discipline",
+                        "message": f"La disciplina '{disc.code}' ({disc.name}) se encuentra inactiva.",
+                        "field": "discipline_ids",
+                        "value": disc.code
+                    }
+                )
 
             if disc not in resolved_disciplines:
                 resolved_disciplines.append(disc)
 
+        # 2. Resolver y validar Tópicos
         resolved_topics: List[ReviewTopic] = []
         for t in topic_ids:
             clean_t = t.strip()
@@ -467,55 +500,82 @@ class RulePromotionService:
                 or_(
                     ReviewTopic.code == clean_t.upper(),
                     ReviewTopic.id == clean_t,
-                    ReviewTopic.name.ilike(f"%{clean_t}%")
-                ),
-                ReviewTopic.is_active.is_(True)
+                    ReviewTopic.name.ilike(f"{clean_t}")
+                )
             ).first()
 
             if not top:
-                top = db.query(ReviewTopic).filter(
-                    or_(
-                        ReviewTopic.is_transversal.is_(True),
-                        ReviewTopic.discipline_id == (resolved_disciplines[0].id if resolved_disciplines else None),
-                        ReviewTopic.code.in_(["DOCUMENT_COMPLETENESS", "PID_SYMBOLS", "REGULATORY_COMPLIANCE"])
-                    ),
-                    ReviewTopic.is_active.is_(True)
-                ).first()
-
-            if not top:
-                top = ReviewTopic(
-                    code="DOCUMENT_COMPLETENESS",
-                    name="Integridad Documental",
-                    is_transversal=True,
-                    is_active=True
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "topic_not_found",
+                        "message": f"El tópico '{t}' no existe en el catálogo de taxonomía.",
+                        "field": "topic_ids",
+                        "value": t
+                    }
                 )
-                db.add(top)
-                db.flush()
+
+            if not top.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail={
+                        "error": "inactive_topic",
+                        "message": f"El tópico '{top.code}' ({top.name}) se encuentra inactivo.",
+                        "field": "topic_ids",
+                        "value": top.code
+                    }
+                )
 
             if top not in resolved_topics:
                 resolved_topics.append(top)
 
-        # Validar compatibilidad: el tópico debe pertenecer a la disciplina O ser transversal
+        # 3. Validar Compatibilidad Estricta Disciplina <-> Tópico
         pairs: List[Tuple[ReviewDiscipline, ReviewTopic]] = []
-        for disc in resolved_disciplines:
-            for top in resolved_topics:
-                if top.is_transversal or top.discipline_id is None or top.discipline_id == disc.id:
+        disc_ids_set = {disc.id for disc in resolved_disciplines}
+        has_general_disc = any(disc.code in ["GENERAL", "ALL"] for disc in resolved_disciplines)
+
+        for top in resolved_topics:
+            is_transversal = bool(top.is_transversal or top.discipline_id is None)
+
+            if is_transversal:
+                # Tópicos transversales son compatibles con cualquier disciplina o GENERAL
+                for disc in resolved_disciplines:
                     pairs.append((disc, top))
+            else:
+                # Tópico específico: debe pertenecer a una de las disciplinas seleccionadas
+                if top.discipline_id in disc_ids_set:
+                    matching_disc = next(d for d in resolved_disciplines if d.id == top.discipline_id)
+                    pairs.append((matching_disc, top))
+                elif has_general_disc:
+                    # Regla transversal/general con disciplina general
+                    general_disc = next(d for d in resolved_disciplines if d.code in ["GENERAL", "ALL"])
+                    pairs.append((general_disc, top))
                 else:
-                    disc_of_topic = db.query(ReviewDiscipline).filter(ReviewDiscipline.id == top.discipline_id).first()
-                    if disc_of_topic and disc_of_topic.code != disc.code:
-                        if len(resolved_disciplines) == 1:
-                            pairs.append((disc, top))
-                        else:
-                            raise HTTPException(
-                                status_code=status.HTTP_400_BAD_REQUEST,
-                                detail=f"El tópico '{top.code}' pertenece a '{disc_of_topic.code}', no a la disciplina '{disc.code}'."
-                            )
+                    # Incompatible: buscar la disciplina propietaria del tópico
+                    topic_disc = db.query(ReviewDiscipline).filter(ReviewDiscipline.id == top.discipline_id).first()
+                    topic_disc_code = topic_disc.code if topic_disc else "DESCONOCIDA"
+                    selected_disc_codes = [d.code for d in resolved_disciplines]
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                        detail={
+                            "error": "invalid_taxonomy_combination",
+                            "message": f"Combinación incompatible: El tópico '{top.code}' pertenece a la disciplina '{topic_disc_code}', no a las disciplinas seleccionadas: {selected_disc_codes}.",
+                            "field": "topic_ids",
+                            "topic_code": top.code,
+                            "topic_discipline": topic_disc_code,
+                            "selected_disciplines": selected_disc_codes
+                        }
+                    )
 
         if not pairs:
-            primary_disc = resolved_disciplines[0]
-            for top in resolved_topics:
-                pairs.append((primary_disc, top))
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={
+                    "error": "no_valid_pairs",
+                    "message": "No se encontraron combinaciones válidas entre las disciplinas y tópicos seleccionados.",
+                    "field": "taxonomy"
+                }
+            )
 
         return resolved_disciplines, resolved_topics, pairs
 
