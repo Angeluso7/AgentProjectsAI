@@ -25,7 +25,9 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
 }) => {
   const [doc, setDoc] = useState<RuleDocument | null>(null);
   const [items, setItems] = useState<RuleDocumentItem[]>([]);
+  const [contentResponse, setContentResponse] = useState<any | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [reprocessing, setReprocessing] = useState<boolean>(false);
   const [saving, setSaving] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -76,13 +78,39 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
     setError(null);
     setSuccessMessage(null);
     try {
-      const data = await apiService.getRuleDocumentDetail(id);
+      const data = await apiService.getRuleDocumentContent(id);
+      setContentResponse(data);
       setDoc(data);
-      setItems(data.items || []);
+      setItems(Array.isArray(data.items) ? data.items : []);
     } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Error al cargar el contenido del documento.');
+      const statusCode = err?.response?.status;
+      if (statusCode === 401 || statusCode === 403) {
+        setError(`No tiene permisos para acceder al contenido del documento (HTTP ${statusCode}).`);
+      } else if (statusCode === 404) {
+        setError('Documento de reglas no encontrado o ha sido eliminado (HTTP 404).');
+      } else if (statusCode === 500) {
+        setError(`Error del servidor al cargar el contenido (HTTP 500): ${err?.response?.data?.detail || 'Inconsistencia de datos'}`);
+      } else {
+        setError(err?.response?.data?.detail || 'Error al cargar el contenido del documento.');
+      }
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleReprocess = async () => {
+    if (!ruleDocumentId) return;
+    setReprocessing(true);
+    setError(null);
+    try {
+      const res = await apiService.reprocessRuleDocumentContent(ruleDocumentId);
+      setSuccessMessage(res.message || 'Contenido reprocesado exitosamente.');
+      await loadDocumentDetails(ruleDocumentId);
+      onConfirmed?.();
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Error al reprocesar el contenido del documento.');
+    } finally {
+      setReprocessing(false);
     }
   };
 
@@ -447,15 +475,34 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
             <BookOpen className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2">
-              <span>Contenido Documental: {doc?.title || 'Cargando...'}</span>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                {items.length} items
-              </span>
-              {(symbolCount > 0 || (doc?.symbols_count || 0) > 0) && (
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
-                  🔘 {symbolCount || doc?.symbols_count} símb.
-                </span>
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-100 flex items-center gap-2 flex-wrap">
+              <span>Contenido Documental: {loading ? 'Cargando...' : (doc?.title || 'Norma')}</span>
+              {!loading && !error && (
+                <>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                    {contentResponse?.summary?.total_items ?? items.length} items
+                  </span>
+                  {(contentResponse?.summary?.rule_candidates ?? ruleCount) > 0 && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-sky-950 text-sky-300 border border-sky-800">
+                      ⚖️ {contentResponse?.summary?.rule_candidates ?? ruleCount} reglas
+                    </span>
+                  )}
+                  {(contentResponse?.summary?.validated_rules ?? 0) > 0 && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-800">
+                      🟢 {contentResponse?.summary?.validated_rules} validadas
+                    </span>
+                  )}
+                  {(contentResponse?.summary?.promoted_rules ?? 0) > 0 && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-800">
+                      🛡️ {contentResponse?.summary?.promoted_rules} en Baseline
+                    </span>
+                  )}
+                  {(symbolCount > 0 || (contentResponse?.summary?.symbol_candidates || 0) > 0) && (
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-950 text-indigo-300 border border-indigo-800">
+                      🔘 {contentResponse?.summary?.symbol_candidates ?? symbolCount} símb.
+                    </span>
+                  )}
+                </>
               )}
             </h3>
             <p className="text-[11px] text-slate-400">
@@ -611,21 +658,73 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
         )}
 
         {error && (
-          <div style={{ backgroundColor: '#881337', borderColor: '#be123c' }} className="p-4 border rounded-xl text-center space-y-1 text-xs text-rose-200">
-            <AlertCircle className="w-6 h-6 text-rose-400 mx-auto" />
-            <p className="font-bold">{error}</p>
+          <div style={{ backgroundColor: '#4c0519', borderColor: '#e11d48' }} className="p-5 border rounded-xl text-center space-y-3 text-xs text-rose-200">
+            <AlertCircle className="w-8 h-8 text-rose-400 mx-auto" />
+            <div>
+              <p className="font-bold text-sm text-rose-100">Error al cargar el contenido del documento</p>
+              <p className="text-slate-300 mt-1">{error}</p>
+            </div>
+            <div className="flex items-center justify-center gap-3 pt-2">
+              <button
+                onClick={() => ruleDocumentId && loadDocumentDetails(ruleDocumentId)}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded-lg font-bold flex items-center gap-1.5 shadow transition-all"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Reintentar</span>
+              </button>
+              <button
+                onClick={handleReprocess}
+                disabled={reprocessing}
+                className="px-3.5 py-1.5 bg-teal-700 hover:bg-teal-600 text-white rounded-lg font-bold flex items-center gap-1.5 shadow transition-all"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${reprocessing ? 'animate-spin' : ''}`} />
+                <span>{reprocessing ? 'Reprocesando...' : 'Reprocesar Contenido'}</span>
+              </button>
+            </div>
           </div>
         )}
 
         {loading ? (
           <div className="flex flex-col items-center justify-center h-48 gap-2 text-slate-400">
             <Loader2 className="w-6 h-6 animate-spin text-teal-400" />
-            <p className="text-xs">Cargando reglas y contenido del documento...</p>
+            <p className="text-xs">Cargando reglas y contenido estructurado del documento...</p>
           </div>
-        ) : filteredItems.length === 0 ? (
+        ) : !error && items.length === 0 ? (
+          <div className="p-10 border border-dashed border-slate-700 rounded-2xl text-center text-slate-400 space-y-4 my-4">
+            <div className="p-3 bg-slate-800/80 rounded-2xl w-fit mx-auto text-teal-400 border border-slate-700">
+              <BookOpen className="w-8 h-8" />
+            </div>
+            <div className="max-w-md mx-auto space-y-1">
+              <h4 className="text-sm font-bold text-slate-200">Este documento no tiene contenido estructurado compatible</h4>
+              <p className="text-xs text-slate-400">
+                {contentResponse?.explanation_code === 'CONTENT_NOT_EXTRACTED'
+                  ? 'Aún no se han estructurado reglas normativas ni candidatos para este documento incorporado.'
+                  : contentResponse?.explanation_code === 'NO_RULE_CANDIDATES_FOUND'
+                  ? 'Este documento solo contiene símbolos o figuras sin reglas prescriptivas extraídas.'
+                  : 'Documento existente o legacy sin candidatos de reglas estructurados.'}
+              </p>
+            </div>
+            <div className="pt-2">
+              <button
+                onClick={handleReprocess}
+                disabled={reprocessing}
+                className="px-4 py-2 bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-500 hover:to-cyan-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 mx-auto shadow-lg transition-all"
+              >
+                <RefreshCw className={`w-4 h-4 ${reprocessing ? 'animate-spin' : ''}`} />
+                <span>{reprocessing ? 'Reprocesando contenido...' : 'Reprocesar contenido'}</span>
+              </button>
+            </div>
+          </div>
+        ) : !error && filteredItems.length === 0 ? (
           <div className="p-10 text-center text-slate-500 space-y-2">
             <AlertCircle className="w-8 h-8 mx-auto text-slate-600" />
-            <p className="text-sm font-semibold text-slate-400">No hay reglas en este filtro</p>
+            <p className="text-sm font-semibold text-slate-400">No hay reglas ni elementos en este filtro</p>
+            <button
+              onClick={() => { setCategoryFilter('all'); setFilterStatus('all'); setSearchTerm(''); }}
+              className="text-xs text-teal-400 hover:underline font-semibold"
+            >
+              Restablecer filtros
+            </button>
           </div>
         ) : (
           <div className="space-y-3">

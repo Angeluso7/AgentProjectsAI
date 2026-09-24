@@ -5,7 +5,7 @@ import {
   ShieldAlert, Sparkles, BookOpen, Layers, Check, Trash2,
   FolderOpen, Plus, Tag, RefreshCw, FileText, CheckCircle2,
   AlertCircle, Table as TableIcon, X, ArrowUpRight, ShieldCheck,
-  SquareCheck, ExternalLink, Award
+  SquareCheck, ExternalLink, Award, Loader2
 } from 'lucide-react';
 import { DocumentContentReviewModal } from '../components/DocumentContentReviewModal';
 import { SymbolCurationStudioModal } from '../components/SymbolCurationStudioModal';
@@ -22,6 +22,14 @@ export const RulesPage: React.FC = () => {
   const [selectedRuleDocId, setSelectedRuleDocId] = useState<string | null>(null);
   const [showContentModal, setShowContentModal] = useState(false);
   const [selectedStudioDoc, setSelectedStudioDoc] = useState<RuleDocument | null>(null);
+
+  // Modal de Impacto de Eliminación
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deletingDoc, setDeletingDoc] = useState<RuleDocument | null>(null);
+  const [deletionImpact, setDeletionImpact] = useState<any | null>(null);
+  const [loadingImpact, setLoadingImpact] = useState(false);
+  const [deletePolicy, setDeletePolicy] = useState<'keep_baseline_source_removed' | 'retire_rules'>('keep_baseline_source_removed');
+  const [deletingInProgress, setDeletingInProgress] = useState(false);
 
   useEffect(() => {
     loadRules();
@@ -71,13 +79,38 @@ export const RulesPage: React.FC = () => {
     }
   };
 
-  const handleDeleteDoc = async (docId: string) => {
-    if (!window.confirm('¿Está seguro de eliminar este documento normativo y sus reglas asociadas?')) return;
+  const handleOpenDeleteModal = async (doc: RuleDocument) => {
+    setDeletingDoc(doc);
+    setShowDeleteModal(true);
+    setLoadingImpact(true);
+    setDeletionImpact(null);
+    setDeletePolicy('keep_baseline_source_removed');
     try {
-      await apiService.deleteRuleDocument(docId);
-      loadRuleDocuments();
+      const impact = await apiService.getRuleDocumentDeletionImpact(doc.id);
+      setDeletionImpact(impact);
+      if (impact.recommended_policy === 'retire_rules') {
+        setDeletePolicy('retire_rules');
+      }
     } catch (err: any) {
-      alert(err.response?.data?.detail || 'Error al eliminar documento.');
+      console.error('Error fetching deletion impact:', err);
+    } finally {
+      setLoadingImpact(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deletingDoc) return;
+    setDeletingInProgress(true);
+    try {
+      await apiService.deleteRuleDocumentWithPolicy(deletingDoc.id, deletePolicy);
+      setShowDeleteModal(false);
+      setDeletingDoc(null);
+      await loadRuleDocuments();
+      await loadRules();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Error al eliminar documento.');
+    } finally {
+      setDeletingInProgress(false);
     }
   };
 
@@ -362,7 +395,7 @@ export const RulesPage: React.FC = () => {
                         <button
                           className="btn btn-secondary"
                           style={{ padding: '5px 8px', fontSize: '11px', color: 'var(--danger)' }}
-                          onClick={() => handleDeleteDoc(doc.id)}
+                          onClick={() => handleOpenDeleteModal(doc)}
                           title="Eliminar documento normativo"
                         >
                           <Trash2 size={12} />
@@ -500,6 +533,265 @@ export const RulesPage: React.FC = () => {
             loadRuleDocuments();
           }}
         />
+      )}
+
+      {/* MODAL DE IMPACTO DE ELIMINACIÓN DE DOCUMENTO NORMATIVO */}
+      {showDeleteModal && deletingDoc && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color, #1e293b)',
+            border: '1px solid var(--border-color, #334155)',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '560px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            {/* Encabezado */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color, #334155)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Trash2 size={20} style={{ color: '#ef4444' }} />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+                  Eliminar Documento Normativo
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingDoc(null);
+                }}
+                disabled={deletingInProgress}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted, #94a3b8)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Cuerpo */}
+            <div style={{ padding: '20px', maxHeight: '70vh', overflowY: 'auto' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <p style={{ margin: '0 0 6px 0', fontSize: '14px', color: '#f1f5f9', fontWeight: 600 }}>
+                  {deletingDoc.title}
+                </p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+                  Disciplina: <span style={{ color: '#38bdf8' }}>{deletingDoc.discipline || 'General'}</span> | Versión: {deletingDoc.version || 'N/A'}
+                </p>
+              </div>
+
+              {loadingImpact ? (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '30px', gap: '10px', color: '#94a3b8' }}>
+                  <Loader2 size={20} className="animate-spin" />
+                  <span>Calculando impacto de eliminación...</span>
+                </div>
+              ) : deletionImpact ? (
+                <div>
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '1fr 1fr',
+                    gap: '12px',
+                    marginBottom: '16px'
+                  }}>
+                    <div style={{
+                      backgroundColor: 'rgba(15, 23, 42, 0.6)',
+                      border: '1px solid #334155',
+                      borderRadius: '8px',
+                      padding: '12px'
+                    }}>
+                      <div style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase' }}>Ítems extraídos</div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: '#f8fafc' }}>{deletionImpact.total_items}</div>
+                    </div>
+                    <div style={{
+                      backgroundColor: deletionImpact.promoted_rules_count > 0 ? 'rgba(234, 179, 8, 0.1)' : 'rgba(15, 23, 42, 0.6)',
+                      border: deletionImpact.promoted_rules_count > 0 ? '1px solid rgba(234, 179, 8, 0.3)' : '1px solid #334155',
+                      borderRadius: '8px',
+                      padding: '12px'
+                    }}>
+                      <div style={{ fontSize: '11px', color: deletionImpact.promoted_rules_count > 0 ? '#facc15' : '#94a3b8', textTransform: 'uppercase' }}>
+                        Reglas en Baseline QA/QC
+                      </div>
+                      <div style={{ fontSize: '18px', fontWeight: 700, color: deletionImpact.promoted_rules_count > 0 ? '#facc15' : '#f8fafc' }}>
+                        {deletionImpact.promoted_rules_count}
+                      </div>
+                    </div>
+                  </div>
+
+                  {deletionImpact.promoted_rules_count > 0 ? (
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{
+                        padding: '10px 14px',
+                        backgroundColor: 'rgba(234, 179, 8, 0.15)',
+                        border: '1px solid rgba(234, 179, 8, 0.3)',
+                        borderRadius: '6px',
+                        color: '#fef08a',
+                        fontSize: '12px',
+                        marginBottom: '14px',
+                        display: 'flex',
+                        alignItems: 'flex-start',
+                        gap: '8px'
+                      }}>
+                        <AlertCircle size={16} style={{ flexShrink: 0, marginTop: '2px', color: '#eab308' }} />
+                        <div>
+                          <strong>Atención:</strong> Este documento tiene reglas promovidas activas en el Baseline QA/QC del Sistema.
+                          Seleccione la política de eliminación para asegurar la consistencia del sistema:
+                        </div>
+                      </div>
+
+                      {/* Lista de reglas afectadas */}
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: '#94a3b8', marginBottom: '6px', textTransform: 'uppercase' }}>
+                          Reglas afectadas ({deletionImpact.affected_rules.length}):
+                        </div>
+                        <div style={{ maxHeight: '120px', overflowY: 'auto', border: '1px solid #334155', borderRadius: '6px', backgroundColor: '#0f172a' }}>
+                          {deletionImpact.affected_rules.map((r: any) => (
+                            <div key={r.rule_id} style={{ padding: '6px 10px', borderBottom: '1px solid #1e293b', fontSize: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <span style={{ fontWeight: 600, color: '#38bdf8' }}>{r.code}</span>
+                              <span style={{ color: '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '300px' }}>{r.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Selector de política */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '14px' }}>
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          border: deletePolicy === 'keep_baseline_source_removed' ? '1px solid #38bdf8' : '1px solid #334155',
+                          backgroundColor: deletePolicy === 'keep_baseline_source_removed' ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
+                          cursor: 'pointer'
+                        }}>
+                          <input
+                            type="radio"
+                            name="delete_policy"
+                            value="keep_baseline_source_removed"
+                            checked={deletePolicy === 'keep_baseline_source_removed'}
+                            onChange={() => setDeletePolicy('keep_baseline_source_removed')}
+                            style={{ marginTop: '3px' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                              Conservar reglas en Baseline QA/QC (Recomendado)
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                              Mantiene las reglas en Baseline marcando su trazabilidad como "fuente retirada". One-Click Review seguirá funcionando normalmente.
+                            </div>
+                          </div>
+                        </label>
+
+                        <label style={{
+                          display: 'flex',
+                          alignItems: 'flex-start',
+                          gap: '10px',
+                          padding: '10px',
+                          borderRadius: '6px',
+                          border: deletePolicy === 'retire_rules' ? '1px solid #ef4444' : '1px solid #334155',
+                          backgroundColor: deletePolicy === 'retire_rules' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                          cursor: 'pointer'
+                        }}>
+                          <input
+                            type="radio"
+                            name="delete_policy"
+                            value="retire_rules"
+                            checked={deletePolicy === 'retire_rules'}
+                            onChange={() => setDeletePolicy('retire_rules')}
+                            style={{ marginTop: '3px' }}
+                          />
+                          <div>
+                            <div style={{ fontSize: '13px', fontWeight: 600, color: '#f8fafc' }}>
+                              Desactivar / retirar reglas del Baseline QA/QC
+                            </div>
+                            <div style={{ fontSize: '11px', color: '#94a3b8' }}>
+                              Desactiva las reglas asociadas en el Baseline QA/QC para que no sean evaluadas en futuros One-Click Reviews.
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{
+                      padding: '10px 14px',
+                      backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                      border: '1px solid rgba(34, 197, 94, 0.25)',
+                      borderRadius: '6px',
+                      color: '#86efac',
+                      fontSize: '12px',
+                      marginBottom: '16px'
+                    }}>
+                      ✓ Este documento no tiene reglas promovidas al Baseline QA/QC. Se puede eliminar de forma segura sin impacto en revisiones.
+                    </div>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* Pie de acciones */}
+            <div style={{
+              padding: '14px 20px',
+              borderTop: '1px solid var(--border-color, #334155)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '10px',
+              backgroundColor: 'rgba(15, 23, 42, 0.4)'
+            }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowDeleteModal(false);
+                  setDeletingDoc(null);
+                }}
+                disabled={deletingInProgress}
+              >
+                Cancelar
+              </button>
+              <button
+                className="btn btn-danger"
+                style={{ backgroundColor: '#dc2626', color: 'white', display: 'flex', alignItems: 'center', gap: '6px' }}
+                onClick={handleConfirmDelete}
+                disabled={deletingInProgress || loadingImpact}
+              >
+                {deletingInProgress ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Eliminar Documento</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

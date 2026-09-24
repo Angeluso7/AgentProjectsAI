@@ -1270,12 +1270,28 @@ export const apiService = {
     const res = await apiClient.get(`/rules/documents/${docId}`);
     return res.data;
   },
-  updateRuleDocument: async (docId: string, payload: any): Promise<any> => {
-    const res = await apiClient.put(`/rules/documents/${docId}`, payload);
+  getRuleDocumentContent: async (docId: string): Promise<any> => {
+    const res = await apiClient.get(`/rules/documents/${docId}/content`);
     return res.data;
   },
-  deleteRuleDocument: async (docId: string): Promise<any> => {
-    const res = await apiClient.delete(`/rules/documents/${docId}`);
+  reprocessRuleDocumentContent: async (docId: string): Promise<any> => {
+    const res = await apiClient.post(`/rules/documents/${docId}/reprocess-content`);
+    return res.data;
+  },
+  getRuleDocumentDeletionImpact: async (docId: string): Promise<any> => {
+    const res = await apiClient.get(`/rules/documents/${docId}/deletion-impact`);
+    return res.data;
+  },
+  deleteRuleDocument: async (docId: string, policy: string = 'keep_baseline_source_removed'): Promise<any> => {
+    const res = await apiClient.delete(`/rules/documents/${docId}`, {
+      params: { policy }
+    });
+    return res.data;
+  },
+  deleteRuleDocumentWithPolicy: async (docId: string, policy: string): Promise<any> => {
+    const res = await apiClient.delete(`/rules/documents/${docId}`, {
+      params: { policy }
+    });
     return res.data;
   },
   getRuleDocumentItems: async (docId: string): Promise<any[]> => {

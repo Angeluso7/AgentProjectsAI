@@ -17,6 +17,10 @@ from app.schemas.intake_extractions import (
 from app.schemas.rule_candidates import (
     PromoteRuleCandidateRequest, PromoteRuleCandidateResponse
 )
+from app.schemas.rule_document_content import (
+    RuleDocumentContentResponse, ReprocessDocumentContentResponse,
+    DeletionImpactResponse, DeleteDocumentRequest
+)
 from app.services.rules.engine import RuleEngine, RuleRegistry
 from app.services.operations.service import OperationsService
 from app.db.repositories.document_repository import DocumentRepository
@@ -66,14 +70,55 @@ def update_rule_document(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento de reglas no encontrado.")
     return doc
 
-@router.delete("/documents/{doc_id}", status_code=status.HTTP_200_OK)
-def delete_rule_document(doc_id: str, db: Session = Depends(get_db)):
-    """Elimina un documento y sus reglas asociadas del Motor de Reglas."""
+@router.get("/documents/{doc_id}/content", response_model=RuleDocumentContentResponse)
+def get_rule_document_content(doc_id: str, db: Session = Depends(get_db)):
+    """Contrato seguro y consistente para revisión de contenido documental normativo."""
     repo = IntakeExtractionRepository(db)
-    ok = repo.delete_rule_document(doc_id)
+    content = repo.get_rule_document_content(doc_id)
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento de reglas no encontrado.")
+    return content
+
+@router.post("/documents/{doc_id}/reprocess-content", response_model=ReprocessDocumentContentResponse)
+def reprocess_rule_document_content(doc_id: str, db: Session = Depends(get_db)):
+    """Reprocesa y extrae contenido estructurado compatible para documentos existentes o legacy."""
+    repo = IntakeExtractionRepository(db)
+    try:
+        res = repo.reprocess_rule_document_content(doc_id)
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error reprocesando contenido: {str(e)}")
+
+@router.get("/documents/{doc_id}/deletion-impact", response_model=DeletionImpactResponse)
+def get_rule_document_deletion_impact(doc_id: str, db: Session = Depends(get_db)):
+    """Analiza el impacto antes de eliminar un documento normativo (reglas promovidas, baseline)."""
+    repo = IntakeExtractionRepository(db)
+    impact = repo.get_rule_document_deletion_impact(doc_id)
+    if not impact:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento de reglas no encontrado.")
+    return impact
+
+@router.delete("/documents/{doc_id}", status_code=status.HTTP_200_OK)
+def delete_rule_document(
+    doc_id: str,
+    policy: Optional[str] = Query("keep_baseline_source_removed"),
+    payload: Optional[DeleteDocumentRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """Elimina un documento y gestiona sus reglas dependientes según la política seleccionada."""
+    chosen_policy = payload.policy if payload else (policy or "keep_baseline_source_removed")
+    if chosen_policy == "cancel":
+        return {"message": "Eliminación cancelada por el usuario."}
+    repo = IntakeExtractionRepository(db)
+    ok = repo.delete_rule_document(doc_id, policy=chosen_policy)
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento de reglas no encontrado.")
-    return {"message": "Documento de reglas eliminado exitosamente."}
+    return {
+        "message": "Documento de reglas eliminado exitosamente.",
+        "policy_applied": chosen_policy
+    }
 
 @router.get("/documents/{doc_id}/items", response_model=List[RuleDocumentItemRead])
 def list_rule_document_items(doc_id: str, db: Session = Depends(get_db)):
