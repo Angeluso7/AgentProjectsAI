@@ -5,7 +5,7 @@ import re
 from datetime import datetime
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from sqlalchemy import desc
+from sqlalchemy import desc, or_, and_
 
 from app.core.settings import settings
 from app.db.models.intake_extractions import (
@@ -766,13 +766,16 @@ class IntakeExtractionRepository:
     ) -> Dict[str, Any]:
         """
         Promueve las reglas validadas/confirmadas de un Documento Normativo
-        hacia las Reglas Baseline QA/QC del Sistema (tabla rule_definitions).
+        hacia las Reglas Baseline QA/QC del Sistema utilizando el servicio canónico
+        RulePromotionService.
         - Solo promueve reglas con status in ['validada', 'active', 'accepted'].
         - Reglas en 'por_confirmar' o 'eliminado' NO se promueven.
-        - Excluye estrictamente elementos tipo 'symbol'/'simbolo' (siguen flujo SymbolTemplate).
-        - Genera auditoría y trazabilidad completa.
+        - Excluye estrictamente elementos tipo 'symbol'/'simbolo'.
+        - Crea RuleDefinition, RuleApplicability approved y registros de auditoría.
         """
-        from app.db.models.decision_memory import RuleDefinition
+        from app.services.rules.promotion_service import RulePromotionService
+        from app.schemas.rule_candidates import PromoteRuleCandidateRequest
+        from app.db.models.decision_memory import ReviewDiscipline, ReviewTopic
 
         doc = self.get_rule_document_by_id(doc_id)
         if not doc:
@@ -788,67 +791,53 @@ class IntakeExtractionRepository:
         if not valid_items:
             raise ValueError("El documento no tiene reglas confirmadas/validadas para promover a Baseline (los símbolos se gestionan en Curación de Símbolos).")
 
+        # Determinar especialidad técnica y tópico para aplicabilidad canónica
+        doc_disc_str = (doc.discipline or "general").upper()
+        matched_disc = self.db.query(ReviewDiscipline).filter(
+            or_(ReviewDiscipline.code == doc_disc_str, ReviewDiscipline.code == "GENERAL")
+        ).first()
+        disc_code = matched_disc.code if matched_disc else "GENERAL"
+
+        # Buscar tópico correspondiente o transversal
+        topic = self.db.query(ReviewTopic).filter(
+            or_(
+                ReviewTopic.discipline_id == (matched_disc.id if matched_disc else None),
+                ReviewTopic.is_transversal.is_(True),
+                ReviewTopic.code == "PID_SYMBOLS"
+            )
+        ).first()
+        topic_code = topic.code if topic else "PID_SYMBOLS"
+
         promoted_codes: List[str] = []
         for idx, item in enumerate(valid_items, 1):
-            # Formatear código de regla determinística
             code = item.code_or_number
             if not code or not code.strip():
-                disc_code = (doc.discipline or "GEN").upper()[:3]
-                code = f"RULE_{disc_code}_{doc.id[:6].upper()}_{idx:02d}"
-            
-            clean_code = re.sub(r"[^A-Za-z0-9_]+", "_", code).upper()
+                disc_prefix = (doc.discipline or "GEN").upper()[:3]
+                code = f"RULE_{disc_prefix}_{doc.id[:6].upper()}_{idx:02d}"
 
-            # Buscar si ya existe la definición
-            existing_rule = self.db.query(RuleDefinition).filter(RuleDefinition.code == clean_code).first()
-            if existing_rule:
-                existing_rule.name = item.title
-                existing_rule.description = item.description or item.content_text or item.title
-                existing_rule.discipline = doc.discipline or "general"
-                existing_rule.version = doc.version or "1.0"
-                existing_rule.category = "normative_compliance"
-                existing_rule.input_requirements = {
-                    "source_document_id": doc.id,
-                    "source_document_title": doc.title,
-                    "rule_document_item_id": item.id,
-                    "authority": doc.authority
-                }
-                existing_rule.is_active = True
-                existing_rule.updated_at = datetime.utcnow()
-                rule_def_id = existing_rule.id
-            else:
-                new_rule = RuleDefinition(
-                    code=clean_code,
-                    name=item.title,
-                    category="normative_compliance",
-                    discipline=doc.discipline or "general",
-                    severity_default="high" if any(w in (item.title + " " + (item.description or "")).lower() for w in ["fuego", "incendio", "evacuacion", "seguridad", "peligro"]) else "medium",
-                    description=item.description or item.content_text or item.title,
-                    input_requirements={
-                        "source_document_id": doc.id,
-                        "source_document_title": doc.title,
-                        "rule_document_item_id": item.id,
-                        "authority": doc.authority
-                    },
-                    rule_logic_type="normative_check",
-                    is_active=True,
-                    version=doc.version or "1.0",
-                    created_at=datetime.utcnow(),
-                    updated_at=datetime.utcnow()
-                )
-                self.db.add(new_rule)
-                self.db.flush()
-                rule_def_id = new_rule.id
+            payload = PromoteRuleCandidateRequest(
+                decision="approve",
+                action="promote_and_activate",
+                reviewer_rationale=f"Promoción masiva aprobada desde documento '{doc.title}'.",
+                rule_code=code,
+                title=item.title,
+                severity="high" if any(w in (item.title + " " + (item.description or "")).lower() for w in ["fuego", "incendio", "evacuacion", "seguridad", "peligro"]) else "medium",
+                discipline_ids=[disc_code],
+                topic_ids=[topic_code],
+                execution_phase=6,
+                enabled=True
+            )
 
-            # Guardar metadatos de auditoría en el item
-            item.metadata_payload = {
-                **(item.metadata_payload or {}),
-                "promoted_to_baseline": True,
-                "promoted_at": datetime.utcnow().isoformat(),
-                "promoted_by": user_id,
-                "rule_definition_id": rule_def_id,
-                "baseline_code": clean_code
-            }
-            promoted_codes.append(clean_code)
+            res = RulePromotionService.promote_candidate(
+                db=self.db,
+                candidate_id=item.id,
+                payload=payload,
+                user_id=user_id,
+                user_role="admin",
+                organization_id=doc.organization_id
+            )
+            if res.rule_code:
+                promoted_codes.append(res.rule_code)
 
         # Actualizar estado del documento
         doc.status = "promovido_baseline"

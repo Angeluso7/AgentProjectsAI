@@ -14,6 +14,9 @@ from app.schemas.intake_extractions import (
     ConfirmRuleDocumentContentRequest, ConfirmRuleDocumentContentResponse,
     PromoteToBaselineResponse
 )
+from app.schemas.rule_candidates import (
+    PromoteRuleCandidateRequest, PromoteRuleCandidateResponse
+)
 from app.services.rules.engine import RuleEngine, RuleRegistry
 from app.services.operations.service import OperationsService
 from app.db.repositories.document_repository import DocumentRepository
@@ -135,10 +138,35 @@ def promote_rule_document_to_baseline(
     try:
         res = repo.promote_rule_document_to_baseline(doc_id)
         return PromoteToBaselineResponse(**res)
+    except HTTPException:
+        raise
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error promoviendo a baseline: {str(e)}")
+
+
+@router.post(
+    "/candidates/{candidate_id}/promote",
+    response_model=PromoteRuleCandidateResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Alias para promover regla candidata a Baseline QA/QC"
+)
+def promote_candidate_alias(
+    candidate_id: str,
+    payload: PromoteRuleCandidateRequest,
+    db: Session = Depends(get_db)
+):
+    """Alias accesible bajo /api/v1/rules/candidates/{candidate_id}/promote."""
+    from app.services.rules.promotion_service import RulePromotionService
+    return RulePromotionService.promote_candidate(
+        db=db,
+        candidate_id=candidate_id,
+        payload=payload,
+        user_id="auditor_lead",
+        user_role="admin"
+    )
+
 
 
 # =========================================================

@@ -5,7 +5,7 @@ from app.api.v1.endpoints import (
     memories, rules, review, training, reports, exports, evaluations, engines, annotations,
     intake_extractions, completeness, observations, consolidated_reports, assistant,
     maturity, acquisition, dashboard, translations, symbol_catalog,
-    review_orchestration
+    review_orchestration, rule_candidates
 )
 
 api_router = APIRouter()
@@ -50,6 +50,7 @@ api_router.include_router(findings.router, prefix="/findings", tags=["findings"]
 
 # 3. Soporte y Dominio
 api_router.include_router(rules.router, prefix="/rules", tags=["rules"])
+api_router.include_router(rule_candidates.router, prefix="/rule-candidates", tags=["rule-candidates"])
 api_router.include_router(reports.router, prefix="/reports", tags=["reports"])
 api_router.include_router(memories.router, prefix="/memories", tags=["memories"])
 api_router.include_router(review_orchestration.router, prefix="/review", tags=["review-orchestration"])

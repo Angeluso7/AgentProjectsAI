@@ -1581,41 +1581,39 @@ class AiDocumentExtractorService:
     ) -> List[Dict[str, Any]]:
         items = []
 
-        # Si viene raw_text (ej: OCR, contenido pegado o texto normativo real), extraer desde él
+        # Si viene raw_text con múltiples párrafos estructurados (ej: documento largo), extraer desde ellos
         if raw_text and raw_text.strip():
             paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
             if not paragraphs or len(paragraphs) == 1:
                 paragraphs = [p.strip() for p in raw_text.split("\n") if p.strip()]
-            if not paragraphs:
-                paragraphs = [raw_text.strip()]
+            if len(paragraphs) >= 5:
+                for idx, para in enumerate(paragraphs[:8], start=1):
+                    clean_para = " ".join(para.split())
+                    p_title = f"{title}: Sección {idx}"
+                    if idx == 1:
+                        item_type = "rule"
+                        cand_type = "rule_candidate"
+                    elif idx == 2:
+                        item_type = "article"
+                        cand_type = "premise_candidate"
+                    else:
+                        item_type = "definition"
+                        cand_type = "premise_candidate"
 
-            for idx, para in enumerate(paragraphs[:8], start=1):
-                clean_para = " ".join(para.split())
-                p_title = f"{title}: Sección {idx}" if len(paragraphs) > 1 else title
-                if idx == 1:
-                    item_type = "rule"
-                    cand_type = "rule_candidate"
-                elif idx == 2:
-                    item_type = "article"
-                    cand_type = "premise_candidate"
-                else:
-                    item_type = "definition"
-                    cand_type = "premise_candidate"
-
-                items.append({
-                    "item_type": item_type,
-                    "candidate_type": cand_type,
-                    "code_or_number": f"SEC-{idx}",
-                    "title": p_title,
-                    "description": clean_para[:220],
-                    "content_text": clean_para,
-                    "derived_text": clean_para[:150],
-                    "ocr_text": clean_para,
-                    "target_destination": "rules_engine" if item_type == "rule" else "knowledge_base",
-                    "item_nature": "official_rule",
-                    "page_number": 1
-                })
-            return items
+                    items.append({
+                        "item_type": item_type,
+                        "candidate_type": cand_type,
+                        "code_or_number": f"SEC-{idx}",
+                        "title": p_title,
+                        "description": clean_para[:220],
+                        "content_text": clean_para,
+                        "derived_text": clean_para[:150],
+                        "ocr_text": clean_para,
+                        "target_destination": "rules_engine" if item_type == "rule" else "knowledge_base",
+                        "item_nature": "official_rule",
+                        "page_number": 1
+                    })
+                return items
 
         # Plantilla predeterminada cuando no hay texto crudo
         # 1. Capítulo Oficial

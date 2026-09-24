@@ -44,6 +44,19 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
   const [editDesc, setEditDesc] = useState('');
   const [editType, setEditType] = useState('rule');
 
+  // Estado para Modal de Promoción de Regla Candidata a Baseline QA/QC
+  const [promotingItem, setPromotingItem] = useState<RuleDocumentItem | null>(null);
+  const [promCode, setPromCode] = useState('');
+  const [promTitle, setPromTitle] = useState('');
+  const [promDiscipline, setPromDiscipline] = useState('GENERAL');
+  const [promTopic, setPromTopic] = useState('REGULATORY_COMPLIANCE');
+  const [promPhase, setPromPhase] = useState(6);
+  const [promSeverity, setPromSeverity] = useState('medium');
+  const [promRationale, setPromRationale] = useState('');
+  const [promAction, setPromAction] = useState<'promote_and_activate' | 'promote_for_review'>('promote_and_activate');
+  const [promSubmitting, setPromSubmitting] = useState(false);
+  const [promSuccess, setPromSuccess] = useState<any | null>(null);
+
   // Posición y tamaño de la ventana flotante (Fondo Sólido Oscuro)
   const [panelPos, setPanelPos] = useState<{ x: number; y: number }>({ x: 80, y: 50 });
   const [panelSize, setPanelSize] = useState<{ width: number; height: number }>({ width: 880, height: 700 });
@@ -198,6 +211,113 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
       }, 1500);
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Error al confirmar contenido del documento.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Abrir Modal de Promoción para una regla candidata individual
+  const handleOpenPromotion = (item: RuleDocumentItem) => {
+    setPromotingItem(item);
+    setPromSuccess(null);
+    setPromTitle(item.title);
+
+    // Derivar y normalizar código
+    let initCode = (item.code_or_number || '').trim().toUpperCase().replace(/[^A-Z0-9_\-]+/g, '_');
+    if (!initCode || initCode.length < 3) {
+      const discPrefix = (doc?.discipline || 'GEN').substring(0, 3).toUpperCase();
+      initCode = `${discPrefix}-RULE-${item.id.substring(0, 6).toUpperCase()}`;
+    }
+    setPromCode(initCode);
+
+    // Mapear disciplina técnica canónica
+    const discStr = (doc?.discipline || 'GENERAL').toUpperCase();
+    if (['ARQUITECTURA', 'ARCHITECTURE'].includes(discStr)) setPromDiscipline('ARCHITECTURE');
+    else if (['ESTRUCTURA', 'ESTRUCTURAS', 'STRUCTURES'].includes(discStr)) setPromDiscipline('STRUCTURES');
+    else if (['TUBERIAS', 'TUBERÍAS', 'PIPING'].includes(discStr)) setPromDiscipline('PIPING');
+    else if (['ELECTRICO', 'ELECTRICA', 'ELECTRICAL'].includes(discStr)) setPromDiscipline('ELECTRICAL');
+    else if (['MECANICA', 'MECÁNICA', 'HVAC'].includes(discStr)) setPromDiscipline('HVAC');
+    else if (['CIVIL'].includes(discStr)) setPromDiscipline('CIVIL');
+    else if (['INCENDIO', 'FIRE_PROTECTION'].includes(discStr)) setPromDiscipline('FIRE_PROTECTION');
+    else if (['SANITARIA', 'SANITARY'].includes(discStr)) setPromDiscipline('SANITARY');
+    else setPromDiscipline('GENERAL');
+
+    setPromTopic('REGULATORY_COMPLIANCE');
+    setPromPhase(6);
+    setPromSeverity('high');
+    setPromRationale(`Promoción técnica de regla normativa desde documento «${doc?.title || 'Fuente'}».`);
+    setPromAction('promote_and_activate');
+  };
+
+  // Enviar Promoción Individual
+  const handleSubmitPromotion = async (actionOverride?: 'promote_and_activate' | 'promote_for_review') => {
+    if (!promotingItem) return;
+    const finalAction = actionOverride || promAction;
+    setPromSubmitting(true);
+    setError(null);
+    try {
+      const res = await apiService.promoteRuleCandidate(promotingItem.id, {
+        decision: 'approve',
+        action: finalAction,
+        reviewer_rationale: promRationale.trim() || 'Aprobación y promoción técnica a Baseline QA/QC.',
+        rule_code: promCode.trim().toUpperCase(),
+        title: promTitle.trim(),
+        severity: promSeverity,
+        discipline_ids: [promDiscipline],
+        topic_ids: [promTopic],
+        execution_phase: promPhase,
+        enabled: finalAction === 'promote_and_activate'
+      });
+
+      setPromSuccess(res);
+      // Actualizar el item localmente en el estado
+      setItems((prev) =>
+        prev.map((i) =>
+          i.id === promotingItem.id
+            ? {
+                ...i,
+                status: 'validada',
+                promotion_status: res.candidate_status,
+                promoted_rule_definition_id: res.rule_definition_id,
+              }
+            : i
+        )
+      );
+
+      // Notificar al componente superior (RulesPage) para refrescar Baseline y Documentos
+      if (onConfirmed) {
+        onConfirmed();
+      }
+
+      setTimeout(() => {
+        setPromotingItem(null);
+        setPromSuccess(null);
+      }, 2200);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Error al promover regla candidata a Baseline QA/QC.');
+    } finally {
+      setPromSubmitting(false);
+    }
+  };
+
+  // Promoción Masiva del Documento Completo a Baseline QA/QC
+  const handlePromoteAllDocumentToBaseline = async () => {
+    if (!ruleDocumentId) return;
+    setSaving(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const res = await apiService.promoteRuleDocumentToBaseline(ruleDocumentId);
+      setSuccessMessage(res.message);
+      if (doc) {
+        setDoc({ ...doc, status: 'promovido_baseline' });
+      }
+      if (onConfirmed) {
+        onConfirmed();
+      }
+      await loadDocumentDetails(ruleDocumentId);
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Error al promover reglas del documento a Baseline QA/QC.');
     } finally {
       setSaving(false);
     }
@@ -625,9 +745,22 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
 
                 {/* Acciones Individuales por Regla */}
                 <div className="flex flex-col items-end gap-2 shrink-0">
-                  <div>{getStatusBadge(item.status)}</div>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                    {item.promoted_rule_definition_id || item.promotion_status === 'promoted' ? (
+                      <span className="px-2 py-0.5 rounded-full bg-purple-950 text-purple-300 border border-purple-700 text-[10px] font-bold flex items-center gap-1 shadow-sm">
+                        <ShieldCheck className="w-3 h-3 text-purple-400" />
+                        <span>✓ En Baseline QA/QC</span>
+                      </span>
+                    ) : item.promotion_status === 'promoted_draft' ? (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-700 text-[10px] font-bold flex items-center gap-1">
+                        <Clock className="w-3 h-3 text-amber-400" />
+                        <span>⏳ En Revisión Baseline</span>
+                      </span>
+                    ) : null}
+                    <div>{getStatusBadge(item.status)}</div>
+                  </div>
 
-                  <div style={{ backgroundColor: '#0f172a', borderColor: '#334155' }} className="flex items-center gap-1.5 p-1 rounded-xl border">
+                  <div style={{ backgroundColor: '#0f172a', borderColor: '#334155' }} className="flex items-center gap-1.5 p-1 rounded-xl border flex-wrap justify-end">
                     
                     {/* 1. EDITAR */}
                     <button
@@ -653,7 +786,7 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
                       <span>Por confirmar</span>
                     </button>
 
-                    {/* 3. VALIDADA */}
+                    {/* 3. VALIDAR CONTENIDO */}
                     <button
                       onClick={() => handleUpdateItemStatus(item, 'validada')}
                       className={`px-2 py-1 text-[11px] font-semibold rounded-lg flex items-center gap-1 transition-all ${
@@ -661,13 +794,29 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
                           ? 'bg-emerald-950 text-emerald-300 border border-emerald-800 font-bold'
                           : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'
                       }`}
-                      title="Marcar como confirmada en este documento"
+                      title="Validar contenido de la regla en este documento"
                     >
                       <Check className="w-3 h-3 text-emerald-400" />
-                      <span>Validada</span>
+                      <span>Validar contenido</span>
                     </button>
 
-                    {/* 4. ELIMINAR */}
+                    {/* 4. PROMOVER A BASELINE (Solo para reglas, nunca símbolos) */}
+                    {!['symbol', 'simbolo', 'symbol_candidate'].includes((item.item_type || '').toLowerCase()) && (
+                      <button
+                        onClick={() => handleOpenPromotion(item)}
+                        className={`px-2.5 py-1 text-[11px] font-bold rounded-lg flex items-center gap-1 transition-all shadow-sm ${
+                          item.promoted_rule_definition_id || item.promotion_status === 'promoted'
+                            ? 'bg-purple-900/80 hover:bg-purple-800 text-purple-200 border border-purple-600'
+                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white'
+                        }`}
+                        title="Promover regla candidata hacia RuleDefinition y Baseline QA/QC del Sistema"
+                      >
+                        <ShieldCheck className="w-3 h-3 text-purple-300" />
+                        <span>{item.promoted_rule_definition_id ? 'Re-promover' : 'Promover a Baseline'}</span>
+                      </button>
+                    )}
+
+                    {/* 5. ELIMINAR */}
                     <button
                       onClick={() => handleUpdateItemStatus(item, 'eliminado')}
                       className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-950 rounded-lg transition-all"
@@ -772,34 +921,330 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
             </div>
           </div>
         )}
+
+        {/* Modal de Promoción de Regla Candidata a Baseline QA/QC */}
+        {promotingItem && (
+          <div style={{ backgroundColor: 'rgba(0, 0, 0, 0.85)' }} className="fixed inset-0 z-[90] flex items-center justify-center p-4 animate-in fade-in duration-150">
+            <div
+              style={{ backgroundColor: '#0f172a', borderColor: '#6366f1' }}
+              className="w-full max-w-2xl max-h-[92vh] overflow-y-auto p-6 border rounded-2xl shadow-2xl space-y-4 text-xs"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-xl bg-purple-950/80 border border-purple-800 text-purple-300">
+                    <ShieldCheck className="w-5 h-5 text-purple-400" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-slate-100">
+                      Promover Regla Candidata a Baseline QA/QC del Sistema
+                    </h3>
+                    <p className="text-[11px] text-slate-400">
+                      Vincular formalmente al catálogo canónico de reglas de revisión y asociar aplicabilidad aprobada.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPromotingItem(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Mensaje de Éxito al promover */}
+              {promSuccess && (
+                <div className="p-3 rounded-xl bg-emerald-950/80 border border-emerald-700 text-emerald-200 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <p className="font-bold">¡Regla promovida exitosamente a Baseline QA/QC!</p>
+                    <p className="text-[11px] text-emerald-300">
+                      Código: <strong>{promSuccess.rule_code}</strong> • Estado Baseline: <strong>{promSuccess.baseline_status}</strong>.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Error */}
+              {error && (
+                <div className="p-3 rounded-xl bg-rose-950/80 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{error}</span>
+                </div>
+              )}
+
+              {/* Grid de Metadatos Inmutables Derivados de DB */}
+              <div style={{ backgroundColor: '#020617', borderColor: '#1e293b' }} className="p-4 rounded-xl border space-y-2">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 border-b border-slate-800/80 pb-1.5">
+                  <span className="font-semibold text-slate-300 uppercase tracking-wider">Metadatos de Linaje Fuente (Inmutables de DB)</span>
+                  <span className="font-mono text-purple-400">ID: {promotingItem.id.substring(0, 8)}...</span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                  <div>
+                    <span className="text-slate-500 block">Documento Fuente:</span>
+                    <span className="text-slate-200 font-semibold truncate block" title={doc?.title || 'Fuente'}>{doc?.title || 'N/A'}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Autoridad / Versión:</span>
+                    <span className="text-slate-200 font-medium">{doc?.authority || 'N/A'} (v{doc?.version || '1.0'})</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Ubicación / Página:</span>
+                    <span className="text-sky-300 font-mono font-bold">Pág. {promotingItem.metadata_payload?.page_number || 1}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block">Evidencia BBox:</span>
+                    <span className="text-slate-300 font-mono text-[10px]">
+                      {promotingItem.metadata_payload?.bbox ? 'Detectado en DB' : 'Referencia textual'}
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <span className="text-slate-500 block text-[10px] uppercase font-bold mt-1">Extracto Normativo Fuente:</span>
+                  <p className="text-xs text-slate-300 bg-slate-900/80 p-2 rounded-lg border border-slate-800 italic font-serif leading-relaxed">
+                    «{promotingItem.content_text || promotingItem.description || promotingItem.title}»
+                  </p>
+                </div>
+              </div>
+
+              {/* Formulario de Especificación de Regla */}
+              <div className="space-y-3 pt-1">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="sm:col-span-2">
+                    <label className="block font-semibold text-slate-300 mb-1">Título de la Regla en Baseline</label>
+                    <input
+                      type="text"
+                      value={promTitle}
+                      onChange={(e) => setPromTitle(e.target.value)}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Código Canónico</label>
+                    <input
+                      type="text"
+                      value={promCode}
+                      onChange={(e) => setPromCode(e.target.value.toUpperCase())}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-purple-300 font-mono font-bold focus:outline-none focus:border-purple-500 uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Disciplina</label>
+                    <select
+                      value={promDiscipline}
+                      onChange={(e) => setPromDiscipline(e.target.value)}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="GENERAL">GENERAL</option>
+                      <option value="ARCHITECTURE">ARQUITECTURA</option>
+                      <option value="STRUCTURES">ESTRUCTURAS</option>
+                      <option value="PIPING">TUBERÍAS / PIPING</option>
+                      <option value="HVAC">CLIMATIZACIÓN / HVAC</option>
+                      <option value="ELECTRICAL">ELECTRICIDAD</option>
+                      <option value="CIVIL">CIVIL</option>
+                      <option value="FIRE_PROTECTION">PROTECCIÓN INCENDIO</option>
+                      <option value="SANITARY">SANITARIA</option>
+                      <option value="BIM_COORDINATION">BIM</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Tópico de Revisión</label>
+                    <select
+                      value={promTopic}
+                      onChange={(e) => setPromTopic(e.target.value)}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="REGULATORY_COMPLIANCE">Cumplimiento Normativo</option>
+                      <option value="DOCUMENT_COMPLETENESS">Completitud Documental</option>
+                      <option value="COORDINATION">Coordinación Especialidades</option>
+                      <option value="SAFETY">Seguridad y Evacuación</option>
+                      <option value="CONSTRUCTABILITY">Constructabilidad</option>
+                      <option value="PID_SYMBOLS">Simbología P&ID</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Fase de Ejecución</label>
+                    <select
+                      value={promPhase}
+                      onChange={(e) => setPromPhase(Number(e.target.value))}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value={1}>Fase 1: Viñetas y Rótulos</option>
+                      <option value={2}>Fase 2: Identificación Planos</option>
+                      <option value={3}>Fase 3: Geometría</option>
+                      <option value={4}>Fase 4: Tablas y Listados</option>
+                      <option value={5}>Fase 5: Simbología</option>
+                      <option value={6}>Fase 6: Reglas Normativas (Default)</option>
+                      <option value={7}>Fase 7: Verificaciones Cruzadas</option>
+                      <option value={8}>Fase 8: Cierre y Emisión</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block font-semibold text-slate-300 mb-1">Severidad Default</label>
+                    <select
+                      value={promSeverity}
+                      onChange={(e) => setPromSeverity(e.target.value)}
+                      style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                      className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    >
+                      <option value="critical">Crítica</option>
+                      <option value="high">Alta (Mayor)</option>
+                      <option value="medium">Media</option>
+                      <option value="low">Baja</option>
+                      <option value="info">Informativa</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-300 mb-1">Razón y Criterio del Revisor (Auditoría HITL)</label>
+                  <textarea
+                    rows={2}
+                    value={promRationale}
+                    onChange={(e) => setPromRationale(e.target.value)}
+                    style={{ backgroundColor: '#020617', borderColor: '#334155' }}
+                    className="w-full px-3 py-1.5 rounded-xl border text-slate-100 focus:outline-none focus:border-purple-500"
+                    placeholder="Indique justificación técnica para incorporar esta regla al Baseline QA/QC..."
+                  />
+                </div>
+
+                {/* Previsualización del Estado Futuro */}
+                <div style={{ backgroundColor: '#020617', borderColor: '#1e293b' }} className="p-3 rounded-xl border flex items-center justify-between text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block font-semibold">Estado Futuro según Acción:</span>
+                    <span className="text-emerald-400 font-bold">
+                      {promAction === 'promote_and_activate'
+                        ? '✓ Baseline Activo (Aprobada) • Inmediatamente ejecutable en One-Click Review'
+                        : '⏳ Borrador de Revisión (Pending) • Requiere visto bueno de Lead/Admin'}
+                    </span>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPromAction('promote_for_review')}
+                      className={`px-2 py-1 rounded-lg border text-[10px] font-semibold transition-all ${
+                        promAction === 'promote_for_review'
+                          ? 'bg-amber-950 text-amber-300 border-amber-700'
+                          : 'text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      Revisión (Draft)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPromAction('promote_and_activate')}
+                      className={`px-2 py-1 rounded-lg border text-[10px] font-semibold transition-all ${
+                        promAction === 'promote_and_activate'
+                          ? 'bg-emerald-950 text-emerald-300 border-emerald-700'
+                          : 'text-slate-400 border-slate-700 hover:text-white'
+                      }`}
+                    >
+                      Activar en Baseline
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleUpdateItemStatus(promotingItem, 'validada');
+                    setPromotingItem(null);
+                  }}
+                  className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200 hover:bg-slate-800 rounded-xl"
+                  title="Sólo valida el contenido local sin crear regla en Baseline"
+                >
+                  Validar contenido solamente
+                </button>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPromotingItem(null)}
+                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                  >
+                    Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={promSubmitting}
+                    onClick={() => handleSubmitPromotion('promote_for_review')}
+                    className="px-3 py-1.5 text-xs font-semibold text-amber-300 bg-amber-950/80 hover:bg-amber-900 border border-amber-700 rounded-xl flex items-center gap-1.5"
+                  >
+                    <Clock className="w-3.5 h-3.5" />
+                    <span>Promover para revisión baseline</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={promSubmitting}
+                    onClick={() => handleSubmitPromotion('promote_and_activate')}
+                    className="px-4 py-1.5 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 rounded-xl shadow-lg flex items-center gap-1.5"
+                  >
+                    {promSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                    <span>Promover y activar en Baseline QA/QC</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer de la Ventana Contenido */}
       <div
         style={{ backgroundColor: '#020617', borderTop: '1px solid #1e293b' }}
-        className="px-5 py-3.5 flex items-center justify-between relative"
+        className="px-5 py-3.5 flex flex-col sm:flex-row items-center justify-between gap-3 relative"
       >
-        <div className="text-xs text-slate-400 max-w-lg">
-          Al hacer clic en <strong>«Aceptar y Confirmar Contenido»</strong> se validan las reglas vigentes en este documento normativo. Para promoverlas al <strong>Baseline QA/QC Global</strong>, usa el botón «Aceptar» en el renglón del documento.
+        <div className="text-xs text-slate-400 max-w-md">
+          <strong>«Validar Contenido»:</strong> valida las reglas en este documento. <strong>«Promover a Baseline QA/QC»:</strong> publica y activa las reglas en el motor global y One-Click Review.
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 rounded-xl"
+            className="px-3.5 py-2 text-xs font-semibold text-slate-400 hover:text-slate-200 rounded-xl"
           >
-            Cancelar
+            Cerrar
           </button>
 
+          {/* Acción 1: Validar Contenido */}
           <button
             onClick={handleConfirmDocumentContent}
             disabled={saving || items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length === 0}
-            className="px-5 py-2 text-xs font-bold text-white bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg flex items-center gap-2"
+            className="px-4 py-2 text-xs font-bold text-teal-200 bg-teal-950/80 hover:bg-teal-900 border border-teal-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow flex items-center gap-1.5"
+            title="Confirma el contenido validado dentro del documento normativo"
           >
-            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
             <span>
-              Aceptar y Confirmar Contenido ({items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length} Validadas)
+              Validar Contenido ({items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length})
             </span>
+          </button>
+
+          {/* Acción 2: Promover y Activar Documento Completo a Baseline QA/QC */}
+          <button
+            onClick={handlePromoteAllDocumentToBaseline}
+            disabled={saving || items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length === 0}
+            className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+            title="Promover y activar todas las reglas validadas hacia Baseline QA/QC del Sistema"
+          >
+            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+            <span>Promover Documento a Baseline QA/QC</span>
           </button>
         </div>
 

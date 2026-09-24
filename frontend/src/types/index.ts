@@ -932,6 +932,16 @@ export interface RuleDefinitionItem {
   input_requirements?: Record<string, any>;
   rule_logic_type: string;
   is_active: boolean;
+  enabled?: boolean;
+  source_status?: string;
+  execution_phase?: number;
+  source_candidate_id?: string;
+  source_document_id?: string;
+  source_document_title?: string;
+  source_page?: number;
+  source_bbox?: Record<string, any>;
+  source_excerpt?: string;
+  source_hash?: string;
   version: string;
   created_at: string;
   updated_at: string;
@@ -1658,6 +1668,11 @@ export interface RuleDocumentItem {
   source_origin?: string;
   source_reference?: string;
   item_nature?: string;
+  promoted_rule_definition_id?: string;
+  promoted_at?: string;
+  promoted_by?: string;
+  promotion_status?: 'pending' | 'promoted_draft' | 'promoted' | 'rejected' | 'superseded' | string;
+  promotion_error?: string;
   metadata_payload?: Record<string, any>;
   created_at: string;
 }

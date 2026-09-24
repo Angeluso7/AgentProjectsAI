@@ -230,13 +230,24 @@ class RuleDocumentItem(Base):
     crop_image_path = Column(String(500), nullable=True)
     
     target_destination = Column(String(30), default="rules_engine", nullable=False)
-    status = Column(String(30), default="active", nullable=False) # active, disabled
+    status = Column(String(30), default="active", nullable=False) # active, disabled, validada, por_confirmar, editado, eliminado
     
+    # Tracking de promoción a Baseline QA/QC
+    promoted_rule_definition_id = Column(String(36), ForeignKey("rule_definitions.id", ondelete="SET NULL"), nullable=True, index=True)
+    promoted_at = Column(DateTime, nullable=True)
+    promoted_by = Column(String(100), nullable=True)
+    promotion_status = Column(String(30), default="pending", nullable=False, index=True) # pending, promoted_draft, promoted, rejected, superseded
+    promotion_error = Column(Text, nullable=True)
+
     metadata_payload = Column(JSON, default=dict)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     # Relaciones
     document = relationship("RuleDocument", back_populates="items")
+
+
+# Alias de dominio explícito
+RuleCandidate = RuleDocumentItem
 
 
 class SupportingKnowledgeItem(Base):

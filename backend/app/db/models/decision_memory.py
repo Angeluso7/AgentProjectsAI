@@ -125,12 +125,42 @@ class RuleDefinition(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
+    # Linaje fuente inmutable de la regla
+    source_candidate_id = Column(String(36), nullable=True, index=True)
+    source_document_id = Column(String(36), nullable=True, index=True)
+    source_page = Column(Integer, nullable=True)
+    source_bbox = Column(JSON, nullable=True)
+    source_excerpt = Column(Text, nullable=True)
+    source_hash = Column(String(64), nullable=True)
+
     # Relaciones
     applicabilities = relationship("RuleApplicability", back_populates="rule", cascade="all, delete-orphan")
     dependencies = relationship("RuleExecutionDependency", foreign_keys=[RuleExecutionDependency.rule_id], back_populates="rule", cascade="all, delete-orphan")
     dependent_rules = relationship("RuleExecutionDependency", foreign_keys=[RuleExecutionDependency.depends_on_rule_id], back_populates="depends_on_rule", cascade="all, delete-orphan")
     executions = relationship("RuleExecution", back_populates="rule", cascade="all, delete-orphan")
     findings = relationship("RuleFinding", back_populates="rule")
+    review_decisions = relationship("RuleReviewDecision", back_populates="rule_definition")
+
+
+class RuleReviewDecision(Base):
+    """Auditoría y registro inmutable de decisiones HITL sobre candidatos de reglas normativas."""
+    __tablename__ = "rule_review_decisions"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    candidate_id = Column(String(36), nullable=False, index=True)
+    rule_definition_id = Column(String(36), ForeignKey("rule_definitions.id", ondelete="SET NULL"), nullable=True, index=True)
+    decision = Column(String(30), nullable=False) # approve, reject, modify, supersede
+    reviewer_id = Column(String(100), nullable=False)
+    reviewer_role = Column(String(50), default="auditor", nullable=False)
+    reviewer_rationale = Column(Text, nullable=True)
+    rule_code = Column(String(100), nullable=True, index=True)
+    payload_snapshot = Column(JSON, default=dict)
+    previous_state = Column(JSON, default=dict)
+    new_state = Column(JSON, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relaciones
+    rule_definition = relationship("RuleDefinition", back_populates="review_decisions")
 
 
 class ReviewRun(Base):

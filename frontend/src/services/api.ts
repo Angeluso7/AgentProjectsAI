@@ -1298,6 +1298,10 @@ export const apiService = {
     const res = await apiClient.post(`/rules/documents/${docId}/promote-to-baseline`);
     return res.data;
   },
+  promoteRuleCandidate: async (candidateId: string, payload: any): Promise<any> => {
+    const res = await apiClient.post(`/rule-candidates/${candidateId}/promote`, payload);
+    return res.data;
+  },
 
   // Motor de Completitud Documental y Ciclo de Vida de Evidencia
   getCompletenessRequirements: async (stage?: string, discipline?: string): Promise<any[]> => {

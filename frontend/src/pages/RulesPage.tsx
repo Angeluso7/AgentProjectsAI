@@ -333,7 +333,7 @@ export const RulesPage: React.FC = () => {
                           <span>Contenido</span>
                         </button>
 
-                        {/* 2. BOTÓN "ACEPTAR" DEL RENGLÓN (Promueve a Baseline QA/QC) */}
+                        {/* 2. BOTÓN DE PROMOCIÓN A BASELINE QA/QC */}
                         <button
                           className="btn btn-primary"
                           style={{
@@ -351,11 +351,11 @@ export const RulesPage: React.FC = () => {
                           title={
                             doc.status === 'promovido_baseline'
                               ? 'Volver a sincronizar reglas validadas hacia Baseline QA/QC'
-                              : 'Promover reglas confirmadas de este documento hacia las Reglas Baseline QA/QC'
+                              : 'Promover y activar reglas validadas de este documento hacia Baseline QA/QC del Sistema'
                           }
                         >
                           <SquareCheck size={13} />
-                          <span>{promotingDocId === doc.id ? 'Promoviendo...' : doc.status === 'promovido_baseline' ? 'Sincronizar Baseline' : 'Aceptar'}</span>
+                          <span>{promotingDocId === doc.id ? 'Promoviendo...' : doc.status === 'promovido_baseline' ? 'Sincronizar Baseline' : 'Promover a Baseline QA/QC'}</span>
                         </button>
 
                         {/* 3. Eliminar Documento */}
@@ -411,7 +411,14 @@ export const RulesPage: React.FC = () => {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {rules.map((r) => {
-            const isPromoted = Boolean(r.input_requirements?.source_document_title || r.input_requirements?.source_document_id);
+            const isPromoted = Boolean(
+              r.source_document_id ||
+              r.source_document_title ||
+              r.input_requirements?.source_document_title ||
+              r.input_requirements?.source_document_id
+            );
+            const sourceDocTitle = r.source_document_title || r.input_requirements?.source_document_title || 'Documento Normativo';
+            const sourcePage = r.source_page ?? r.input_requirements?.source_page;
             return (
               <div
                 key={r.id || r.code}
@@ -436,7 +443,7 @@ export const RulesPage: React.FC = () => {
                     <span className="badge badge-neutral" style={{ fontSize: '10px' }}>v{r.version}</span>
                     {isPromoted && (
                       <span className="badge font-mono" style={{ fontSize: '10px', background: 'rgba(16, 185, 129, 0.15)', color: '#6ee7b7', border: '1px solid rgba(16, 185, 129, 0.4)' }}>
-                        ✓ Promovida desde: {r.input_requirements?.source_document_title || 'Documento Normativo'}
+                        ✓ Promovida desde: {sourceDocTitle}{sourcePage ? ` (Pág. ${sourcePage})` : ''}
                       </span>
                     )}
                   </div>
@@ -474,6 +481,7 @@ export const RulesPage: React.FC = () => {
         }}
         onConfirmed={() => {
           loadRuleDocuments();
+          loadRules();
         }}
       />
 

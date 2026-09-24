@@ -13,7 +13,16 @@ class RuleDefinitionRead(BaseModel):
     input_requirements: Dict[str, Any] = {}
     rule_logic_type: str
     is_active: bool
+    enabled: bool = True
+    source_status: str = "approved"
+    execution_phase: int = 5
     version: str
+    source_candidate_id: Optional[str] = None
+    source_document_id: Optional[str] = None
+    source_page: Optional[int] = None
+    source_bbox: Optional[Any] = None
+    source_excerpt: Optional[str] = None
+    source_hash: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

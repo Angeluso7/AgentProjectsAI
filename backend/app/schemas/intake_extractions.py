@@ -592,6 +592,11 @@ class RuleDocumentItemRead(BaseModel):
     crop_image_path: Optional[str] = None
     target_destination: str
     status: str
+    promoted_rule_definition_id: Optional[str] = None
+    promoted_at: Optional[datetime] = None
+    promoted_by: Optional[str] = None
+    promotion_status: str = "pending"
+    promotion_error: Optional[str] = None
     metadata_payload: Dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
 

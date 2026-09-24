@@ -21,7 +21,7 @@ from app.db.models.decision_memory import (
     RuleDefinition, RuleExecution, ReviewRun, RuleFinding, FindingResolution,
     FindingEvidence, HumanFeedback, DecisionPrecedent,
     ReviewDiscipline, ReviewTopic, RuleApplicability, RuleExecutionDependency,
-    ReviewRunDocument, ReviewRunStep, ReviewReport
+    ReviewRunDocument, ReviewRunStep, ReviewReport, RuleReviewDecision
 )
 from app.db.models.reporting import (
     AuditReport, EvidenceManifest, ProjectStageReportSnapshot
@@ -33,7 +33,7 @@ from app.db.models.active_learning import (
     ManualAnnotation, KnowledgeLibraryEntry, ActiveLearningPromotion
 )
 from app.db.models.intake_extractions import (
-    SourceExtraction, ExtractedItem, RuleDocument, RuleDocumentItem,
+    SourceExtraction, ExtractedItem, RuleDocument, RuleDocumentItem, RuleCandidate,
     StructuredTable, StructuredSymbol, StructuredEquipment, StructuredRulePremise
 )
 from app.db.models.research import (
