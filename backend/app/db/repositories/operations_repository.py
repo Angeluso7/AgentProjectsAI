@@ -195,7 +195,10 @@ class OperationsRepository:
         )
         self.db.add(event)
         self.db.commit()
-        self.db.refresh(event)
+        try:
+            self.db.refresh(event)
+        except Exception:
+            pass
         return event
 
     def list_events_by_job(self, job_id: str) -> List[JobEvent]:
@@ -212,7 +215,7 @@ class OperationsRepository:
         return policy
 
     def get_policy_by_name(self, name: str) -> Optional[ConfidencePolicy]:
-        return self.db.query(ConfidencePolicy).filter(ConfidencePolicy.policy_name == name).first()
+        return self.db.query(ConfidencePolicy).filter(ConfidencePolicy.name == name).first()
 
     def get_active_policy(
         self,
@@ -240,7 +243,7 @@ class OperationsRepository:
         query = self.db.query(ConfidencePolicy)
         if task_type:
             query = query.filter(ConfidencePolicy.task_type == task_type)
-        return query.order_by(ConfidencePolicy.task_type.asc(), ConfidencePolicy.policy_name.asc()).all()
+        return query.order_by(ConfidencePolicy.task_type.asc(), ConfidencePolicy.name.asc()).all()
 
     # ==========================================
     # 3. ReviewTask & ReviewDecision

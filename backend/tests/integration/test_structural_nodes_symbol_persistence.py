@@ -220,9 +220,25 @@ def test_postgres_live_persistence_without_truncation():
     que la inserción de un nodo symbol con hierarchy_path y content_text no falle
     por StringDataRightTruncation(255).
     """
-    pg_url = "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5433/planreview_test"
+    candidates = [
+        "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@plan_review_postgres_test:5432/planreview_test",
+        "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@localhost:5433/planreview_test",
+        "postgresql+psycopg://postgres_migrator:migrator_secure_pass_123@127.0.0.1:5433/planreview_test",
+    ]
+    engine = None
+    for cand in candidates:
+        try:
+            test_eng = create_engine(cand, connect_args={"connect_timeout": 2}, isolation_level="AUTOCOMMIT")
+            with test_eng.connect() as test_conn:
+                test_conn.execute(text("SELECT 1"))
+            engine = test_eng
+            break
+        except Exception:
+            continue
+    if not engine:
+        pytest.skip("Base de datos PostgreSQL de pruebas (puerto 5433 o plan_review_postgres_test) no disponible.")
+
     try:
-        engine = create_engine(pg_url, isolation_level="AUTOCOMMIT")
         with engine.connect() as conn:
             # Asegurar que la tabla y un documento existan para FK
             test_doc_id = str(uuid.uuid4())

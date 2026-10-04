@@ -92,8 +92,7 @@ class ConfidencePolicy(Base):
     __tablename__ = "confidence_policies"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    name = Column(String(100), unique=True, nullable=True)
-    policy_name = Column(String(100), unique=True, nullable=True)
+    name = Column(String(100), unique=True, nullable=False, index=True)
     version = Column(String(30), default="1.0", nullable=False)
     discipline = Column(String(50), default="all", nullable=True)
     applies_to = Column(String(50), nullable=True, index=True)

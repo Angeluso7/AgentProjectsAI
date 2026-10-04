@@ -15,20 +15,25 @@ from app.core.security import hash_password, verify_password, create_access_toke
 from app.services.operations.pipeline_service import ReviewPipelineService
 from app.main import app
 
-TEST_DB_URL = "sqlite:///./test_auth_rbac.db"
-engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
+from sqlalchemy.pool import StaticPool
+
+engine = create_engine(
+    "sqlite:///:memory:",
+    connect_args={"check_same_thread": False},
+    poolclass=StaticPool,
+)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 @pytest.fixture(scope="function", autouse=True)
 def setup_test_db():
     os.environ["TEST_ENFORCE_AUTH"] = "1"
     Base.metadata.create_all(bind=engine)
-    yield
-    os.environ.pop("TEST_ENFORCE_AUTH", None)
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("./test_auth_rbac.db"):
+    try:
+        yield
+    finally:
+        os.environ.pop("TEST_ENFORCE_AUTH", None)
         try:
-            os.remove("./test_auth_rbac.db")
+            Base.metadata.drop_all(bind=engine)
         except Exception:
             pass
 

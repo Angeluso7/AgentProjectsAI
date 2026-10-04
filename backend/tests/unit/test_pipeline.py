@@ -13,20 +13,25 @@ from app.services.operations.pipeline_service import ReviewPipelineService
 from app.core.security import hash_password, create_access_token
 from app.main import app
 
-TEST_DB_URL = "sqlite:///./test_pipeline.db"
+TEST_DB_URL = "sqlite:////tmp/test_pipeline.db"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_test_db():
     Base.metadata.create_all(bind=engine)
-    yield
-    Base.metadata.drop_all(bind=engine)
-    if os.path.exists("./test_pipeline.db"):
+    try:
+        yield
+    finally:
         try:
-            os.remove("./test_pipeline.db")
+            Base.metadata.drop_all(bind=engine)
         except Exception:
             pass
+        if os.path.exists("/tmp/test_pipeline.db"):
+            try:
+                os.remove("/tmp/test_pipeline.db")
+            except Exception:
+                pass
 
 @pytest.fixture
 def db():

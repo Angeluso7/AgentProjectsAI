@@ -14,6 +14,14 @@ from app.core.logging import logger
 
 # Executor en segundo plano para desarrollo y ejecución asíncrona local
 _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="job_worker")
+_active_futures = set()
+
+def wait_for_all_jobs(timeout: float = 3.0) -> None:
+    """Espera que todos los jobs en segundo plano completen su ejecución (útil para pruebas)."""
+    from concurrent.futures import wait
+    current_futures = list(_active_futures)
+    if current_futures:
+        wait(current_futures, timeout=timeout)
 
 class JobDispatcher:
     """Despachador y ejecutor de tareas asíncronas con reintentos acotados y registro de auditoría."""
@@ -24,7 +32,9 @@ class JobDispatcher:
     def dispatch(self, job_id: str, async_mode: bool = True) -> None:
         """Encola o ejecuta un job. Si async_mode=True, se despacha a un hilo en segundo plano."""
         if async_mode:
-            _thread_pool.submit(self._execute_job_in_isolated_session, job_id)
+            fut = _thread_pool.submit(self._execute_job_in_isolated_session, job_id)
+            _active_futures.add(fut)
+            fut.add_done_callback(lambda f: _active_futures.discard(f))
         else:
             self._execute_job_in_isolated_session(job_id)
 
@@ -201,7 +211,12 @@ class JobDispatcher:
             repo.update_job_status(job.id, status="running", stage="detecting_document_symbols", progress_percent=30)
             from app.services.symbols.service import SymbolService
             sym_svc = SymbolService(db)
-            res = sym_svc.detect_document_symbols(document_id=target_id, force_reprocess=force, engine=payload.get("engine", "yolo_sahi_hybrid"))
+            res = sym_svc.detect_document_symbols(
+                document_id=target_id,
+                force_reprocess=force,
+                engine=payload.get("engine", "yolo_sahi_hybrid"),
+                discipline=payload.get("discipline")
+            )
             return {"document_id": target_id, "sheets_processed": len(res), "details": res}
 
         elif jtype == "sheet_rules_eval":

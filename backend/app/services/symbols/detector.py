@@ -27,6 +27,8 @@ class SymbolDetector:
         "outlet_symbol",
         "sanitary_fixture",
         "panel_symbol",
+        "gate_valve",
+        "piping_line",
         "unknown_symbol_candidate"
     ]
 
@@ -126,6 +128,8 @@ class SymbolDetector:
             ("outlet_symbol", "electrical", [dx0 + 0.15, dy0 + 0.30, dx0 + 0.17, dy0 + 0.32], 0.87, {"ampere": 10, "type": "grounded"}),
             ("sanitary_fixture", "plumbing", [dx0 + 0.55, dy0 + 0.30, dx0 + 0.60, dy0 + 0.36], 0.93, {"fixture": "water_closet"}),
             ("panel_symbol", "electrical", [dx0 + 0.05, dy0 + 0.40, dx0 + 0.09, dy0 + 0.46], 0.90, {"panel_name": "TDA-01"}),
+            ("gate_valve", "piping", [dx0 + 0.30, dy0 + 0.35, dx0 + 0.35, dy0 + 0.40], 0.95, {"valve_type": "gate", "tag": "HV-101", "standard": "ASME B16.34"}),
+            ("piping_line", "piping", [dx0 + 0.15, dy0 + 0.37, dx0 + 0.65, dy0 + 0.38], 0.91, {"line_number": "6-CW-101-CS150", "diameter_in": 6, "spec": "CS150"}),
             ("unknown_symbol_candidate", "architecture", [dx0 + 0.70, dy0 + 0.50, dx0 + 0.74, dy0 + 0.54], 0.58, {"note": "Símbolo ambiguo en recinto de servicio"}),
         ]
 
@@ -210,7 +214,11 @@ class SymbolDetector:
             return "architecture"
         if "luminaire" in category or "switch" in category or "outlet" in category or "panel" in category:
             return "electrical"
-        if "sanitary" in category or "pipe" in category:
+        if "sanitary" in category:
+            return "plumbing"
+        if "valve" in category or "piping" in category:
+            return "piping"
+        if "pipe" in category:
             return "plumbing"
         if "column" in category or "beam" in category:
             return "structural"
