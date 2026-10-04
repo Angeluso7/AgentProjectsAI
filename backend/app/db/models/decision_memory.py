@@ -1,4 +1,6 @@
+from __future__ import annotations
 import uuid
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 from sqlalchemy import Column, String, Integer, Float, DateTime, Text, JSON, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
