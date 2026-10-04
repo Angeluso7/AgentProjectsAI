@@ -39,6 +39,9 @@ def upgrade() -> None:
     if 'projects' in existing_tables:
         proj_cols = [col['name'] for col in inspector.get_columns('projects')]
 
+        if 'status' not in proj_cols:
+            op.add_column('projects', sa.Column('status', sa.String(30), nullable=False, server_default='active'))
+
         if 'normalized_code' not in proj_cols:
             op.add_column('projects', sa.Column('normalized_code', sa.String(50), nullable=True))
             # Backfill existente con trim y uppercase
