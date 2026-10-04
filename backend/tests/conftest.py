@@ -38,7 +38,21 @@ def db_session():
         yield db
     finally:
         db.close()
-        Base.metadata.drop_all(bind=engine)
+        try:
+            from app.services.operations.dispatcher import wait_for_all_jobs
+            wait_for_all_jobs(timeout=3.0)
+        except Exception:
+            pass
+        import time
+        for i in range(15):
+            try:
+                Base.metadata.drop_all(bind=engine)
+                break
+            except Exception as e:
+                if i < 14:
+                    time.sleep(0.15)
+                else:
+                    raise
 
 @pytest.fixture(autouse=True)
 def auto_override_db(db_session):

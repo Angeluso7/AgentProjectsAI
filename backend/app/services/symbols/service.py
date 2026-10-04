@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.document_memory import (
-    DocumentSheet, SheetRegion, DetectedSymbol
+    Document, DocumentSheet, SheetRegion, DetectedSymbol
 )
 from app.db.models.template_memory import SymbolTemplate, SymbolLibrary
 from app.db.repositories.document_repository import DocumentRepository
@@ -52,6 +52,10 @@ class SymbolService:
         drawing_region = next((r for r in regions if r.region_type == "drawing_area"), None)
         drawing_bbox_norm = drawing_region.bbox_normalized if drawing_region else [0.05, 0.05, 0.70, 0.90]
 
+        doc = getattr(sheet, "document", None) or self.db.query(Document).filter(Document.id == sheet.document_id).first()
+        proj_id = doc.project_id if doc else None
+        proj_doc_id = doc.id if (doc and doc.project_id) else None
+
         # Consultar librerías de símbolos canónicos en template_memory
         library_templates = self.db.query(SymbolTemplate).all()
 
@@ -80,7 +84,11 @@ class SymbolService:
                 source_engine=dto.source_engine,
                 source_version=dto.source_version,
                 matched_library_entry_id=dto.matched_library_entry_id,
-                attributes=dto.attributes
+                attributes=dto.attributes,
+                project_id=proj_id,
+                project_document_id=proj_doc_id,
+                record_kind="occurrence" if proj_id else "candidate",
+                matching_status="unmatched"
             )
             self.db.add(sym)
             self.db.commit()
@@ -90,7 +98,59 @@ class SymbolService:
             self._evaluate_symbol_policy(sym, sheet)
             created_symbols.append(sym)
 
-        logger.info(f"Lámina {sheet_id}: {len(created_symbols)} símbolos detectados y persistidos.")
+        # ---------------------------------------------------------------------
+        # Extracción de recortes y auto-matching contra catálogo canónico
+        # ---------------------------------------------------------------------
+        from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+        from app.services.symbols.canonical_catalog_service import CanonicalPipingCatalogService
+
+        catalog_svc = CanonicalPipingCatalogService(self.db)
+
+        for sym in created_symbols:
+            if not sym.inner_drawing_bbox:
+                sym.inner_drawing_bbox = sym.bbox_normalized
+            if not sym.cell_bbox:
+                sym.cell_bbox = sym.bbox_normalized
+
+            SymbolInventoryService.ensure_crops_for_symbol(
+                sym,
+                raster_image_path=sheet.raster_image_path,
+                page_width_pt=sheet.width_mm * 72.0 / 25.4 if (sheet.width_mm and sheet.width_mm > 0) else 800.0,
+                page_height_pt=sheet.height_mm * 72.0 / 25.4 if (sheet.height_mm and sheet.height_mm > 0) else 600.0
+            )
+
+            if sym.matching_status == "unmatched":
+                active_templates = catalog_svc.list_canonical_templates(discipline=sym.discipline, status="active")
+                has_active_catalog = len(active_templates) > 0
+
+                if not has_active_catalog:
+                    no_catalog_msg = f"No existe catálogo canónico activo para la disciplina '{sym.discipline}'."
+                    sym.matching_status = "unknown_symbol"
+                    evidence = dict(sym.match_evidence or {})
+                    evidence["catalog_status"] = "no_active_catalog"
+                    evidence["rejection_reason"] = no_catalog_msg
+                    sym.match_evidence = evidence
+                    logger.info(f"Símbolo {sym.id} ({sym.symbol_type}): {no_catalog_msg}")
+                else:
+                    try:
+                        match_resp = catalog_svc.match_occurrence(
+                            occurrence_id=sym.id,
+                            discipline=sym.discipline,
+                            crop_image_path=sym.crop_image_path
+                        )
+                        logger.info(
+                            f"Símbolo {sym.id} ({sym.symbol_type}) auto-match: status={match_resp.matching_status}"
+                        )
+                    except Exception as match_err:
+                        logger.warning(f"Error en auto-matching para símbolo {sym.id}: {match_err}")
+
+            self.db.add(sym)
+
+        self.db.commit()
+        for sym in created_symbols:
+            self.db.refresh(sym)
+
+        logger.info(f"Lámina {sheet_id}: {len(created_symbols)} símbolos detectados, procesados y persistidos.")
         return created_symbols
 
     def _evaluate_symbol_policy(self, symbol: DetectedSymbol, sheet: DocumentSheet) -> None:
@@ -157,20 +217,43 @@ class SymbolService:
         self,
         document_id: str,
         force_reprocess: bool = False,
-        engine: str = "yolo_sahi_hybrid"
+        engine: str = "yolo_sahi_hybrid",
+        discipline: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        doc = self.db.query(Document).filter(Document.id == document_id).first()
+        effective_discipline = discipline
+        if not effective_discipline and doc:
+            meta = doc.metadata_info or {}
+            effective_discipline = meta.get("discipline") or (doc.project.discipline if getattr(doc, "project", None) else None)
+
         sheets = self.doc_repo.list_sheets_by_document(document_id)
         if not sheets:
             raise ValueError(f"El documento '{document_id}' no posee láminas.")
 
         results = []
         for s in sheets:
-            syms = self.detect_sheet_symbols(sheet_id=s.id, force_reprocess=force_reprocess, engine=engine)
+            syms = self.detect_sheet_symbols(
+                sheet_id=s.id,
+                force_reprocess=force_reprocess,
+                engine=engine,
+                discipline=effective_discipline
+            )
+            matched_count = sum(1 for sym in syms if sym.matching_status == "matched")
+            unknown_count = sum(1 for sym in syms if sym.matching_status == "unknown_symbol")
+            unmatched_count = sum(1 for sym in syms if sym.matching_status == "unmatched")
+            has_active_catalog = any(
+                sym.match_evidence.get("catalog_status") != "no_active_catalog"
+                for sym in syms if sym.match_evidence
+            )
             results.append({
                 "sheet_id": s.id,
                 "sheet_number": s.sheet_number,
                 "symbols_count": len(syms),
-                "symbols": [sym.id for sym in syms]
+                "symbols": [sym.id for sym in syms],
+                "active_catalog_found": has_active_catalog,
+                "matched_count": matched_count,
+                "unknown_count": unknown_count,
+                "unmatched_count": unmatched_count
             })
         return results
 

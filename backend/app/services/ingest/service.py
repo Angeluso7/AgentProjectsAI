@@ -473,6 +473,30 @@ class IngestService:
             except Exception as e:
                 logger.warning(f"Extracción de secciones/tablas PDF falló para '{doc.filename}': {e}")
 
+            # Disparo asíncrono de detección de símbolos y matching (no bloquea el upload)
+            try:
+                from app.services.operations.service import OperationsService
+                ops_svc = OperationsService(self.db)
+                doc_discipline = (doc.metadata_info or {}).get("discipline")
+                if not doc_discipline and getattr(doc, "project", None):
+                    doc_discipline = doc.project.discipline
+
+                ops_svc.submit_job(
+                    job_type="document_symbol_detect",
+                    target_type="document",
+                    target_id=doc.id,
+                    project_id=doc.project_id,
+                    input_payload={
+                        "discipline": doc_discipline,
+                        "engine": "yolo_sahi_hybrid",
+                        "auto_match_catalog": True
+                    },
+                    async_mode=True
+                )
+                logger.info(f"Job asíncrono document_symbol_detect encolado para documento {doc.id} (disciplina: {doc_discipline})")
+            except Exception as job_err:
+                logger.warning(f"No se pudo encolar job asíncrono document_symbol_detect para doc {doc.id}: {job_err}")
+
             logger.info(f"Documento procesado exitosamente: {doc.filename} ({page_count} hojas rasterizadas a {target_dpi} DPI)")
             return doc
 
