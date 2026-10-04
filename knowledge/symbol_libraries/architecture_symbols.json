@@ -1,0 +1,28 @@
+{
+  "name": "ISO-128-Architecture-Standard",
+  "discipline": "architecture",
+  "standard_name": "ISO 128 / NCh 1471",
+  "description": "Simbología canónica para planos de arquitectura y edificación",
+  "symbols": [
+    {
+      "symbol_class": "door_single_swing",
+      "display_name": "Puerta Batiente 1 Hoja 90°",
+      "aliases": ["P", "PUERTA", "DOOR"]
+    },
+    {
+      "symbol_class": "window_slider_2l",
+      "display_name": "Ventana Corredera 2 Hojas",
+      "aliases": ["V", "VENTANA", "WINDOW"]
+    },
+    {
+      "symbol_class": "level_tag_plan",
+      "display_name": "Cota de Nivel en Planta",
+      "aliases": ["NPT", "COTA NIVEL"]
+    },
+    {
+      "symbol_class": "stair_direction_arrow",
+      "display_name": "Flecha Sentido Subida Escalera",
+      "aliases": ["SUBE", "BAJA", "ESCALERA"]
+    }
+  ]
+}

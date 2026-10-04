@@ -1,0 +1,425 @@
+{
+  "project_id": "64dc6a0e-d8e1-4a4a-a697-528b47438d31",
+  "project_name": "Centro Logístico San Bernardo",
+  "project_code": "PRJ-REP-01",
+  "stage": "Ingeniería de Detalle",
+  "revision_number": 1,
+  "title": "Reporte Consolidado de Auditoría — Ingeniería de Detalle (PRJ-REP-01)",
+  "global_stage_verdict": "no_aprobable_bloqueada",
+  "verdict_rationale": "La etapa NO ES APROBABLE porque presenta 4 reglas bloqueadas preventivamente, 5 entregables obligatorios faltantes y 1 observaciones técnicas críticas/altas abiertas.",
+  "issued_by": "Auditor Principal",
+  "issued_at": "2026-08-23T04:28:57.870116",
+  "completeness": {
+    "completeness_percentage": 12.5,
+    "is_gate_passed": false,
+    "total_required_count": 8,
+    "eligible_count": 1,
+    "missing_mandatory_count": 5,
+    "missing_optional_count": 2,
+    "blocked_rules_count": 4,
+    "deliverables_matrix": [
+      {
+        "requirement_id": "a0afee81-3347-40aa-ab0b-c4bb378e38b4",
+        "title": "Planos de Plantas, Cortes y Elevaciones Definitivos",
+        "deliverable_type": "plano_general",
+        "is_mandatory": true,
+        "readiness_status": "eligible",
+        "provided_files_count": 1,
+        "is_fulfilled": true,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_TITLE_BLOCK_FIELDS_V1",
+          "RULE_TITLE_BLOCK_SCALE_V1"
+        ]
+      },
+      {
+        "requirement_id": "7769b608-3f14-4ef9-9fff-183976153fd5",
+        "title": "Detalles Constructivos y Cuadros de Vanos",
+        "deliverable_type": "plano_detalles",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "11c94fd2-93d7-48d3-93c0-618fdfdc1bc9",
+        "title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "deliverable_type": "plano_estructural",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1"
+        ]
+      },
+      {
+        "requirement_id": "ff3f5602-69f8-45be-953c-abf3a736143c",
+        "title": "Memoria de Cálculo Estructural Definitiva",
+        "deliverable_type": "memoria_calculo",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "8d29ec53-2c36-4cb8-a974-88b1f51377e9",
+        "title": "Especificaciones Técnicas Especiales (EETT)",
+        "deliverable_type": "especificaciones_tecnicas",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "5cc252dd-a9de-4684-91b2-55685a4c0835",
+        "title": "Estudio de Mecánica de Suelos Definitivo",
+        "deliverable_type": "mecanica_suelos",
+        "is_mandatory": true,
+        "readiness_status": "missing_mandatory",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "d007ac5d-29a5-4f56-b7c8-52063f38cfac",
+        "title": "Cuadros de Cargas y Diagramas Eléctricos",
+        "deliverable_type": "cuadro_cargas",
+        "is_mandatory": false,
+        "readiness_status": "missing_optional",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "0d421690-c01e-485e-ac89-0d2a7e03092e",
+        "title": "Plan de Evacuación y Protección Contra Incendios",
+        "deliverable_type": "plan_seguridad",
+        "is_mandatory": false,
+        "readiness_status": "missing_optional",
+        "provided_files_count": 0,
+        "is_fulfilled": false,
+        "blocked_rule_codes": []
+      }
+    ],
+    "missing_deliverables": [
+      {
+        "requirement_id": "7769b608-3f14-4ef9-9fff-183976153fd5",
+        "title": "Detalles Constructivos y Cuadros de Vanos",
+        "deliverable_type": "plano_detalles",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_DOOR_COUNT_MATCH_V1",
+          "RULE_WINDOW_COUNT_MATCH_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "11c94fd2-93d7-48d3-93c0-618fdfdc1bc9",
+        "title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "deliverable_type": "plano_estructural",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1"
+        ]
+      },
+      {
+        "requirement_id": "ff3f5602-69f8-45be-953c-abf3a736143c",
+        "title": "Memoria de Cálculo Estructural Definitiva",
+        "deliverable_type": "memoria_calculo",
+        "is_mandatory": true,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "8d29ec53-2c36-4cb8-a974-88b1f51377e9",
+        "title": "Especificaciones Técnicas Especiales (EETT)",
+        "deliverable_type": "especificaciones_tecnicas",
+        "is_mandatory": true,
+        "blocked_rule_codes": [
+          "RULE_REQUIRED_TABLES_V1",
+          "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1"
+        ]
+      },
+      {
+        "requirement_id": "5cc252dd-a9de-4684-91b2-55685a4c0835",
+        "title": "Estudio de Mecánica de Suelos Definitivo",
+        "deliverable_type": "mecanica_suelos",
+        "is_mandatory": true,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "d007ac5d-29a5-4f56-b7c8-52063f38cfac",
+        "title": "Cuadros de Cargas y Diagramas Eléctricos",
+        "deliverable_type": "cuadro_cargas",
+        "is_mandatory": false,
+        "blocked_rule_codes": []
+      },
+      {
+        "requirement_id": "0d421690-c01e-485e-ac89-0d2a7e03092e",
+        "title": "Plan de Evacuación y Protección Contra Incendios",
+        "deliverable_type": "plan_seguridad",
+        "is_mandatory": false,
+        "blocked_rule_codes": []
+      }
+    ],
+    "blocked_rules": [
+      {
+        "rule_code": "RULE_DOOR_COUNT_MATCH_V1",
+        "rule_name": "Conciliación de Conteo de Puertas (Dibujo vs Cuadro)",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_WINDOW_COUNT_MATCH_V1",
+        "rule_name": "Conciliación de Conteo de Ventanas (Dibujo vs Cuadro)",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "rule_name": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "discipline": "architecture",
+        "blocked_by_deliverable_title": "Detalles Constructivos y Cuadros de Vanos",
+        "blocked_by_deliverable_type": "plano_detalles",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Detalles Constructivos y Cuadros de Vanos» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_REQUIRED_TABLES_V1",
+        "rule_name": "RULE_REQUIRED_TABLES_V1",
+        "discipline": "structural",
+        "blocked_by_deliverable_title": "Planos de Enfierraduras, Fundaciones y Estructuras",
+        "blocked_by_deliverable_type": "plano_estructural",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Planos de Enfierraduras, Fundaciones y Estructuras» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_REQUIRED_TABLES_V1",
+        "rule_name": "RULE_REQUIRED_TABLES_V1",
+        "discipline": "general",
+        "blocked_by_deliverable_title": "Especificaciones Técnicas Especiales (EETT)",
+        "blocked_by_deliverable_type": "especificaciones_tecnicas",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Especificaciones Técnicas Especiales (EETT)» en estado 'Apto como Evidencia'."
+      },
+      {
+        "rule_code": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "rule_name": "RULE_NORMATIVE_MIN_DOOR_WIDTH_V1",
+        "discipline": "general",
+        "blocked_by_deliverable_title": "Especificaciones Técnicas Especiales (EETT)",
+        "blocked_by_deliverable_type": "especificaciones_tecnicas",
+        "reason": "blocked_by_missing_doc",
+        "detail": "Regla bloqueada preventivamente: Requiere entregable «Especificaciones Técnicas Especiales (EETT)» en estado 'Apto como Evidencia'."
+      }
+    ]
+  },
+  "audit_verdicts": {
+    "cumple_count": 0,
+    "no_cumple_count": 4,
+    "no_verificable_count": 2,
+    "no_aplica_count": 0,
+    "total_rules_evaluated": 6,
+    "by_discipline": {
+      "architecture": {
+        "cumple": 0,
+        "no_cumple": 4,
+        "no_verificable": 2,
+        "no_aplica": 0
+      }
+    },
+    "verdicts_list": [
+      {
+        "rule_code": "RULE_DOOR_COUNT_MATCH_V1",
+        "rule_name": "Conciliación de Conteo de Puertas (Dibujo vs Cuadro)",
+        "category": "cross_reconciliation",
+        "discipline": "architecture",
+        "verdict": "no_verificable",
+        "unverifiable_reason": "blocked_by_missing_doc",
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      },
+      {
+        "rule_code": "RULE_WINDOW_COUNT_MATCH_V1",
+        "rule_name": "Conciliación de Conteo de Ventanas (Dibujo vs Cuadro)",
+        "category": "cross_reconciliation",
+        "discipline": "architecture",
+        "verdict": "no_verificable",
+        "unverifiable_reason": "blocked_by_missing_doc",
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      },
+      {
+        "rule_code": "RULE_TITLE_BLOCK_REQUIRED_FIELDS_V1",
+        "rule_name": "Integridad de Campos Críticos de Viñeta",
+        "category": "document_integrity",
+        "discipline": "architecture",
+        "verdict": "no_cumple",
+        "unverifiable_reason": null,
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      },
+      {
+        "rule_code": "RULE_TITLE_BLOCK_SCALE_VALID_V1",
+        "rule_name": "Validez de Formato de Escala Técnica",
+        "category": "document_integrity",
+        "discipline": "architecture",
+        "verdict": "no_cumple",
+        "unverifiable_reason": null,
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      },
+      {
+        "rule_code": "RULE_REQUIRED_TABLES_BY_DOCUMENT_TYPE_V1",
+        "rule_name": "Presencia de Cuadros Técnicos Obligatorios",
+        "category": "document_integrity",
+        "discipline": "architecture",
+        "verdict": "no_cumple",
+        "unverifiable_reason": null,
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      },
+      {
+        "rule_code": "RULE_NORMATIVE_MIN_WIDTH_DOOR_V1",
+        "rule_name": "Validación Normativa de Ancho Mínimo de Puertas (OGUC 4.1.7)",
+        "category": "normative_compliance",
+        "discipline": "architecture",
+        "verdict": "no_cumple",
+        "unverifiable_reason": null,
+        "findings_count": 1,
+        "sheet_code": "ARQ-01",
+        "document_filename": "ARQ-01_Planta_General.pdf"
+      }
+    ]
+  },
+  "observations": {
+    "total_obs": 4,
+    "open_obs": 4,
+    "closed_obs": 0,
+    "critical_obs": 1,
+    "high_obs": 0,
+    "medium_obs": 1,
+    "low_obs": 2,
+    "total_rfi": 0,
+    "open_rfi": 0,
+    "answered_rfi": 0,
+    "closed_rfi": 0,
+    "total_blk": 2,
+    "active_blk": 2,
+    "resolved_blk": 0,
+    "total_min": 0,
+    "items": [
+      {
+        "id": "9615064a-002c-44c1-a2b9-2b6e89c01836",
+        "code": "BLK-ARQ-001",
+        "item_type": "document_blocker",
+        "title": "[BLK] Bloqueo Documental: Falta Detalles Constructivos y Cuadros de Vanos",
+        "discipline": "architecture",
+        "severity": "medium",
+        "status": "issued",
+        "rule_code": "RULE_DOOR_COUNT_MATCH_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      },
+      {
+        "id": "168e0141-c117-43d8-8092-30f0e852b346",
+        "code": "BLK-ARQ-002",
+        "item_type": "document_blocker",
+        "title": "[BLK] Bloqueo Documental: Falta Detalles Constructivos y Cuadros de Vanos",
+        "discipline": "architecture",
+        "severity": "medium",
+        "status": "issued",
+        "rule_code": "RULE_WINDOW_COUNT_MATCH_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      },
+      {
+        "id": "1d6112d7-d36e-43b7-83a6-2e46b1c8cc9b",
+        "code": "OBS-ARQ-001",
+        "item_type": "technical_observation",
+        "title": "[OBS] Viñeta Técnica No Detectada o Inexistente",
+        "discipline": "architecture",
+        "severity": "critical",
+        "status": "issued",
+        "rule_code": "RULE_TITLE_BLOCK_REQUIRED_FIELDS_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      },
+      {
+        "id": "ad26f62b-5e20-4659-a818-315e7f214487",
+        "code": "OBS-ARQ-002",
+        "item_type": "technical_observation",
+        "title": "[OBS] Sin Escala Para Validar Formato",
+        "discipline": "architecture",
+        "severity": "low",
+        "status": "draft",
+        "rule_code": "RULE_TITLE_BLOCK_SCALE_VALID_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      },
+      {
+        "id": "19dc62ff-0b6b-46a4-8c0b-c8c498eae802",
+        "code": "OBS-ARQ-003",
+        "item_type": "technical_observation",
+        "title": "[OBS] Lámina de Arquitectura Sin Cuadro de Vanos ni Superficies",
+        "discipline": "architecture",
+        "severity": "medium",
+        "status": "draft",
+        "rule_code": "RULE_REQUIRED_TABLES_BY_DOCUMENT_TYPE_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      },
+      {
+        "id": "81df8555-95f5-45dc-9b05-62b56942be0a",
+        "code": "OBS-ARQ-004",
+        "item_type": "technical_observation",
+        "title": "[OBS] Sin Datos Dimensionales Suficientes de Puertas",
+        "discipline": "architecture",
+        "severity": "low",
+        "status": "draft",
+        "rule_code": "RULE_NORMATIVE_MIN_WIDTH_DOOR_V1",
+        "document_filename": "ARQ-01_Planta_General.pdf",
+        "provisioned_filename": null,
+        "responses_count": 0
+      }
+    ]
+  },
+  "delta_evolution": {
+    "previous_snapshot_id": null,
+    "previous_revision_number": null,
+    "resolved_since_last_rev": [],
+    "new_since_last_rev": [],
+    "unblocked_rules_since_last_rev": [],
+    "status_changes": [],
+    "summary_narrative": "Primera emisión de revisión técnica para esta etapa."
+  },
+  "is_live_preview": false,
+  "snapshot_id": "0cd4685f-55db-4877-99d9-74e7bc8b51d7",
+  "emission_notes": "Emisión inicial: Gatekeeper bloqueado por faltante de EETT y Cuadros Técnicos."
+}

@@ -1,0 +1,46 @@
+{
+  "code": "OGUC-CHILE-2024",
+  "title": "Ordenanza General de Urbanismo y Construcciones (OGUC)",
+  "authority": "MINVU",
+  "country": "CL",
+  "discipline": "architecture",
+  "version_year": 2024,
+  "clauses": [
+    {
+      "clause_number": "Art. 4.1.7",
+      "title": "Ancho Mínimo de Puertas y Pasillos de Evacuación",
+      "content_text": "Las puertas de acceso, las de salida y las que comuniquen con vías de evacuación deberán tener un ancho libre mínimo de 0.90 m cuando sirvan a más de 50 personas, y de 0.85 m en recintos habitables generales.",
+      "summary": "Ancho libre mínimo de puertas de 0.85m en general y 0.90m para alta ocupación.",
+      "scope_keywords": ["puerta", "ancho libre", "evacuacion", "vano"],
+      "criteria": [
+        {
+          "criterion_code": "CRIT-OGUC-417-DOOR-MIN",
+          "name": "Ancho libre mínimo de puerta habitable",
+          "target_entity": "door",
+          "property_name": "clear_width_m",
+          "operator": "gte",
+          "threshold_value": {"min": 0.85, "unit": "m"},
+          "severity": "high"
+        }
+      ]
+    },
+    {
+      "clause_number": "Art. 4.1.8",
+      "title": "Altura Libre Mínima de Recintos",
+      "content_text": "La altura libre mínima de piso a cielo en recintos habitables será de 2.30 m en obra terminada.",
+      "summary": "Altura libre mínima interior de 2.30 m.",
+      "scope_keywords": ["altura", "cielo", "recinto", "nivel"],
+      "criteria": [
+        {
+          "criterion_code": "CRIT-OGUC-418-HEIGHT-MIN",
+          "name": "Altura libre de piso a cielo",
+          "target_entity": "room",
+          "property_name": "clear_height_m",
+          "operator": "gte",
+          "threshold_value": {"min": 2.30, "unit": "m"},
+          "severity": "medium"
+        }
+      ]
+    }
+  ]
+}

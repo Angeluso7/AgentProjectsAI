@@ -1,0 +1,150 @@
+{
+  "dataset_id": "f4a9c5d4-9c28-48da-b7f5-b0e2b18223ce",
+  "dataset_name": "Golden Dataset Arquitectura & Estructura OGUC v1.0",
+  "split": "test",
+  "samples_evaluated_count": 2,
+  "quality_gate_verdict": "insufficient_sample",
+  "quality_gates": {
+    "overall_status": "insufficient_sample",
+    "gates_evaluated_count": 5,
+    "gate_results": [
+      {
+        "gate_id": "ocr_cer_baseline",
+        "component": "ocr",
+        "metric_name": "cer",
+        "status": "pass",
+        "observed_value": 0.0,
+        "threshold": 0.15,
+        "sample_count": 6,
+        "reason": "Valor 0.0 cumple umbral <= 0.15",
+        "description": "CER de OCR no debe superar 15% en muestras técnicas"
+      },
+      {
+        "gate_id": "layout_miou_baseline",
+        "component": "layout",
+        "metric_name": "mean_iou",
+        "status": "pass",
+        "observed_value": 1.0,
+        "threshold": 0.7,
+        "sample_count": 4,
+        "reason": "Valor 1.0 cumple umbral >= 0.7",
+        "description": "Mean IoU macro-regional debe ser al menos 70%"
+      },
+      {
+        "gate_id": "title_block_required_completeness",
+        "component": "title_block",
+        "metric_name": "required_completeness",
+        "status": "pass",
+        "observed_value": 1.0,
+        "threshold": 0.85,
+        "sample_count": 4,
+        "reason": "Valor 1.0 cumple umbral >= 0.85",
+        "description": "Completitud de campos requeridos de viñeta >= 85%"
+      },
+      {
+        "gate_id": "table_cell_accuracy",
+        "component": "table",
+        "metric_name": "cell_accuracy",
+        "status": "insufficient_sample",
+        "observed_value": null,
+        "threshold": 0.75,
+        "sample_count": 0,
+        "reason": "Muestra insuficiente (N=0, requerido N>=2)",
+        "description": "Exactitud de celdas tabulares extraídas >= 75%"
+      },
+      {
+        "gate_id": "rules_precision_baseline",
+        "component": "rules",
+        "metric_name": "precision",
+        "status": "insufficient_sample",
+        "observed_value": 1.0,
+        "threshold": 0.8,
+        "sample_count": 2,
+        "reason": "Muestra insuficiente (N=2, requerido N>=3)",
+        "description": "Precisión en hallazgos de reglas QA/QC >= 80%"
+      }
+    ]
+  },
+  "perceptual_metrics": {
+    "ocr": {
+      "cer": 0.0,
+      "wer": 0.0,
+      "critical_recall": 1.0,
+      "critical_precision": 0.8333,
+      "critical_f1": 0.9091,
+      "bbox_mae": 0.0,
+      "sample_count": 6
+    },
+    "layout": {
+      "mean_iou": 1.0,
+      "by_region_iou": {
+        "drawing_area": 1.0,
+        "title_block": 1.0,
+        "table_candidate": 1.0,
+        "notes_area": 1.0
+      },
+      "sample_count": 4
+    },
+    "title_block": {
+      "exact_match_ratio": 1.0,
+      "normalized_accuracy": 1.0,
+      "required_completeness": 1.0,
+      "sample_count": 4
+    },
+    "tables": {
+      "table_detection_iou": 1.0,
+      "cell_accuracy": 1.0,
+      "header_accuracy": 1.0,
+      "sample_count": 1
+    },
+    "symbols": {
+      "precision": 1.0,
+      "recall": 0.1111,
+      "f1_score": 0.2,
+      "count_mae": 8.0,
+      "by_class_metrics": {
+        "door_single": {
+          "precision": 1.0,
+          "recall": 0.0833,
+          "f1_score": 0.1538,
+          "count_mae": 11,
+          "gt_count": 12,
+          "pred_count": 1
+        },
+        "window_standard": {
+          "precision": 1.0,
+          "recall": 0.1667,
+          "f1_score": 0.2857,
+          "count_mae": 5,
+          "gt_count": 6,
+          "pred_count": 1
+        }
+      },
+      "sample_count": 2,
+      "map_50": 1.0
+    }
+  },
+  "decisional_metrics": {
+    "rules": {
+      "precision": 1.0,
+      "recall": 1.0,
+      "f1_score": 1.0,
+      "fpr": 0.0,
+      "fnr": 0.0,
+      "severity_accuracy": 1.0,
+      "confusion_matrix": {
+        "true_positive": 1,
+        "false_positive": 0,
+        "true_negative": 1,
+        "false_negative": 0
+      },
+      "sample_count": 2
+    },
+    "hitl": {
+      "confirmation_rate": 0.95,
+      "dismissed_rate": 0.05,
+      "disagreement_rate": 0.05,
+      "sample_count": 2
+    }
+  }
+}

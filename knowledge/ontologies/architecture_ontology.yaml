@@ -1,0 +1,29 @@
+domain: architecture
+description: "Ontología de conceptos técnicos arquitectónicos y diccionarios de alias"
+terms:
+  - canonical_term: LEVEL_FINISHED_FLOOR
+    display_label: "Nivel de Piso Terminado"
+    synonyms: ["NPT", "N.P.T.", "NIVEL PISO TERM.", "FFL", "PISO TERM."]
+    unit: "m"
+    description: "Cota altimétrica de rasante terminada"
+
+  - canonical_term: LEVEL_NATURAL_GROUND
+    display_label: "Nivel de Terreno Natural"
+    synonyms: ["NTN", "N.T.N.", "TERRENO NATURAL", "NGL"]
+    unit: "m"
+    description: "Cota original del terreno"
+
+  - canonical_term: DOOR_SINGLE
+    display_label: "Puerta de 1 Hoja"
+    synonyms: ["P1", "P-1", "PUERTA", "PTA.", "P"]
+    description: "Elemento de vano abatible simple"
+
+  - canonical_term: WINDOW_SLIDING
+    display_label: "Ventana Corredera"
+    synonyms: ["V1", "V-1", "VENTANA", "VENT.", "V"]
+    description: "Vano vidriado de corredera"
+
+  - canonical_term: AXIS_GRID
+    display_label: "Eje Estructural / Modular"
+    synonyms: ["EJE", "AXIS", "GRID"]
+    description: "Líneas de replanteo y coordenadas del plano"

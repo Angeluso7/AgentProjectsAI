@@ -1,0 +1,88 @@
+{
+  "schema_version": "1.0",
+  "metadata": {
+    "report_id": "0c2790bf-7cd6-45a9-bd19-0695926705b3",
+    "report_type": "technical_audit_qaqc",
+    "report_scope": "sheet",
+    "generated_at_utc": "2026-08-22 04:16:58 UTC",
+    "engine_version": "1.0",
+    "generated_by": "auditor_senior"
+  },
+  "target": {
+    "document_id": "8e4bf162-968d-436f-9dbe-fc2daa40eacb",
+    "document_filename": "00002.pdf",
+    "sheet_id": "1de53078-2578-4c5a-854e-825180e35b2a",
+    "sheet_code": "SHEET-01",
+    "sheet_title": "Model",
+    "scale_text": null,
+    "revision": null,
+    "discipline": "general"
+  },
+  "summary": {
+    "total_findings": 0,
+    "by_severity": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 0,
+      "info": 0
+    },
+    "by_status": {
+      "open": 0,
+      "confirmed": 0,
+      "dismissed": 0,
+      "corrected": 0,
+      "accepted_risk": 0
+    },
+    "disciplines_involved": [
+      "general"
+    ],
+    "rules_evaluated_count": 6
+  },
+  "rules_evaluated": [
+    {
+      "code": "RULE_DOOR_COUNT_MATCH_V1",
+      "name": "Conciliación de Conteo de Puertas (Dibujo vs Cuadro)",
+      "discipline": "architecture",
+      "severity_default": "high",
+      "category": "cross_reconciliation"
+    },
+    {
+      "code": "RULE_WINDOW_COUNT_MATCH_V1",
+      "name": "Conciliación de Conteo de Ventanas (Dibujo vs Cuadro)",
+      "discipline": "architecture",
+      "severity_default": "high",
+      "category": "cross_reconciliation"
+    },
+    {
+      "code": "RULE_TITLE_BLOCK_REQUIRED_FIELDS_V1",
+      "name": "Integridad de Campos Críticos de Viñeta",
+      "discipline": "general",
+      "severity_default": "critical",
+      "category": "document_integrity"
+    },
+    {
+      "code": "RULE_TITLE_BLOCK_SCALE_VALID_V1",
+      "name": "Validez de Formato de Escala Técnica",
+      "discipline": "general",
+      "severity_default": "medium",
+      "category": "document_integrity"
+    },
+    {
+      "code": "RULE_REQUIRED_TABLES_BY_DOCUMENT_TYPE_V1",
+      "name": "Presencia de Cuadros Técnicos Obligatorios",
+      "discipline": "architecture",
+      "severity_default": "medium",
+      "category": "document_integrity"
+    },
+    {
+      "code": "RULE_NORMATIVE_MIN_WIDTH_DOOR_V1",
+      "name": "Validación Normativa de Ancho Mínimo de Puertas (OGUC 4.1.7)",
+      "discipline": "architecture",
+      "severity_default": "critical",
+      "category": "normative_compliance"
+    }
+  ],
+  "findings": [],
+  "decision_traces": []
+}

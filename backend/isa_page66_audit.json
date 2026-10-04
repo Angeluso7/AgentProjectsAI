@@ -1,0 +1,1529 @@
+{
+  "page_number": 66,
+  "grid_source": "vector",
+  "grid_confidence": 0.95,
+  "physical_grid_detected": true,
+  "num_rows": 12,
+  "num_cols": 3,
+  "total_cells": 36,
+  "waveform_cells": [
+    {
+      "row_index": 7,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        286.2,
+        540.0,
+        436.7
+      ],
+      "graphic_classification": "figure",
+      "content_class": "figure",
+      "has_symbol": false,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "1 0 A B B C X O t 1  2 3 4 5 6 7 8 9 10 "
+    },
+    {
+      "row_index": 11,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        556.8,
+        540.0,
+        720.0
+      ],
+      "graphic_classification": "figure",
+      "content_class": "figure",
+      "has_symbol": false,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "1 0 A B B C X O 1  2 3 4 5 6 7 8 9 10 11"
+    }
+  ],
+  "truth_matrix_cells": [
+    {
+      "row_index": 7,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        286.2,
+        198.0,
+        436.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C  X  O  1  0  0  0  0  0  2  1  0"
+    },
+    {
+      "row_index": 11,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        556.8,
+        198.0,
+        720.0
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C  X  O  1  0  0  0  0  0  2  1  0"
+    }
+  ],
+  "all_cells_summary": [
+    {
+      "row_index": 0,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        72.0,
+        108.0,
+        108.3
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 0,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        72.0,
+        198.0,
+        108.3
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 0,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        72.0,
+        540.0,
+        108.3
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Table 5.7 — Binary logic symbols"
+    },
+    {
+      "row_index": 1,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        108.3,
+        108.0,
+        126.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.007,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 1,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        108.3,
+        198.0,
+        126.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Function"
+    },
+    {
+      "row_index": 1,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        108.3,
+        540.0,
+        126.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.001,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.988,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Note:  Numbers in parentheses refer to e"
+    },
+    {
+      "row_index": 2,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        126.2,
+        108.0,
+        144.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.007,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.007,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 2,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        126.2,
+        198.0,
+        144.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Symbol"
+    },
+    {
+      "row_index": 2,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        126.2,
+        540.0,
+        144.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.001,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Definition (1)  No Truth Table (1)  Grap"
+    },
+    {
+      "row_index": 3,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        144.2,
+        108.0,
+        162.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.007,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.993,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 3,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        144.2,
+        198.0,
+        162.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 3,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        144.2,
+        540.0,
+        162.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Truth Table (1)  Graph Symbol"
+    },
+    {
+      "row_index": 4,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        162.2,
+        108.0,
+        189.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.993,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 4,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        162.2,
+        198.0,
+        189.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.995,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Qualified OR gate  Greater or equal to ‘"
+    },
+    {
+      "row_index": 4,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        162.2,
+        540.0,
+        189.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "•  Output true if number of true inputs "
+    },
+    {
+      "row_index": 5,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        189.2,
+        108.0,
+        265.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 5,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        189.2,
+        198.0,
+        265.7
+      ],
+      "graphic_classification": "symbol",
+      "content_class": "mixed",
+      "has_symbol": true,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.995,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.998,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C O  ≥n X"
+    },
+    {
+      "row_index": 5,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        189.2,
+        540.0,
+        265.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 6,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        265.7,
+        108.0,
+        286.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 6,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        265.7,
+        198.0,
+        286.2
+      ],
+      "graphic_classification": "symbol",
+      "content_class": "symbol_only",
+      "has_symbol": true,
+      "geometric_confidence": 0.78,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.998,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 6,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        265.7,
+        540.0,
+        286.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 7,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        286.2,
+        108.0,
+        436.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.993,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 7,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        286.2,
+        198.0,
+        436.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C  X  O  1  0  0  0  0  0  2  1  0"
+    },
+    {
+      "row_index": 7,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        286.2,
+        540.0,
+        436.7
+      ],
+      "graphic_classification": "figure",
+      "content_class": "figure",
+      "has_symbol": false,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "1 0 A B B C X O t 1  2 3 4 5 6 7 8 9 10 "
+    },
+    {
+      "row_index": 8,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        436.7,
+        108.0,
+        463.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.993,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 8,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        436.7,
+        198.0,
+        463.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.995,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "Qualified OR gate Greater than ‘n’"
+    },
+    {
+      "row_index": 8,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        436.7,
+        540.0,
+        463.7
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "•  Output true if number of true inputs "
+    },
+    {
+      "row_index": 9,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        463.7,
+        108.0,
+        540.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 9,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        463.7,
+        198.0,
+        540.2
+      ],
+      "graphic_classification": "symbol",
+      "content_class": "mixed",
+      "has_symbol": true,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.995,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.998,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C O  >n X"
+    },
+    {
+      "row_index": 9,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        463.7,
+        540.0,
+        540.2
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 10,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        540.2,
+        108.0,
+        556.8
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 10,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        540.2,
+        198.0,
+        556.8
+      ],
+      "graphic_classification": "symbol",
+      "content_class": "symbol_only",
+      "has_symbol": true,
+      "geometric_confidence": 0.78,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.998,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 10,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        540.2,
+        540.0,
+        556.8
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 11,
+      "column_index": 0,
+      "bbox": [
+        72.0,
+        556.8,
+        108.0,
+        720.0
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "empty",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": ""
+    },
+    {
+      "row_index": 11,
+      "column_index": 1,
+      "bbox": [
+        108.0,
+        556.8,
+        198.0,
+        720.0
+      ],
+      "graphic_classification": "not_symbol",
+      "content_class": "text_only",
+      "has_symbol": false,
+      "geometric_confidence": 0.0,
+      "boundary_evidence": {
+        "top": {
+          "detected": true,
+          "coverage_ratio": 0.956,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 1.0,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "A  B  C  X  O  1  0  0  0  0  0  2  1  0"
+    },
+    {
+      "row_index": 11,
+      "column_index": 2,
+      "bbox": [
+        198.0,
+        556.8,
+        540.0,
+        720.0
+      ],
+      "graphic_classification": "figure",
+      "content_class": "figure",
+      "has_symbol": false,
+      "geometric_confidence": 0.94,
+      "boundary_evidence": {
+        "top": {
+          "detected": false,
+          "coverage_ratio": 0.0,
+          "source": "vector_grid"
+        },
+        "bottom": {
+          "detected": true,
+          "coverage_ratio": 0.999,
+          "source": "vector_grid"
+        },
+        "left": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        },
+        "right": {
+          "detected": true,
+          "coverage_ratio": 0.948,
+          "source": "vector_grid"
+        }
+      },
+      "text_snippet": "1 0 A B B C X O 1  2 3 4 5 6 7 8 9 10 11"
+    }
+  ],
+  "extracted_symbols": [
+    {
+      "symbol_name": "Símbolo R5C1",
+      "graphic_classification": "symbol",
+      "content_class": "mixed",
+      "row_index": 5,
+      "col_index": 1,
+      "geometric_confidence": 0.94
+    },
+    {
+      "symbol_name": "Símbolo (Fila 6, Col 1)",
+      "graphic_classification": "symbol",
+      "content_class": "symbol_only",
+      "row_index": 6,
+      "col_index": 1,
+      "geometric_confidence": 0.78
+    },
+    {
+      "symbol_name": "Símbolo R9C1",
+      "graphic_classification": "symbol",
+      "content_class": "mixed",
+      "row_index": 9,
+      "col_index": 1,
+      "geometric_confidence": 0.94
+    },
+    {
+      "symbol_name": "Símbolo (Fila 10, Col 1)",
+      "graphic_classification": "symbol",
+      "content_class": "symbol_only",
+      "row_index": 10,
+      "col_index": 1,
+      "geometric_confidence": 0.78
+    }
+  ]
+}

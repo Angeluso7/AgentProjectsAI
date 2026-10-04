@@ -1,25 +1,6 @@
-Modelos sugeridos:
-- Project
-- DocumentSet
-- SourceDocument
-- Sheet
-- SheetRevision
-- ViewRegion
-- TextBlock
-- TableRegion
-- TableCell
-- SymbolDetection
-- DetectedElement
-- KnowledgeAsset
-- TitleBlockTemplate
-- SymbolLibrary
-- TableSchema
-- OntologyTerm
-- StandardClause
-- MemoryRecord
-- Finding
-- ReviewAction
-- FeedbackLabel
-- TrainingJob
-- ModelVersion
-- ExportJob
+# Modelos & Checkpoints
+
+Registro local y almacenamiento de artefactos de Machine Learning:
+- `checkpoints/`: Pesos intermedios durante el entrenamiento.
+- `trained/`: Modelos exportados listos para inferencia (PyTorch `.pt`, ONNX).
+- `registry/`: Versiones aprobadas formalmente para producción que superaron el *Golden Benchmark Test Set*.

@@ -1,0 +1,293 @@
+{
+  "version": "1.0.0",
+  "updated_at": "2026-09-23T00:00:00Z",
+  "disciplines": [
+    {
+      "code": "GENERAL",
+      "name": "General / Coordinación Transversal",
+      "description": "Reglas y verificaciones aplicables a todas las disciplinas de ingeniería y arquitectura.",
+      "display_order": 1,
+      "parent_discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "ARCHITECTURE",
+      "name": "Arquitectura",
+      "description": "Diseño espacial, recintos, circulaciones, vanos y cumplimiento urbanístico/normativo.",
+      "display_order": 2,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Building2" }
+    },
+    {
+      "code": "STRUCTURES",
+      "name": "Estructuras",
+      "description": "Elementos sismorresistentes, hormigón armado, fundaciones y estructuras de acero.",
+      "display_order": 3,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Layers" }
+    },
+    {
+      "code": "PIPING",
+      "name": "Piping & Cañerías de Proceso",
+      "description": "Diagramas P&ID, líneas de cañerías, válvulas, instrumentos de línea y especificaciones de piping.",
+      "display_order": 4,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "GitFork", "has_symbol_catalog": true }
+    },
+    {
+      "code": "HVAC",
+      "name": "Climatización y Ventilación (HVAC)",
+      "description": "Sistemas de aire acondicionado, ventilación mecánica, ductos y unidades manejadoras.",
+      "display_order": 5,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Wind" }
+    },
+    {
+      "code": "ELECTRICAL",
+      "name": "Electricidad & Distribución",
+      "description": "Fuerza, alumbrado, mallas de puesta a tierra, tableros generales y unilineales.",
+      "display_order": 6,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Zap" }
+    },
+    {
+      "code": "INSTRUMENTATION_CONTROL",
+      "name": "Instrumentación y Control",
+      "description": "Lógica de control, lazos de instrumentación, DCS/PLC y arquitecturas de automatización.",
+      "display_order": 7,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Activity" }
+    },
+    {
+      "code": "FIRE_PROTECTION",
+      "name": "Protección Contra Incendios",
+      "description": "Redes húmedas/secas, rociadores automáticos, detección y extinción.",
+      "display_order": 8,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Flame" }
+    },
+    {
+      "code": "SANITARY",
+      "name": "Instalaciones Sanitarias",
+      "description": "Agua potable fría/caliente, alcantarillado de aguas servidas y drenaje de aguas lluvias.",
+      "display_order": 9,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Droplet" }
+    },
+    {
+      "code": "CIVIL",
+      "name": "Obras Civiles y Movimiento de Tierras",
+      "description": "Topografía, plataformas, vialidad, drenaje superficial y taludes.",
+      "display_order": 10,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Shovel" }
+    },
+    {
+      "code": "BIM_COORDINATION",
+      "name": "Coordinación Multidisciplinaria BIM",
+      "description": "Clash detection, compatibilidad espacial, modelos federados y parámetros BIM.",
+      "display_order": 11,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "Box" }
+    },
+    {
+      "code": "CONSTRUCTABILITY_SAFETY",
+      "name": "Constructabilidad & Seguridad de Procesos",
+      "description": "Rutas de escape, zonificación de áreas clasificadas, ergonomía de mantenimiento y seguridad laboral.",
+      "display_order": 12,
+      "parent_discipline_code": null,
+      "metadata": { "icon": "ShieldAlert" }
+    }
+  ],
+  "topics": [
+    {
+      "code": "DOCUMENT_COMPLETENESS",
+      "name": "Completitud Documental",
+      "description": "Verificación de presencia y suficiencia de entregables requeridos para la etapa.",
+      "display_order": 1,
+      "execution_phase": 3,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "DOCUMENT_TRACEABILITY",
+      "name": "Trazabilidad Documental",
+      "description": "Coherencia de códigos de proyecto, revisiones, fechas de vigencia y firmas responsables.",
+      "display_order": 2,
+      "execution_phase": 3,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "SYMBOLS_AND_LEGENDS",
+      "name": "Simbología y Cuadros de Leyenda",
+      "description": "Correspondencia biunívoca entre la simbología empleada en plano y la leyenda técnica aprobada.",
+      "display_order": 3,
+      "execution_phase": 4,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "TAGS_AND_NOMENCLATURE",
+      "name": "Tags y Nomenclatura Estándar",
+      "description": "Validación de formatos de tags de equipos, líneas e instrumentos según estándares de ingeniería.",
+      "display_order": 4,
+      "execution_phase": 4,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "REGULATORY_COMPLIANCE",
+      "name": "Cumplimiento Normativo Base",
+      "description": "Verificación de exigencias normativas obligatorias y estándares de diseño incorporados.",
+      "display_order": 5,
+      "execution_phase": 6,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "QUANTITIES_AND_COMPUTATIONS",
+      "name": "Cantidades y Cómputos Métricos",
+      "description": "Conciliación de cubicaciones entre listas de materiales (BOM/MTO) y conteo gráfico.",
+      "display_order": 6,
+      "execution_phase": 7,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "DOCUMENT_CONSISTENCY",
+      "name": "Consistencia Interdocumental",
+      "description": "Cruce de datos entre especificaciones, hojas de datos y planos del mismo paquete.",
+      "display_order": 7,
+      "execution_phase": 5,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "MODEL_DATA_PARAMETERS",
+      "name": "Parámetros de Modelo y Datos",
+      "description": "Consistencia de parámetros alfanuméricos y metadatos técnicos en el gemelo digital.",
+      "display_order": 8,
+      "execution_phase": 5,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "COORDINATION",
+      "name": "Coordinación Espacial Multidisciplinaria",
+      "description": "Interferencias físicas y coordinación de trazados entre especialidades.",
+      "display_order": 9,
+      "execution_phase": 8,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "CONSTRUCTABILITY",
+      "name": "Constructabilidad y Accesibilidad",
+      "description": "Facilidad de montaje, accesibilidad para izaje y secuencia constructiva.",
+      "display_order": 10,
+      "execution_phase": 8,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "SAFETY",
+      "name": "Seguridad de Operación y Mantenimiento",
+      "description": "Espacios libres mínimos para operación de válvulas, escape y mantenimiento preventivo.",
+      "display_order": 11,
+      "execution_phase": 8,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "REVISION_CONTROL",
+      "name": "Control de Cambios y Revisiones",
+      "description": "Identificación de nubes de revisión, listas de notas y concordancia con el registro de transmittals.",
+      "display_order": 12,
+      "execution_phase": 3,
+      "discipline_code": null,
+      "metadata": { "is_transversal": true }
+    },
+    {
+      "code": "PID_SYMBOLS",
+      "name": "Simbología de Válvulas y Equipos P&ID",
+      "description": "Identificación, clasificación y detección de símbolos gráficos de cañerías según catálogo canónico ISA-5.1.",
+      "display_order": 13,
+      "execution_phase": 6,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": true, "family": "piping_valves" }
+    },
+    {
+      "code": "PID_OPERATIONAL_PHILOSOPHY",
+      "name": "Filosofía Operacional y Enclavamientos P&ID",
+      "description": "Lógica de control y protección de recipientes y líneas en P&ID.",
+      "display_order": 14,
+      "execution_phase": 6,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "PIPING_VALVES",
+      "name": "Especificación de Válvulas de Proceso",
+      "description": "Tipo de cuerpo, rating, material y accionamiento de válvulas contra tabla de piping class.",
+      "display_order": 15,
+      "execution_phase": 6,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "PIPING_INSTRUMENTATION",
+      "name": "Instrumentación en Línea de Cañería",
+      "description": "Conexiones a proceso, termopozos, tomas de presión y orientación de placas orificio.",
+      "display_order": 16,
+      "execution_phase": 6,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "LINE_LIST_CONSISTENCY",
+      "name": "Consistencia con Listado de Líneas (Line List)",
+      "description": "Cruce automatizado de diámetro, fluido, aislamiento y condiciones de diseño entre P&ID y Line List.",
+      "display_order": 17,
+      "execution_phase": 5,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "PID_VS_EQUIPMENT_LIST",
+      "name": "P&ID vs Listado de Equipos Mecánicos",
+      "description": "Coherencia de tags, capacidad y boquillas entre diagramas y tabla de equipos.",
+      "display_order": 18,
+      "execution_phase": 5,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "ISOMETRIC_COMPLETENESS",
+      "name": "Completitud de Isométricos de Cañería",
+      "description": "Verificación de soldaduras de taller/campo, soportes de cañería y lista de materiales en isométrico.",
+      "display_order": 19,
+      "execution_phase": 6,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "PIPING_QUANTITIES",
+      "name": "Cubicación de Cañerías y Accesorios",
+      "description": "Cómputos métricos de longitud de tubería, codos, tees, bridas y empaquetaduras.",
+      "display_order": 20,
+      "execution_phase": 7,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    },
+    {
+      "code": "PROCESS_SAFETY",
+      "name": "Seguridad de Procesos en Cañerías",
+      "description": "Válvulas de alivio de presión (PSV), venteos a antorcha, drenajes y purgas de seguridad.",
+      "display_order": 21,
+      "execution_phase": 8,
+      "discipline_code": "PIPING",
+      "metadata": { "enabled_mvp": false }
+    }
+  ]
+}

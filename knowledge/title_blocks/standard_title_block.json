@@ -1,0 +1,16 @@
+{
+  "name": "Standard-A0-BottomRight",
+  "client_or_standard": "ISO-5457-General",
+  "discipline": "general",
+  "relative_position": "bottom_right",
+  "expected_bbox": [0.72, 0.72, 0.99, 0.99],
+  "field_anchors": {
+    "sheet_code": ["PLANO N°", "CODIGO", "LAMINA", "DWG NO", "SHEET"],
+    "title": ["TITULO", "CONTENIDO", "PLANO", "PROJECT TITLE"],
+    "scale": ["ESCALA", "ESC.", "SCALE"],
+    "revision": ["REV", "REVISION", "REV."],
+    "date_str": ["FECHA", "DATE"],
+    "project_name": ["PROYECTO", "OBRA", "PROJECT"],
+    "author": ["DIBUJO", "DIBUJÓ", "DRAWN BY", "PROYECTISTA"]
+  }
+}

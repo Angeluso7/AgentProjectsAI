@@ -1,0 +1,390 @@
+{
+  "run_id": "sandbox-acceptance-run-20260922-125509",
+  "execution_date": "2026-09-22T12:55:09.415145Z",
+  "execution_mode": "sandbox",
+  "evidence_classification": "redacted_real",
+  "source_document": {
+    "filename": "redacted_piping_project_01.pdf",
+    "sha256": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+    "total_pages": 3,
+    "discipline": "piping",
+    "sheets": [
+      {
+        "sheet_number": 1,
+        "sheet_code": "LEG-01",
+        "title": "P&ID Symbology & Legend Sheet"
+      },
+      {
+        "sheet_number": 2,
+        "sheet_code": "PID-101",
+        "title": "Process Flow & Piping Manifold Sheet"
+      },
+      {
+        "sheet_number": 3,
+        "sheet_code": "SCH-01",
+        "title": "Equipment Schedule & Pressure Waveform Sheet"
+      }
+    ]
+  },
+  "metrics": {
+    "total_pages_evaluated": 3,
+    "total_geometric_candidates_evaluated": 5,
+    "valid_symbols_detected": 4,
+    "figures_waveform_charts_excluded": 1,
+    "text_only_tables_evaluated": 1,
+    "text_only_table_symbols_generated": 0,
+    "sandbox_matches_pip_valve_gate": 2,
+    "ambiguous_symbols": 1,
+    "unknown_valid_geometry_symbols": 1,
+    "false_positives_prevented": 3
+  },
+  "detections": [
+    {
+      "item_name": "Lámina 1 - Fila 1 (Leyenda Gate Valve)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 1,
+      "sheet_id": "1fd7a95a-4645-4053-88d1-6ea16cce636b",
+      "sheet_code": "LEG-01",
+      "sheet_name": "P&ID Symbology & Legend Sheet",
+      "table_bbox": [
+        0.0625,
+        0.1333,
+        0.9375,
+        0.4833
+      ],
+      "cell_bbox": [
+        0.0625,
+        0.1333,
+        0.25,
+        0.25
+      ],
+      "inner_drawing_bbox": [
+        0.1125,
+        0.1533,
+        0.2,
+        0.23
+      ],
+      "symbol_crop_bbox": [
+        0.1,
+        0.14,
+        0.2125,
+        0.2433
+      ],
+      "crop_path": "./data\\crops\\sandbox_acceptance\\leg01_row1_gate_valve_crop.png",
+      "crop_hash": "0a195a3e0f766106d6d06205bd3b10c2ee6bcbc98aad420bbb3c23da8b4b8dff",
+      "geometric_evidence": true,
+      "geometric_confidence": 0.96,
+      "classification": "symbol",
+      "orientation": "0°",
+      "matching_status": "matched",
+      "template_candidate": "PIP-VALVE-GATE",
+      "geometry_score": 0.7022,
+      "topology_score": 0.6486,
+      "visual_score": 0.7,
+      "context_score": 0.1,
+      "total_score": 0.7205,
+      "context_text": "HV-001 MANUAL GATE VALVE",
+      "sandbox_warning": "sandbox/test_only; not production-approved",
+      "context_navigation": {
+        "page": 1,
+        "sheet_code": "LEG-01",
+        "bbox_normalized": [
+          0.1125,
+          0.1533,
+          0.2,
+          0.23
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 1 - Fila 2 (OCR Puro sin Geometría)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 1,
+      "sheet_id": "1fd7a95a-4645-4053-88d1-6ea16cce636b",
+      "sheet_code": "LEG-01",
+      "sheet_name": "P&ID Symbology & Legend Sheet",
+      "table_bbox": [
+        0.0625,
+        0.1333,
+        0.9375,
+        0.4833
+      ],
+      "cell_bbox": [
+        0.0625,
+        0.25,
+        0.25,
+        0.3667
+      ],
+      "inner_drawing_bbox": null,
+      "symbol_crop_bbox": null,
+      "crop_path": "./data\\crops\\sandbox_acceptance\\leg01_row2_ocr_only_crop.png",
+      "crop_hash": "ba15486d70eb4e9586e320e365d05ac0ed93627bff5fe7c05f3fdea9b186bcf5",
+      "geometric_evidence": false,
+      "geometric_confidence": 0.0,
+      "classification": "not_symbol",
+      "orientation": "none",
+      "matching_status": "not_applicable",
+      "template_candidate": null,
+      "geometry_score": 0.0,
+      "topology_score": 0.0,
+      "visual_score": 0.0,
+      "context_score": 0.0,
+      "total_score": 0.0,
+      "context_text": "GATE VALVE 2 INCH 150LB ANSI",
+      "sandbox_warning": "Rechazado: geometric_evidence=True requerida. Cero ocurrencias reconocidas.",
+      "context_navigation": {
+        "page": 1,
+        "sheet_code": "LEG-01",
+        "bbox_normalized": [
+          0.075,
+          0.2667,
+          0.2375,
+          0.35
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 1 - Fila 3 (Válvula Ambigua Compuerta/Globo)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 1,
+      "sheet_id": "1fd7a95a-4645-4053-88d1-6ea16cce636b",
+      "sheet_code": "LEG-01",
+      "sheet_name": "P&ID Symbology & Legend Sheet",
+      "table_bbox": [
+        0.0625,
+        0.1333,
+        0.9375,
+        0.4833
+      ],
+      "cell_bbox": [
+        0.0625,
+        0.3667,
+        0.25,
+        0.4833
+      ],
+      "inner_drawing_bbox": [
+        0.1125,
+        0.3833,
+        0.2,
+        0.4667
+      ],
+      "symbol_crop_bbox": [
+        0.1,
+        0.37,
+        0.2125,
+        0.48
+      ],
+      "crop_path": "./data\\crops\\sandbox_acceptance\\leg01_row3_ambiguous_valve_crop.png",
+      "crop_hash": "116b87499c0565bbe236a6d2d767a61d305f9491783392de2de5989ac6eda2b3",
+      "geometric_evidence": true,
+      "geometric_confidence": 0.92,
+      "classification": "symbol",
+      "orientation": "0°",
+      "matching_status": "ambiguous",
+      "template_candidate": "PIP-VALVE-GATE vs PIP-VALVE-GLOBE (Delta <= 0.05)",
+      "geometry_score": 0.772,
+      "topology_score": 0.74,
+      "visual_score": 0.755,
+      "context_score": 0.05,
+      "total_score": 0.761,
+      "context_text": "XV-002 SPECIAL SEAT GATE / GLOBE SHUTOFF VALVE",
+      "sandbox_warning": "sandbox/test_only; not production-approved (Empate técnico HITL)",
+      "context_navigation": {
+        "page": 1,
+        "sheet_code": "LEG-01",
+        "bbox_normalized": [
+          0.1125,
+          0.3833,
+          0.2,
+          0.4667
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 2 - Ocurrencia HV-101 (Región Libre P&ID)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 2,
+      "sheet_id": "2a9b2bb3-b8e3-488f-9168-763de6235417",
+      "sheet_code": "PID-101",
+      "sheet_name": "Process Flow & Piping Manifold Sheet",
+      "table_bbox": null,
+      "cell_bbox": null,
+      "inner_drawing_bbox": [
+        0.3938,
+        0.35,
+        0.4813,
+        0.45
+      ],
+      "symbol_crop_bbox": [
+        0.385,
+        0.34,
+        0.49,
+        0.46
+      ],
+      "crop_path": "./data\\crops\\sandbox_acceptance\\pid101_hv101_free_region_crop.png",
+      "crop_hash": "c5b69676945d545403201a4d70bd4ca2456907092aba6a0fe333d43aa2de050f",
+      "geometric_evidence": true,
+      "geometric_confidence": 0.96,
+      "classification": "symbol",
+      "orientation": "0° (Horizontal)",
+      "matching_status": "unknown_symbol",
+      "template_candidate": "PIP-VALVE-GATE",
+      "geometry_score": 0.7766,
+      "topology_score": 0.4472,
+      "visual_score": 0.7,
+      "context_score": 0.0,
+      "total_score": 0.6062,
+      "context_text": "HV-101 LINE 6-HC-1001-CS150",
+      "sandbox_warning": "sandbox/test_only; not production-approved",
+      "context_navigation": {
+        "page": 2,
+        "sheet_code": "PID-101",
+        "bbox_normalized": [
+          0.3938,
+          0.35,
+          0.4813,
+          0.45
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 2 - Símbolo Desconocido Válido (SYM-UNKNOWN-001)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 2,
+      "sheet_id": "2a9b2bb3-b8e3-488f-9168-763de6235417",
+      "sheet_code": "PID-101",
+      "sheet_name": "Process Flow & Piping Manifold Sheet",
+      "table_bbox": null,
+      "cell_bbox": null,
+      "inner_drawing_bbox": [
+        0.65,
+        0.3667,
+        0.725,
+        0.4667
+      ],
+      "symbol_crop_bbox": [
+        0.64,
+        0.355,
+        0.735,
+        0.478
+      ],
+      "crop_path": "./data\\crops\\sandbox_acceptance\\pid101_fe102_unknown_symbol_crop.png",
+      "crop_hash": "539e50a9d743e6ef07bcc9e6cbec0d3cc53c841adac59b7e69b0b26b0bc4a6ac",
+      "geometric_evidence": true,
+      "geometric_confidence": 0.94,
+      "classification": "symbol",
+      "orientation": "0°",
+      "matching_status": "unknown_symbol",
+      "template_candidate": null,
+      "geometry_score": 0.38,
+      "topology_score": 0.25,
+      "visual_score": 0.41,
+      "context_score": 0.0,
+      "total_score": 0.365,
+      "context_text": "FE-102 ORIFICE PLATE RESTRICTION",
+      "sandbox_warning": "unknown_symbol registrado con SymbolUnknownResearchCase (SYM-UNKNOWN-001)",
+      "context_navigation": {
+        "page": 2,
+        "sheet_code": "PID-101",
+        "bbox_normalized": [
+          0.65,
+          0.3667,
+          0.725,
+          0.4667
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 3 - Curva Analógica / Forma de Onda",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 3,
+      "sheet_id": "1c0297b8-a90c-4b89-9719-81e6e87d2fee",
+      "sheet_code": "SCH-01",
+      "sheet_name": "Equipment Schedule & Pressure Waveform Sheet",
+      "table_bbox": null,
+      "cell_bbox": null,
+      "inner_drawing_bbox": null,
+      "symbol_crop_bbox": null,
+      "crop_path": "./data\\crops\\sandbox_acceptance\\sch01_waveform_chart_crop.png",
+      "crop_hash": "6d99d144792886f8f01c8d44a91696394e4701fcb14a00117e9e6a865b9c3df4",
+      "geometric_evidence": false,
+      "geometric_confidence": 0.0,
+      "classification": "figure",
+      "orientation": "none",
+      "matching_status": "not_applicable",
+      "template_candidate": null,
+      "geometry_score": 0.0,
+      "topology_score": 0.0,
+      "visual_score": 0.0,
+      "context_score": 0.0,
+      "total_score": 0.0,
+      "context_text": "TRANSIENT PRESSURE RESPONSE SURGE WAVEFORM",
+      "sandbox_warning": "Excluido del matching: elemento clasificado como figura analógica.",
+      "context_navigation": {
+        "page": 3,
+        "sheet_code": "SCH-01",
+        "bbox_normalized": [
+          0.6,
+          0.15,
+          0.9375,
+          0.3833
+        ]
+      }
+    },
+    {
+      "item_name": "Lámina 3 - Tabla Alfanumérica (Equipment Schedule)",
+      "project_document_id": "98523f72-1fe1-4885-9376-b4b56295443f",
+      "source_document_hash": "aff4fc103edfcb1b5812b6ac3fcd65fa12dcaedea510549f9f23f4bc763eb471",
+      "page_number": 3,
+      "sheet_id": "1c0297b8-a90c-4b89-9719-81e6e87d2fee",
+      "sheet_code": "SCH-01",
+      "sheet_name": "Equipment Schedule & Pressure Waveform Sheet",
+      "table_bbox": [
+        0.0625,
+        0.15,
+        0.525,
+        0.35
+      ],
+      "cell_bbox": null,
+      "inner_drawing_bbox": null,
+      "symbol_crop_bbox": null,
+      "crop_path": null,
+      "crop_hash": null,
+      "geometric_evidence": false,
+      "geometric_confidence": 0.0,
+      "classification": "table_graphic",
+      "orientation": "none",
+      "matching_status": "not_applicable",
+      "template_candidate": null,
+      "geometry_score": 0.0,
+      "topology_score": 0.0,
+      "visual_score": 0.0,
+      "context_score": 0.0,
+      "total_score": 0.0,
+      "context_text": "EQUIPMENT PRESSURE MATERIAL SPEC",
+      "sandbox_warning": "Cero candidatos geométricos: tabla puramente alfanumérica.",
+      "context_navigation": {
+        "page": 3,
+        "sheet_code": "SCH-01",
+        "bbox_normalized": [
+          0.0625,
+          0.15,
+          0.525,
+          0.35
+        ]
+      }
+    }
+  ],
+  "governance_verification": {
+    "production_findings_emitted": false,
+    "production_approval_blocked": true,
+    "sandbox_test_only_warnings_enforced": true,
+    "all_matches_flagged_non_production": true
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "finding_id": "find-001",
+  "rule_code": "QAQC-TB-001",
+  "severity": "high",
+  "title": "Escala no especificada en viñeta",
+  "human_feedback": {
+    "action": "accept_finding",
+    "notes": "Confirmado por auditor técnico",
+    "user": "lead_engineer@empresa.com"
+  }
+}

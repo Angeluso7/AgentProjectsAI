@@ -1,0 +1,177 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R 5 0 R 7 0 R 9 0 R] /Count 4 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>
+endobj
+4 0 obj
+<< /Length 3382 >>
+stream
+q 0.06 0.09 0.16 rg 0.00 817.89 595.28 24.00 re f Q
+q 0.80 0.85 0.90 RG 0.75 w 40.00 35.00 m 555.28 35.00 l S Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 22.00 Tm (Plan Review AI Hybrid - Technical QA/QC Audit Report - Hash-Based Integrity) Tj ET Q
+q 0.08 0.12 0.22 rg BT /F2 15.0 Tf 1 0 0 1 40.00 780.00 Tm (PLAN REVIEW AI HYBRID -- INFORME CONSOLIDADO POR ETAPA) Tj ET Q
+q 0.30 0.40 0.60 RG 1.50 w 40.00 770.00 m 555.00 770.00 l S Q
+q 0.95 0.97 1.00 rg 0.70 0.80 0.90 RG 1.00 w 40.00 680.00 515.00 80.00 re B Q
+q 0.10 0.20 0.35 rg BT /F2 11.0 Tf 1 0 0 1 55.00 740.00 Tm (PROYECTO: Proyecto Evolución de Etapa \(PRJ-STAGE-01\)) Tj ET Q
+q 0.20 0.30 0.40 rg BT /F2 10.0 Tf 1 0 0 1 55.00 722.00 Tm (ETAPA DE AUDITORÍA: Ingeniería de Detalle) Tj ET Q
+q 0.35 0.40 0.45 rg BT /F1 9.0 Tf 1 0 0 1 55.00 704.00 Tm (REVISIÓN / EMISIÓN: Rev 1  -  EMITIDO POR: Auditor Hardening) Tj ET Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 55.00 690.00 Tm (FECHA UTC: 2026-08-23T20:42:19) Tj ET Q
+q 1.00 0.90 0.90 rg 0.80 0.20 0.20 RG 1.50 w 40.00 595.00 515.00 70.00 re B Q
+q 0.80 0.20 0.20 rg BT /F2 9.0 Tf 1 0 0 1 55.00 645.00 Tm (ESTADO GLOBAL DE LA REVISIÓN:) Tj ET Q
+q 0.80 0.20 0.20 rg BT /F2 13.0 Tf 1 0 0 1 55.00 627.00 Tm (ETAPA NO APROBABLE / BLOQUEADA) Tj ET Q
+q 0.20 0.25 0.30 rg BT /F1 8.5 Tf 1 0 0 1 55.00 607.00 Tm (La etapa NO ES APROBABLE porque presenta 6 reglas bloqueadas preventivamente, 6 entregables obligatorios faltantes y 0 observaciones técnica...) Tj ET Q
+q 0.96 0.98 0.96 rg 0.80 0.88 0.80 RG 1.00 w 40.00 485.00 165.00 95.00 re B Q
+q 0.20 0.40 0.25 rg BT /F2 8.5 Tf 1 0 0 1 50.00 560.00 Tm (COMPLETITUD) Tj ET Q
+q 0.15 0.55 0.30 rg BT /F2 18.0 Tf 1 0 0 1 50.00 535.00 Tm (0.0%) Tj ET Q
+q 0.30 0.40 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 515.00 Tm (Gatekeeper: BLOQUEADO) Tj ET Q
+q 0.70 0.20 0.20 rg BT /F1 8.0 Tf 1 0 0 1 50.00 498.00 Tm (Bloqueos Activos: 6) Tj ET Q
+q 0.96 0.97 1.00 rg 0.80 0.85 0.95 RG 1.00 w 215.00 485.00 165.00 95.00 re B Q
+q 0.15 0.25 0.45 rg BT /F2 8.5 Tf 1 0 0 1 225.00 560.00 Tm (4 VEREDICTOS QA/QC) Tj ET Q
+q 0.10 0.20 0.40 rg BT /F2 13.0 Tf 1 0 0 1 225.00 538.00 Tm (1 Reglas) Tj ET Q
+q 0.20 0.30 0.40 rg BT /F1 8.0 Tf 1 0 0 1 225.00 515.00 Tm (CUMPLE: 0  -  NO CUMPLE: 1) Tj ET Q
+q 0.40 0.30 0.60 rg BT /F1 8.0 Tf 1 0 0 1 225.00 498.00 Tm (NO VERIFICABLE: 0  -  N/A: 0) Tj ET Q
+q 1.00 0.97 0.95 rg 0.95 0.85 0.80 RG 1.00 w 390.00 485.00 165.00 95.00 re B Q
+q 0.50 0.25 0.10 rg BT /F2 8.5 Tf 1 0 0 1 400.00 560.00 Tm (OBSERVACIONES & RFIs) Tj ET Q
+q 0.75 0.30 0.10 rg BT /F2 13.0 Tf 1 0 0 1 400.00 538.00 Tm (Abiertas: 1) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 400.00 515.00 Tm (OBS: 1 \(Crit/Alt: 0\)) Tj ET Q
+q 0.40 0.40 0.40 rg BT /F1 8.0 Tf 1 0 0 1 400.00 498.00 Tm (RFIs: 0  -  Bloqueos: 0) Tj ET Q
+q 0.98 0.98 0.98 rg 0.85 0.85 0.85 RG 1.00 w 40.00 390.00 515.00 75.00 re B Q
+q 0.20 0.25 0.30 rg BT /F2 9.0 Tf 1 0 0 1 55.00 445.00 Tm (EVOLUCIÓN INCREMENTAL / DELTA RESPECTO A REVISIÓN PREVIA:) Tj ET Q
+q 0.25 0.30 0.35 rg BT /F1 8.5 Tf 1 0 0 1 55.00 428.00 Tm (Primera emisión de revisión técnica para esta etapa.) Tj ET Q
+q 0.15 0.45 0.25 rg BT /F1 8.0 Tf 1 0 0 1 55.00 408.00 Tm (Hallazgos Resueltos: 0   -   Nuevas Observaciones: 0   -   Reglas Desbloqueadas: 0) Tj ET Q
+q 0.50 0.50 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 60.00 Tm (Plan Review AI Hybrid - Sistema Integrado de Auditoría Técnica y Control Documental) Tj ET Q
+endstream
+endobj
+5 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 6 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>
+endobj
+6 0 obj
+<< /Length 5162 >>
+stream
+q 0.06 0.09 0.16 rg 0.00 817.89 595.28 24.00 re f Q
+q 0.80 0.85 0.90 RG 0.75 w 40.00 35.00 m 555.28 35.00 l S Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 22.00 Tm (Plan Review AI Hybrid - Technical QA/QC Audit Report - Hash-Based Integrity) Tj ET Q
+q 0.08 0.12 0.22 rg BT /F2 13.0 Tf 1 0 0 1 40.00 780.00 Tm (1. MATRIZ DE COMPLETITUD DOCUMENTAL & GATEKEEPER) Tj ET Q
+q 0.30 0.40 0.60 RG 1.00 w 40.00 770.00 m 555.00 770.00 l S Q
+q 0.15 0.20 0.30 rg 40.00 740.00 515.00 20.00 re f Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 45.00 746.00 Tm (ENTREGABLE REQUERIDO) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 240.00 746.00 Tm (TIPO) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 340.00 746.00 Tm (CARÁCTER) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 440.00 746.00 Tm (ESTADO EVIDENCIA) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 722.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 727.00 Tm (Planos de Plantas, Cortes y Elevaci) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 727.00 Tm (plano_general) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 727.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 727.00 Tm (PENDING_VALIDATION) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 704.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 709.00 Tm (Detalles Constructivos y Cuadros de) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 709.00 Tm (plano_detalles) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 709.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 709.00 Tm (MISSING_MANDATORY) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 686.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 691.00 Tm (Planos de Enfierraduras, Fundacione) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 691.00 Tm (plano_estructural) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 691.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 691.00 Tm (MISSING_MANDATORY) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 668.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 673.00 Tm (Memoria de Cálculo Estructural Defi) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 673.00 Tm (memoria_calculo) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 673.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 673.00 Tm (MISSING_MANDATORY) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 650.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 655.00 Tm (Especificaciones Técnicas Especiale) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 655.00 Tm (especificaciones_t) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 655.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 655.00 Tm (MISSING_MANDATORY) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 632.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 637.00 Tm (Estudio de Mecánica de Suelos Defin) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 637.00 Tm (mecanica_suelos) Tj ET Q
+q 0.70 0.10 0.10 rg BT /F2 7.5 Tf 1 0 0 1 340.00 637.00 Tm (Obligatorio) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 637.00 Tm (MISSING_MANDATORY) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 614.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 619.00 Tm (Cuadros de Cargas y Diagramas Eléct) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 619.00 Tm (cuadro_cargas) Tj ET Q
+q 0.40 0.40 0.40 rg BT /F1 7.5 Tf 1 0 0 1 340.00 619.00 Tm (Opcional) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 619.00 Tm (MISSING_OPTIONAL) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 596.00 515.00 18.00 re B Q
+q 0.10 0.15 0.20 rg BT /F1 7.5 Tf 1 0 0 1 45.00 601.00 Tm (Plan de Evacuación y Protección Con) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.5 Tf 1 0 0 1 240.00 601.00 Tm (plan_seguridad) Tj ET Q
+q 0.40 0.40 0.40 rg BT /F1 7.5 Tf 1 0 0 1 340.00 601.00 Tm (Opcional) Tj ET Q
+q 0.80 0.30 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 601.00 Tm (MISSING_OPTIONAL) Tj ET Q
+q 0.70 0.15 0.15 rg BT /F2 10.0 Tf 1 0 0 1 40.00 563.00 Tm (REGLAS TÉCNICAS BLOQUEADAS PREVENTIVAMENTE:) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 548.00 Tm (- Regla RULE_DOOR_COUNT_MATCH_V1: Bloqueada por falta de ) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 536.00 Tm (- Regla RULE_WINDOW_COUNT_MATCH_V1: Bloqueada por falta de ) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 524.00 Tm (- Regla RULE_TITLE_BLOCK_FIELDS_V1: Bloqueada por falta de ) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 512.00 Tm (- Regla RULE_TITLE_BLOCK_SCALE_V1: Bloqueada por falta de ) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 500.00 Tm (- Regla RULE_DOOR_COUNT_MATCH_V1: Bloqueada por falta de ) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 8.0 Tf 1 0 0 1 50.00 488.00 Tm (- Regla RULE_WINDOW_COUNT_MATCH_V1: Bloqueada por falta de ) Tj ET Q
+endstream
+endobj
+7 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 8 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>
+endobj
+8 0 obj
+<< /Length 1373 >>
+stream
+q 0.06 0.09 0.16 rg 0.00 817.89 595.28 24.00 re f Q
+q 0.80 0.85 0.90 RG 0.75 w 40.00 35.00 m 555.28 35.00 l S Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 22.00 Tm (Plan Review AI Hybrid - Technical QA/QC Audit Report - Hash-Based Integrity) Tj ET Q
+q 0.08 0.12 0.22 rg BT /F2 13.0 Tf 1 0 0 1 40.00 780.00 Tm (2. AUDITORÍA TÉCNICA Y TABLA DE OBSERVACIONES & RFIs) Tj ET Q
+q 0.30 0.40 0.60 RG 1.00 w 40.00 770.00 m 555.00 770.00 l S Q
+q 0.15 0.20 0.30 rg 40.00 740.00 515.00 20.00 re f Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 45.00 746.00 Tm (CÓDIGO) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 115.00 746.00 Tm (TIPO) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 165.00 746.00 Tm (TÍTULO / DESCRIPCIÓN) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 380.00 746.00 Tm (SEV) Tj ET Q
+q 1.00 1.00 1.00 rg BT /F2 8.0 Tf 1 0 0 1 440.00 746.00 Tm (ESTADO) Tj ET Q
+q 1.00 1.00 1.00 rg 0.90 0.90 0.90 RG 0.50 w 40.00 722.00 515.00 18.00 re B Q
+q 0.10 0.20 0.40 rg BT /F2 7.5 Tf 1 0 0 1 45.00 727.00 Tm (OBS-ARQ-001) Tj ET Q
+q 0.30 0.30 0.30 rg BT /F1 7.0 Tf 1 0 0 1 115.00 727.00 Tm (technical_) Tj ET Q
+q 0.10 0.10 0.10 rg BT /F1 7.5 Tf 1 0 0 1 165.00 727.00 Tm ([OBS] Falta indicar escala en viñeta) Tj ET Q
+q 0.70 0.20 0.10 rg BT /F1 7.0 Tf 1 0 0 1 380.00 727.00 Tm (MEDI) Tj ET Q
+q 0.80 0.40 0.10 rg BT /F2 7.5 Tf 1 0 0 1 440.00 727.00 Tm (ISSUED) Tj ET Q
+endstream
+endobj
+9 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595.28 841.89] /Contents 10 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> /F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>
+endobj
+10 0 obj
+<< /Length 1354 >>
+stream
+q 0.06 0.09 0.16 rg 0.00 817.89 595.28 24.00 re f Q
+q 0.80 0.85 0.90 RG 0.75 w 40.00 35.00 m 555.28 35.00 l S Q
+q 0.40 0.45 0.50 rg BT /F1 8.0 Tf 1 0 0 1 40.00 22.00 Tm (Plan Review AI Hybrid - Technical QA/QC Audit Report - Hash-Based Integrity) Tj ET Q
+q 0.08 0.12 0.22 rg BT /F2 13.0 Tf 1 0 0 1 40.00 780.00 Tm (3. REGISTRO DE EVOLUCIÓN INCREMENTAL & TRAZABILIDAD) Tj ET Q
+q 0.30 0.40 0.60 RG 1.00 w 40.00 770.00 m 555.00 770.00 l S Q
+q 0.15 0.25 0.40 rg BT /F2 10.0 Tf 1 0 0 1 40.00 745.00 Tm (CAMBIOS REGISTRADOS RESPECTO A LA REVISIÓN PREVIA:) Tj ET Q
+q 0.40 0.40 0.40 rg BT /F1 8.5 Tf 1 0 0 1 50.00 720.00 Tm (No se registran cambios de estado o es la primera versión consolidada de esta etapa.) Tj ET Q
+q 0.95 0.97 1.00 rg 0.70 0.80 0.90 RG 1.00 w 40.00 200.00 515.00 90.00 re B Q
+q 0.10 0.20 0.35 rg BT /F2 9.5 Tf 1 0 0 1 55.00 268.00 Tm (INTEGRIDAD DIGITAL Y MANIFIESTO SHA-256) Tj ET Q
+q 0.30 0.35 0.40 rg BT /F1 7.5 Tf 1 0 0 1 55.00 248.00 Tm (Hash del Reporte \(SHA-256\): efb3f43f2882bc6aa74ef038fb4f18e7beefd7935d957961ca4b2388667e7cba) Tj ET Q
+q 0.30 0.35 0.40 rg BT /F1 8.0 Tf 1 0 0 1 55.00 230.00 Tm (Emitido formalmente en plataforma Plan Review AI Hybrid para el proyecto PRJ-STAGE-01.) Tj ET Q
+q 0.15 0.20 0.30 rg BT /F2 8.0 Tf 1 0 0 1 55.00 215.00 Tm (Auditor Responsable: Auditor Hardening   -   Fecha: 2026-08-23T20:42:19) Tj ET Q
+endstream
+endobj
+xref
+0 11
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000133 00000 n 
+0000000378 00000 n 
+0000003812 00000 n 
+0000004057 00000 n 
+0000009271 00000 n 
+0000009516 00000 n 
+0000010941 00000 n 
+0000011187 00000 n 
+trailer
+<< /Size 11 /Root 1 0 R >>
+startxref
+12594
+%%EOF

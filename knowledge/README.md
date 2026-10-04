@@ -1,9 +1,14 @@
-Conocimiento guía versionado.
+# Módulo Knowledge (Base de Conocimiento Guía)
 
-- title_blocks: plantillas de viñeta.
-- symbol_libraries: símbolos por disciplina.
-- table_schemas: definición de tablas.
-- ontologies: taxonomías, alias y relaciones.
-- standards: normativa y criterios internos.
-- templates: patrones de extracción y matching.
-- examples: ejemplos de entrada.
+Este directorio contiene las definiciones declarativas estáticas de apoyo que nutren las memorias del sistema:
+
+## Estructura
+- `standards/`: Normativas nacionales e internacionales estructuradas en JSON/YAML con cláusulas y criterios parametrizados.
+- `ontologies/`: Diccionarios de términos canónicos, abreviaturas y sinónimos técnicos por disciplina.
+- `title_blocks/`: Plantillas geométricas y anclas posicionales para extracción automática de viñetas.
+- `symbol_libraries/`: Catálogos de simbología gráfica normalizada.
+- `table_schemas/`: Esquemas esperados de columnas y tipos para cuadros de especificaciones técnicas (cuadros de vanos, cuadros de cargas, etc.).
+
+## Sincronización
+Para sincronizar estos archivos estáticos con la base de datos PostgreSQL, ejecuta el endpoint:
+`POST /api/v1/knowledge/sync-seed` o el script `python scripts/seed_data.py`.
