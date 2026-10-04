@@ -187,6 +187,8 @@ class OperationsRepository:
             event_type=event_type,
             from_status=status_before,
             to_status=status_after or "queued",
+            actor_type=actor_type or "system",
+            actor_id=actor_id,
             stage=stage,
             message=message,
             details=event_details
@@ -389,6 +391,7 @@ class OperationsRepository:
         explanation: str,
         confidence: Optional[float] = None,
         organization_id: Optional[str] = None,
+        project_id: Optional[str] = None,
         policy_id: Optional[str] = None,
         policy_version: Optional[str] = None,
         template_id: Optional[str] = None,
@@ -397,10 +400,17 @@ class OperationsRepository:
         source_asset_id: Optional[str] = None,
         document_id: Optional[str] = None,
         sheet_id: Optional[str] = None,
-        job_id: Optional[str] = None
+        job_id: Optional[str] = None,
+        **kwargs
     ) -> DecisionTrace:
         # Resolver organization_id si no se provee directamente
         resolved_org_id = organization_id
+        if not resolved_org_id and project_id:
+            from app.db.models.core import Project
+            proj = self.db.query(Project).filter(Project.id == project_id).first()
+            if proj and proj.organization_id:
+                resolved_org_id = proj.organization_id
+
         if not resolved_org_id and document_id:
             from app.db.models.document_memory import Document
             doc = self.db.query(Document).filter(Document.id == document_id).first()
@@ -425,6 +435,7 @@ class OperationsRepository:
             trace_type=(trace_type or "unspecified")[:50],
             entity_type=(entity_type or "unspecified")[:50],
             entity_id=(entity_id or "")[:36],
+            project_id=project_id,
             engine_name=(engine_name or "default")[:100],
             engine_version=(engine_version or "1.0")[:30],
             decision_status=(decision_status or "auto_accepted")[:50],

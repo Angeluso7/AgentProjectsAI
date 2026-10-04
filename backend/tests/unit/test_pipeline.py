@@ -6,10 +6,11 @@ from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from app.db.session import Base, get_db
-from app.db.models.core import Project
+from app.db.models.core import Project, Organization, User, OrganizationMembership
 from app.db.models.document_memory import Document, DocumentSheet
 from app.db.models.operations import ReviewPipelineRun, PipelineStageRun
 from app.services.operations.pipeline_service import ReviewPipelineService
+from app.core.security import hash_password, create_access_token
 from app.main import app
 
 TEST_DB_URL = "sqlite:///./test_pipeline.db"
@@ -91,21 +92,27 @@ def _create_sample_doc(db):
         file_path="./test_e2e.pdf",
         file_hash_sha256=f"hash-{uuid.uuid4().hex}",
         file_size_bytes=1024,
-        total_pages=1,
+        page_count=1,
         status="active"
     )
     db.add(doc)
     
+    os.makedirs("./data/rendered", exist_ok=True)
+    img_path = "./data/rendered/test_sheet.png"
+    if not os.path.exists(img_path):
+        from PIL import Image
+        img = Image.new("RGB", (2400, 1600), color=(255, 255, 255))
+        img.save(img_path)
+
     sheet = DocumentSheet(
         id=str(uuid.uuid4()),
         document_id=doc.id,
         sheet_number=1,
         sheet_code="ARQ-01",
         title="Planta General de Arquitectura",
-        discipline="architecture",
-        rendered_image_path="./data/rendered/test_sheet.png",
-        width_pixels=2400,
-        height_pixels=1600
+        raster_image_path=img_path,
+        width_px=2400,
+        height_px=1600
     )
     db.add(sheet)
     db.commit()

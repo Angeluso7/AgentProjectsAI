@@ -286,6 +286,73 @@ def get_knowledge_base_stats(
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(get_current_tenant)
 ):
-    """Retorna métricas y estadísticas agregadas de la Base de Conocimiento Operacional."""
     service = KnowledgeBaseService(db)
     return service.get_stats(tenant.organization.id, project_id)
+ 
+ 
+@router.post("/assets", status_code=status.HTTP_201_CREATED)
+def create_knowledge_asset(
+    asset_data: dict,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    from app.db.models.knowledge_asset import KnowledgeAsset
+    code = asset_data.get("code")
+    existing = db.query(KnowledgeAsset).filter(KnowledgeAsset.code == code).first()
+    if existing:
+        return existing
+    asset = KnowledgeAsset(
+        code=code,
+        title=asset_data.get("title", ""),
+        asset_type=asset_data.get("asset_type", "standard"),
+        discipline=asset_data.get("discipline", "general"),
+        version=asset_data.get("version", "1.0"),
+        description=asset_data.get("description"),
+        content_payload=asset_data.get("content_payload", {})
+    )
+    db.add(asset)
+    db.commit()
+    db.refresh(asset)
+    return {
+        "id": asset.id,
+        "code": asset.code,
+        "title": asset.title,
+        "asset_type": asset.asset_type,
+        "discipline": asset.discipline,
+        "version": asset.version,
+        "description": asset.description,
+        "content_payload": asset.content_payload
+    }
+
+
+@router.get("/assets")
+def list_knowledge_assets(
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    from app.db.models.knowledge_asset import KnowledgeAsset
+    assets = db.query(KnowledgeAsset).all()
+    return [
+        {
+            "id": a.id,
+            "code": a.code,
+            "title": a.title,
+            "asset_type": a.asset_type,
+            "discipline": a.discipline,
+            "version": a.version,
+            "description": a.description,
+            "content_payload": a.content_payload
+        }
+        for a in assets
+    ]
+
+
+@router.post("/sync-seed")
+def sync_seed_knowledge_endpoint(
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(get_current_tenant)
+):
+    service = KnowledgeBaseService(db)
+    counts = service.sync_seed_knowledge()
+    return {"status": "ok", "counts": counts}
+

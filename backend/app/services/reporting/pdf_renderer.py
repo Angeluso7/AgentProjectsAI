@@ -198,7 +198,7 @@ class TechnicalAuditPdfRenderer:
         canvas.draw_text("1. METADATOS DEL DOCUMENTO & VIÑETA", 55, 688, font_size=11, font="Helvetica-Bold", color=(0.06, 0.09, 0.16))
         canvas.draw_text(f"Archivo Origen: {data.document_filename} (ID: {data.document_id[:8]}...)", 55, 670, font_size=9, font="Helvetica")
         canvas.draw_text(f"Código Lámina: {data.sheet_code or 'N/A'} • Título: {data.sheet_title or 'Plano Técnico'}", 55, 654, font_size=9, font="Helvetica")
-        canvas.draw_text(f"Escala Declarada: {data.scale_text or 'N/A'} • Revisión: {data.revision or '0'} • Disciplina: {data.discipline.upper()}", 55, 638, font_size=9, font="Helvetica")
+        canvas.draw_text(f"Escala Declarada: {data.scale_text or 'N/A'} • Revisión: {data.revision or '0'} • Disciplina: {(data.discipline or 'general').upper()}", 55, 638, font_size=9, font="Helvetica")
         canvas.draw_text(f"Generado por: {data.generated_by} • Versión Motor: {data.engine_version}", 55, 622, font_size=9, font="Helvetica", color=(0.4, 0.45, 0.5))
 
         # Métricas de Resumen Ejecutivo (Badges de Severidad)

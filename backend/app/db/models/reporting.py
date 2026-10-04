@@ -9,7 +9,7 @@ class AuditReport(Base):
     __tablename__ = "audit_reports"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
     sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="SET NULL"), nullable=True, index=True)
     
@@ -41,7 +41,7 @@ class EvidenceManifest(Base):
     __tablename__ = "evidence_manifests"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     report_id = Column(String(36), ForeignKey("audit_reports.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     
     manifest_json = Column(JSON, nullable=False) # {"report_id": "...", "files": [{"path": "...", "sha256": "...", "size_bytes": 123}]}
@@ -58,7 +58,7 @@ class ProjectStageReportSnapshot(Base):
     __tablename__ = "project_stage_report_snapshots"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     
     stage = Column(String(50), nullable=False, index=True) # e.g. "Ingeniería Básica", "Ingeniería de Detalle"

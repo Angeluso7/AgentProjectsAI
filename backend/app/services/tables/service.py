@@ -266,3 +266,7 @@ class TableService:
         return self.db.query(ExtractedTableCell).filter(
             ExtractedTableCell.table_id == table_id
         ).order_by(ExtractedTableCell.row_index.asc(), ExtractedTableCell.column_index.asc()).all()
+
+    # Aliases para compatibilidad con pipeline_service
+    extract_document_tables = extract_tables_from_document
+    extract_sheet_tables = extract_tables_from_sheet

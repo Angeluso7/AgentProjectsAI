@@ -664,10 +664,10 @@ class GeometricEvidenceValidator:
                 y1_pt = min(ph, c_y1 * ph)
                 cell_rect_fitz = fitz.Rect(x0_pt, y0_pt, x1_pt, y1_pt)
 
-                # Un PDF es digital si tiene texto nativo o trazos vectoriales en la página
+                # Un PDF es digital vectorial si tiene trazos vectoriales en la página
                 page_drawings = page.get_drawings()
                 page_text = page.get_text()
-                if (page_drawings and len(page_drawings) > 0) or (page_text and len(page_text.strip()) > 0):
+                if page_drawings and len(page_drawings) > 0:
                     is_digital_pdf = True
 
                 # Validar evidencia de imagen LOCAL a la celda (NO usar page.get_images() global)
@@ -676,8 +676,8 @@ class GeometricEvidenceValidator:
                     if not img_bbox:
                         continue
                     img_rect = fitz.Rect(img_bbox)
-                    # Descartar imagen de fondo de página completa (> 80% ancho y alto)
-                    if img_rect.width >= pw * 0.80 and img_rect.height >= ph * 0.80:
+                    # Descartar imagen de fondo de página completa (> 80% ancho y alto) solo si hay trazos vectoriales
+                    if (page_drawings and len(page_drawings) > 0) and img_rect.width >= pw * 0.80 and img_rect.height >= ph * 0.80:
                         continue
                     if img_rect.intersects(cell_rect_fitz):
                         has_local_embedded_image = True
@@ -973,14 +973,14 @@ class GeometricEvidenceValidator:
                 ]
 
                 shape_features = {
-                    "valid_components_count": len(valid_comps),
-                    "circle_hits": circle_hits,
-                    "hough_lines_count": line_count,
-                    "has_holes": has_holes,
-                    "span_w_px": span_w,
-                    "span_h_px": span_h,
-                    "span_aspect_ratio": round(span_aspect, 2),
-                    "dark_pixel_ratio": round(dark_ratio, 4)
+                    "valid_components_count": int(len(valid_comps)),
+                    "circle_hits": int(circle_hits),
+                    "hough_lines_count": int(line_count),
+                    "has_holes": bool(has_holes),
+                    "span_w_px": int(span_w),
+                    "span_h_px": int(span_h),
+                    "span_aspect_ratio": round(float(span_aspect), 2),
+                    "dark_pixel_ratio": round(float(dark_ratio), 4)
                 }
 
         is_waveform_or_chart = False

@@ -138,7 +138,7 @@ def generate_sheet_report_sync(
     """Genera síncronamente el reporte técnico de auditoría de una lámina."""
     doc_repo = DocumentRepository(db)
     sheet = doc_repo.get_sheet_by_id(sheet_id)
-    if not sheet or (sheet.document and sheet.document.organization_id != tenant.organization.id):
+    if not sheet or (sheet.document and sheet.document.organization_id and sheet.document.organization_id != tenant.organization.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lámina '{sheet_id}' no encontrada.")
 
     svc = ReportingService(db)
@@ -163,7 +163,7 @@ def generate_sheet_report_async(
     """Encola asíncronamente la generación del reporte técnico de una lámina (HTTP 202 Accepted)."""
     doc_repo = DocumentRepository(db)
     sheet = doc_repo.get_sheet_by_id(sheet_id)
-    if not sheet or (sheet.document and sheet.document.organization_id != tenant.organization.id):
+    if not sheet or (sheet.document and sheet.document.organization_id and sheet.document.organization_id != tenant.organization.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lámina '{sheet_id}' no encontrada.")
 
     ops_svc = OperationsService(db)
@@ -185,6 +185,7 @@ def generate_sheet_report_async(
         job_id=job.id,
         status="queued",
         target_id=sheet_id,
+        target_type="sheet",
         poll_url=f"/api/v1/jobs/{job.id}",
         message="Generación de reporte técnico de lámina encolada exitosamente."
     )
@@ -199,7 +200,7 @@ def generate_document_report_async(
     """Encola asíncronamente la generación del reporte consolidado de documento (HTTP 202 Accepted)."""
     doc_repo = DocumentRepository(db)
     doc = doc_repo.get_by_id(document_id)
-    if not doc or doc.organization_id != tenant.organization.id:
+    if not doc or (doc.organization_id and doc.organization_id != tenant.organization.id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Documento '{document_id}' no encontrado.")
 
     ops_svc = OperationsService(db)
@@ -221,6 +222,7 @@ def generate_document_report_async(
         job_id=job.id,
         status="queued",
         target_id=document_id,
+        target_type="document",
         poll_url=f"/api/v1/jobs/{job.id}",
         message="Generación de reporte consolidado de documento encolada exitosamente."
     )

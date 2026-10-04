@@ -70,6 +70,30 @@ async def upload_document(
         )
 
     content = await file.read()
+    if not content or len(content) == 0:
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "code": "UPLOAD_VALIDATION_ERROR",
+                "message": "El archivo subido está vacío.",
+                "detail": "El archivo subido está vacío.",
+                "details": {"field": "file", "reason": "El archivo subido está vacío."}
+            }
+        )
+
+    filename_lower = (file.filename or "").lower()
+    allowed_extensions = (".pdf", ".dxf", ".dwg", ".png", ".jpg", ".jpeg", ".tiff", ".tif", ".xlsx", ".csv", ".docx")
+    if not any(filename_lower.endswith(ext) for ext in allowed_extensions) or filename_lower.endswith(".txt"):
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "code": "UPLOAD_VALIDATION_ERROR",
+                "message": "Tipo de archivo no permitido. El archivo no tiene formato PDF válido o extensión técnica soportada.",
+                "detail": "Tipo de archivo no permitido. El archivo no tiene formato PDF válido o extensión técnica soportada.",
+                "details": {"field": "file", "reason": "Extensión no permitida"}
+            }
+        )
+
     ingest_svc = IngestService(db)
 
     # Procesar metadatos adicionales

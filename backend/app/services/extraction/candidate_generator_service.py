@@ -544,6 +544,96 @@ class CandidateGeneratorService:
             self.db.add(img_cand)
             generated_candidates.append(img_cand)
 
+        # 4b. Procesar Cláusulas Directas (evidence_payload['clauses'])
+        for cls in evidence_payload.get("clauses", []):
+            cls_title = cls.get("title") or cls.get("clause_code") or "Cláusula Técnica"
+            cls_cand = ExtractedItem(
+                id=str(uuid.uuid4()),
+                extraction_id=extraction_id,
+                item_type="article",
+                candidate_type="rule_candidate",
+                title=f"Cláusula: {cls_title}",
+                code_or_number=cls.get("clause_code") or f"CLS-{len(generated_candidates) + 1}",
+                description=cls.get("body", "")[:220],
+                content_text=cls.get("body", ""),
+                derived_text=f"Exigencia técnica verificable: {cls.get('body', '')[:120]}",
+                bbox_normalized=cls.get("bbox_normalized") or cls.get("bbox") or [0.05, 0.1, 0.95, 0.3],
+                page_number=cls.get("page_number", 1),
+                evidence_references=[cls.get("clause_id")] if cls.get("clause_id") else [],
+                technical_parameters={"clause_code": cls.get("clause_code"), "primary_discipline": discipline},
+                target_destination="rules_engine",
+                review_status="to_confirm",
+                source_origin=extraction.source_origin,
+                source_reference=f"Documento: {doc_title} (Pág. {cls.get('page_number', 1)})",
+                item_nature="official_rule",
+                governance_note="Cláusula técnica extraída de documento.",
+                metadata_payload={"evidence_type": "normative_clause", "primary_discipline": discipline}
+            )
+            self.db.add(cls_cand)
+            generated_candidates.append(cls_cand)
+
+        # 4c. Procesar Elementos Visuales Directos (evidence_payload['visual_elements'])
+        for vis in evidence_payload.get("visual_elements", []):
+            vis_title = vis.get("caption") or vis.get("title") or "Elemento Visual"
+            el_type = vis.get("element_type", "picture")
+            cand_type = "diagram_candidate" if el_type in ["diagram", "drawing", "scheme"] else "equipment_image_candidate"
+            vis_cand = ExtractedItem(
+                id=str(uuid.uuid4()),
+                extraction_id=extraction_id,
+                item_type="figure" if cand_type == "diagram_candidate" else "image",
+                candidate_type=cand_type,
+                title=f"Visual: {vis_title}",
+                code_or_number=f"VIS-{len(generated_candidates) + 1}",
+                description=vis.get("caption") or "Elemento visual técnico",
+                content_text=vis.get("caption") or vis_title,
+                derived_text=f"Elemento visual registrado en pág {vis.get('page_number', 1)}.",
+                crop_image_path=vis.get("crop_image_path"),
+                bbox_normalized=vis.get("bbox_normalized") or vis.get("bbox") or [0.1, 0.1, 0.9, 0.9],
+                page_number=vis.get("page_number", 1),
+                evidence_references=[vis.get("element_id")] if vis.get("element_id") else [],
+                technical_parameters={"primary_discipline": discipline},
+                target_destination="knowledge_base",
+                review_status="to_confirm",
+                source_origin=extraction.source_origin,
+                source_reference=f"Documento: {doc_title} (Pág. {vis.get('page_number', 1)})",
+                item_nature="concept",
+                governance_note="Elemento visual de apoyo técnico.",
+                metadata_payload={"evidence_type": el_type, "primary_discipline": discipline}
+            )
+            self.db.add(vis_cand)
+            generated_candidates.append(vis_cand)
+
+        # 4d. Procesar Entidades CAD Directas (evidence_payload['cad_entities'])
+        for cad in (evidence_payload.get("cad_entities") or []):
+            if isinstance(cad, dict):
+                cad_layer = cad.get("layer", "DEFAULT")
+                cad_type = cad.get("entity_type", "ENTITY")
+                cad_cand = ExtractedItem(
+                    id=str(uuid.uuid4()),
+                    extraction_id=extraction_id,
+                    item_type="figure",
+                    candidate_type="diagram_candidate",
+                    title=f"Entidad CAD: {cad_type} ({cad_layer})",
+                    code_or_number=f"CAD-{len(generated_candidates) + 1}",
+                    description=f"Entidad CAD tipo {cad_type} en capa {cad_layer}. Propiedades: {cad.get('raw_properties', {})}",
+                    content_text=f"Entidad CAD {cad_type} en capa {cad_layer}",
+                    derived_text="Elemento vectorial extraído de plano técnico.",
+                    disclaimer_notes=self.TOPOLOGICAL_DISCLAIMER,
+                    bbox_normalized=[0.0, 0.0, 1.0, 1.0],
+                    page_number=1,
+                    evidence_references=[cad.get("entity_id")] if cad.get("entity_id") else [],
+                    technical_parameters={"layer": cad_layer, "entity_type": cad_type, "primary_discipline": discipline},
+                    target_destination="knowledge_base",
+                    review_status="to_confirm",
+                    source_origin=extraction.source_origin,
+                    source_reference=f"Documento: {doc_title}",
+                    item_nature="official_rule",
+                    governance_note="Entidad CAD extraída de archivo vectorial.",
+                    metadata_payload={"evidence_type": "cad_entity", "primary_discipline": discipline}
+                )
+                self.db.add(cad_cand)
+                generated_candidates.append(cad_cand)
+
         # 5. Procesar Nodos Estructurales (Secciones, Notas, Artículos, Cláusulas, Bloques CAD)
         for node in evidence_payload.get("structural_nodes", []):
             node_type = node.get("node_type")

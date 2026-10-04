@@ -9,7 +9,7 @@ class ProcessingJob(Base):
     __tablename__ = "processing_jobs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     job_type = Column(String(50), nullable=False, index=True)
     # document_ingest, document_rasterize, sheet_ocr, document_ocr, sheet_layout, document_layout, title_block_match, source_ingest
     
@@ -65,6 +65,9 @@ class JobEvent(Base):
     from_status = Column(String(30), nullable=True)
     to_status = Column(String(30), nullable=False)
     
+    actor_type = Column(String(50), default="system", nullable=True)
+    actor_id = Column(String(100), nullable=True)
+    
     stage = Column(String(100), nullable=True)
     message = Column(Text, nullable=True)
     details = Column(JSON, default=dict)
@@ -73,24 +76,37 @@ class JobEvent(Base):
 
     job = relationship("ProcessingJob", back_populates="events")
 
+    @property
+    def status_before(self) -> Optional[str]:
+        return self.from_status
+
+    @property
+    def status_after(self) -> Optional[str]:
+        return self.to_status
+
 
 class ConfidencePolicy(Base):
     """Reglas declarativas para el enrutamiento de confianza (auto-accept vs human-review)."""
     __tablename__ = "confidence_policies"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    policy_name = Column(String(100), unique=True, nullable=False)
+    name = Column(String(100), unique=True, nullable=True)
+    policy_name = Column(String(100), unique=True, nullable=True)
     version = Column(String(30), default="1.0", nullable=False)
-    discipline = Column(String(50), default="all", nullable=False)
-    task_type = Column(String(50), nullable=False, index=True)
-    # ocr_general, title_block_extraction, layout_segmentation, normative_classification, symbol_detection
+    discipline = Column(String(50), default="all", nullable=True)
+    applies_to = Column(String(50), nullable=True, index=True)
+    task_type = Column(String(50), nullable=True, index=True)
+    document_type = Column(String(50), nullable=True)
+    field_name = Column(String(50), nullable=True)
+    risk_level = Column(String(20), default="medium", nullable=True)
     
     auto_accept_threshold = Column(Float, default=0.85, nullable=False)
     review_threshold = Column(Float, default=0.60, nullable=False)
-    exception_threshold = Column(Float, default=0.40, nullable=False)
+    exception_threshold = Column(Float, default=0.40, nullable=True)
+    action_below_review_threshold = Column(String(50), default="exception_required", nullable=True)
+    action_on_below_review = Column(String(50), default="send_to_review_queue", nullable=True)
     
     is_active = Column(Boolean, default=True, nullable=False)
-    action_on_below_review = Column(String(50), default="send_to_review_queue", nullable=False)
     description = Column(Text, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
@@ -102,7 +118,7 @@ class ReviewTask(Base):
     __tablename__ = "review_tasks"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id = Column(String(36), ForeignKey("processing_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
     project_id = Column(String(36), nullable=True, index=True)
     document_id = Column(String(36), nullable=True, index=True)
@@ -142,7 +158,7 @@ class ReviewDecision(Base):
     __tablename__ = "review_decisions"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    task_id = Column(String(36), ForeignKey("review_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
+    review_task_id = Column(String(36), ForeignKey("review_tasks.id", ondelete="CASCADE"), nullable=False, index=True)
     
     decision = Column(String(50), nullable=False)
     # approved, corrected, rejected, marked_as_exception
@@ -158,27 +174,36 @@ class ReviewDecision(Base):
 
     task = relationship("ReviewTask", back_populates="decisions")
 
+    @property
+    def task_id(self) -> str:
+        return self.review_task_id
+
+    @task_id.setter
+    def task_id(self, val: str):
+        self.review_task_id = val
+
 
 class DecisionTrace(Base):
     """Trazabilidad granular de decisiones técnicas, inferencias y políticas aplicadas."""
     __tablename__ = "decision_traces"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     trace_type = Column(String(50), nullable=False, index=True)
     # ocr_extraction, title_block_field, title_block_match, normative_intake, rule_evaluation
     
     entity_type = Column(String(50), nullable=False) # ExtractedText, TitleBlockExtraction, SheetRegion, SourceAsset, RuleFinding
     entity_id = Column(String(36), nullable=False, index=True)
     
+    project_id = Column(String(36), nullable=True, index=True)
     source_asset_id = Column(String(36), nullable=True)
     document_id = Column(String(36), nullable=True)
     sheet_id = Column(String(36), nullable=True)
     job_id = Column(String(36), nullable=True)
     
     evidence_refs = Column(JSON, default=dict)
-    engine_name = Column(String(50), nullable=False)
-    engine_version = Column(String(30), nullable=False)
+    engine_name = Column(String(50), default="rule_engine", nullable=True)
+    engine_version = Column(String(30), default="1.0", nullable=True)
     
     template_id = Column(String(36), nullable=True)
     template_version = Column(String(30), nullable=True)
@@ -198,7 +223,7 @@ class ReviewPipelineRun(Base):
     __tablename__ = "review_pipeline_runs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     scope_type = Column(String(30), default="document", nullable=False, index=True) # sheet, document, project
     scope_id = Column(String(36), nullable=False, index=True)
     

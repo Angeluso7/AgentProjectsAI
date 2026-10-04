@@ -15,7 +15,7 @@ class JobEventRead(BaseModel):
     stage: Optional[str] = None
     message: Optional[str] = None
     details: Dict[str, Any] = {}
-    actor_type: str
+    actor_type: Optional[str] = "system"
     actor_id: Optional[str] = None
     created_at: datetime
 
@@ -72,8 +72,8 @@ class AsyncJobAcceptedResponse(BaseModel):
     status: str
     poll_url: str
     message: str
-    target_type: str
-    target_id: str
+    target_type: Optional[str] = None
+    target_id: Optional[str] = None
 
 # ==========================================
 # 2. ConfidencePolicy Schemas
@@ -171,6 +171,7 @@ class DecisionTraceRead(BaseModel):
     trace_type: str
     entity_type: str
     entity_id: str
+    project_id: Optional[str] = None
     source_asset_id: Optional[str] = None
     document_id: Optional[str] = None
     sheet_id: Optional[str] = None

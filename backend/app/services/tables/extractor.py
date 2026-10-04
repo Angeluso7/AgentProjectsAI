@@ -1134,13 +1134,13 @@ class TableExtractor:
 
         # 2. Separar título si la línea superior contiene palabras clave de tabla
         title = "Cuadro Técnico"
-        body_texts = list(region_texts)
 
         if region_texts:
             region_texts.sort(key=lambda t: (
                 getattr(t, "bbox_normalized", [0, 0, 0, 0])[1] if hasattr(t, "bbox_normalized") else t.get("bbox_normalized", [0, 0, 0, 0])[1],
                 getattr(t, "bbox_normalized", [0, 0, 0, 0])[0] if hasattr(t, "bbox_normalized") else t.get("bbox_normalized", [0, 0, 0, 0])[0]
             ))
+            body_texts = list(region_texts)
             first_line = body_texts[0]
             first_txt = getattr(first_line, "text", "") or (first_line.get("text", "") if isinstance(first_line, dict) else "")
             if re.search(r"(CUADRO|TABLA|LISTA|RESUMEN|ESPECIFICACI|LEYENDA|SIMBOLOG)", first_txt.upper()):
@@ -1149,6 +1149,8 @@ class TableExtractor:
 
             if not body_texts and not region_symbols:
                 body_texts = [first_line]
+        else:
+            body_texts = []
 
         # 3. Agrupación en Filas por coordenada Y considerando textos, símbolos y trazos vectoriales internos
         row_tol = 0.025 # 2.5% tolerancia vertical normalizada
@@ -1238,7 +1240,7 @@ class TableExtractor:
                     merged_r
                     and elem["type"] == "text"
                     and merged_r[-1]["type"] == "text"
-                    and (elem["x0"] - merged_r[-1]["x1"]) <= 0.035
+                    and (elem["x0"] - merged_r[-1]["x1"]) <= 0.008
                 ):
                     prev = merged_r[-1]
                     prev_txt = getattr(prev["item"], "text", "") or (prev["item"].get("text", "") if isinstance(prev["item"], dict) else "")
@@ -1364,8 +1366,8 @@ class TableExtractor:
 
                 def _get_t_conf(t):
                     if isinstance(t, dict):
-                        return float(t.get("confidence", 0.9))
-                    return float(getattr(t, "confidence", 0.9))
+                        return float(t.get("confidence", 0.9) or 0.9)
+                    return float(getattr(t, "confidence", 0.9) or 0.9)
 
                 def _get_t_id(t):
                     if isinstance(t, dict):

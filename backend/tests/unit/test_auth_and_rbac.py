@@ -19,10 +19,12 @@ TEST_DB_URL = "sqlite:///./test_auth_rbac.db"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-@pytest.fixture(scope="module", autouse=True)
+@pytest.fixture(scope="function", autouse=True)
 def setup_test_db():
+    os.environ["TEST_ENFORCE_AUTH"] = "1"
     Base.metadata.create_all(bind=engine)
     yield
+    os.environ.pop("TEST_ENFORCE_AUTH", None)
     Base.metadata.drop_all(bind=engine)
     if os.path.exists("./test_auth_rbac.db"):
         try:
@@ -132,7 +134,7 @@ def _create_tenant_fixtures(db):
         file_path="./plano_alpha.pdf",
         file_hash_sha256=f"sha256-{uuid.uuid4().hex}",
         file_size_bytes=1024,
-        total_pages=1
+        page_count=1
     )
     db.add(doc_a)
     
@@ -141,9 +143,9 @@ def _create_tenant_fixtures(db):
         document_id=doc_a.id,
         sheet_number=1,
         sheet_code="A-01",
-        rendered_image_path="./data/rendered/test.png",
-        width_pixels=2000,
-        height_pixels=1500
+        raster_image_path="./data/rendered/test.png",
+        width_px=2000,
+        height_px=1500
     )
     db.add(sheet_a)
     db.commit()
@@ -166,7 +168,7 @@ def _create_tenant_fixtures(db):
         file_path="./plano_beta.pdf",
         file_hash_sha256=f"sha256-{uuid.uuid4().hex}",
         file_size_bytes=2048,
-        total_pages=1
+        page_count=1
     )
     db.add(doc_b)
     db.commit()

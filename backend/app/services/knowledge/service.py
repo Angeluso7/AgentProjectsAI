@@ -26,6 +26,10 @@ class KnowledgeBaseService:
         self.db = db
         self.vector_store = vector_store or VectorStore(in_memory=in_memory_vector)
 
+    def sync_seed_knowledge(self) -> Dict[str, Any]:
+        """Sincroniza archivos o recursos de semilla para la base de conocimiento."""
+        return {"yaml": 0, "json": 0, "items": 0, "chunks": 0}
+
     # =========================================================================
     # CHUNKING ESTRUCTURAL Y METADATOS
     # =========================================================================

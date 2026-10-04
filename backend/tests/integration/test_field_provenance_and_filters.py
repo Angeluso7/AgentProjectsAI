@@ -366,6 +366,7 @@ def test_real_document_pdf_workflow_with_filters_and_provenance(db_session: Sess
         "title": "Símbolo Extintor PQS 10kg",
         "code_or_number": "EXT-10",
         "description": "Ubicación de extintor",
+        "crop_image_path": "https://storage.local/crops/extintor_pqs_10kg.png",
         "page_number": 1,
         "completeness_status": "partial",
         "review_status": "to_confirm"

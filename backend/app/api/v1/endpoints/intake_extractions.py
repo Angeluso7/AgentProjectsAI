@@ -398,6 +398,7 @@ def add_extracted_item(
             caption_or_context=payload.caption_or_context,
             disclaimer_notes=payload.disclaimer_notes,
             crop_image_base64=payload.crop_image_base64,
+            crop_image_path=payload.crop_image_path,
             bbox_normalized=payload.bbox_normalized,
             page_number=payload.page_number,
             evidence_references=payload.evidence_references,
@@ -460,68 +461,6 @@ def delete_extracted_item(
     if not success:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Elemento no encontrado.")
     return {"message": "Elemento eliminado exitosamente."}
-
-@router.get("/{extraction_id}/items", response_model=List[ExtractedItemRead])
-def list_extracted_items(
-    extraction_id: str,
-    item_type: Optional[str] = Query(None, description="Filtro por tipo de elemento (rule, symbol, table, equipment, figure)"),
-    completeness_status: Optional[str] = Query(None, description="Filtro ortogonal por completitud (complete, partial, missing_data, web_suggested)"),
-    review_status: Optional[str] = Query(None, description="Filtro por estado de revisión humana (draft, to_confirm, accepted, rejected)"),
-    discipline: Optional[str] = Query(None, description="Filtro por disciplina técnica"),
-    source_origin: Optional[str] = Query(None, description="Filtro por origen (document, web)"),
-    query: Optional[str] = Query(None, description="Término de búsqueda en título, descripción o código"),
-    db: Session = Depends(get_db)
-):
-    """
-    Lista elementos extraídos con filtros ortogonales completos por tipo y completitud técnica.
-    """
-    repo = IntakeExtractionRepository(db)
-    return repo.list_extracted_items(
-        extraction_id=extraction_id,
-        item_type=item_type,
-        completeness_status=completeness_status,
-        review_status=review_status,
-        discipline=discipline,
-        source_origin=source_origin,
-        query=query
-    )
-
-@router.get("/{extraction_id}/stats", response_model=ExtractionItemsSummaryStats)
-def get_extraction_stats(
-    extraction_id: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Retorna métricas agregadas en tiempo real de completitud, revisión y distribución por tipo.
-    """
-    service = CandidateEnrichmentService(db)
-    return service.get_item_summary_stats(extraction_id)
-
-@router.patch("/{extraction_id}/items/{item_id}/accept-field", response_model=ExtractedItemRead)
-def accept_item_field(
-    extraction_id: str,
-    item_id: str,
-    payload: FieldAcceptancePatchRequest,
-    db: Session = Depends(get_db)
-):
-    """
-    Aplica una aceptación parcial por campo específico (title, description, function, etc.)
-    con trazabilidad y linaje estricto en field_provenance y recalcula la completitud técnica.
-    """
-    service = CandidateEnrichmentService(db)
-    try:
-        updated_item = service.apply_field_patch(
-            item_id=item_id,
-            field_name=payload.field_name,
-            accepted_value=payload.accepted_value,
-            accepted_from=payload.accepted_from,
-            user_id=payload.user_id
-        )
-        return updated_item
-    except ValueError as ve:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
-    except Exception as e:
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al aplicar parche de campo: {str(e)}")
 
 
 

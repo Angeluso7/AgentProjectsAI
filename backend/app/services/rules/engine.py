@@ -174,61 +174,70 @@ class RuleEngine:
 
             # Si la regla está bloqueada preventivamente por el Gatekeeper de Completitud
             if rule.code in blocked_rules_map:
-                block_info = blocked_rules_map[rule.code]
-                verdict = "no_verificable"
-                unverifiable_reason = "blocked_by_missing_doc"
-                status = "insufficient_evidence"
+                can_evaluate_locally = False
+                if rule.code == "RULE_DOOR_COUNT_MATCH_V1" and any(t.table_type in ["door_schedule", "window_schedule"] for t in inputs.tables):
+                    can_evaluate_locally = True
+                elif rule.code == "RULE_WINDOW_COUNT_MATCH_V1" and any(t.table_type in ["window_schedule", "door_schedule"] for t in inputs.tables):
+                    can_evaluate_locally = True
+                elif rule.code in ["RULE_TITLE_BLOCK_FIELDS_V1", "RULE_TITLE_BLOCK_SCALE_V1"] and inputs.title_block is not None:
+                    can_evaluate_locally = True
 
-                execution = RuleExecution(
-                    job_id=job_id,
-                    document_id=sheet.document_id,
-                    sheet_id=sheet.id,
-                    rule_id=rule_def.id,
-                    rule_version=rule.version,
-                    execution_status=status,
-                    input_snapshot={"blocked": True, "deliverable_required": block_info.get("blocked_by_deliverable_title")},
-                    result_summary={
-                        "verdict": verdict,
-                        "unverifiable_reason": unverifiable_reason,
-                        "blocked_by": block_info.get("blocked_by_deliverable_title"),
-                        "title": f"No Verificable: Falta {block_info.get('blocked_by_deliverable_title')}",
-                        "severity": "medium",
-                        "detail": block_info.get("detail")
-                    },
-                    confidence=1.0
-                )
-                self.db.add(execution)
-                self.db.commit()
+                if not can_evaluate_locally:
+                    block_info = blocked_rules_map[rule.code]
+                    verdict = "no_verificable"
+                    unverifiable_reason = "blocked_by_missing_doc"
+                    status = "insufficient_evidence"
 
-                doc = self.doc_repo.get_by_id(sheet.document_id)
-                org_id = doc.organization_id if doc and doc.organization_id else "388d7837-9c5d-45fb-b3eb-69909a915e43"
+                    execution = RuleExecution(
+                        job_id=job_id,
+                        document_id=sheet.document_id,
+                        sheet_id=sheet.id,
+                        rule_id=rule_def.id,
+                        rule_version=rule.version,
+                        execution_status=status,
+                        input_snapshot={"blocked": True, "deliverable_required": block_info.get("blocked_by_deliverable_title")},
+                        result_summary={
+                            "verdict": verdict,
+                            "unverifiable_reason": unverifiable_reason,
+                            "blocked_by": block_info.get("blocked_by_deliverable_title"),
+                            "title": f"No Verificable: Falta {block_info.get('blocked_by_deliverable_title')}",
+                            "severity": "medium",
+                            "detail": block_info.get("detail")
+                        },
+                        confidence=1.0
+                    )
+                    self.db.add(execution)
+                    self.db.commit()
 
-                finding = RuleFinding(
-                    organization_id=org_id,
-                    document_id=sheet.document_id,
-                    sheet_id=sheet.id,
-                    rule_id=rule_def.id,
-                    rule_code=rule.code,
-                    rule_name=rule.name,
-                    category=rule.category,
-                    severity="medium",
-                    status="open",
-                    confidence=1.0,
-                    finding_type="insufficient_evidence",
-                    title=f"No Verificable: Bloqueado por falta de {block_info.get('blocked_by_deliverable_title')}",
-                    description=block_info.get("detail", "Falta entregable requerido."),
-                    recommendation=f"Cargar y validar el entregable «{block_info.get('blocked_by_deliverable_title')}» en estado 'Apto como Evidencia'.",
-                    evidence_refs={
-                        "verdict": verdict,
-                        "unverifiable_reason": unverifiable_reason,
-                        "blocked_by": block_info.get("blocked_by_deliverable_title"),
-                        "deliverable_type": block_info.get("blocked_by_deliverable_type")
-                    }
-                )
-                self.db.add(finding)
-                self.db.commit()
-                generated_findings.append(finding)
-                continue
+                    doc = self.doc_repo.get_by_id(sheet.document_id)
+                    org_id = doc.organization_id if doc and doc.organization_id else "388d7837-9c5d-45fb-b3eb-69909a915e43"
+
+                    finding = RuleFinding(
+                        organization_id=org_id,
+                        document_id=sheet.document_id,
+                        sheet_id=sheet.id,
+                        rule_id=rule_def.id,
+                        rule_code=rule.code,
+                        rule_name=rule.name,
+                        category=rule.category,
+                        severity="medium",
+                        status="open",
+                        confidence=1.0,
+                        finding_type="insufficient_evidence",
+                        title=f"No Verificable: Bloqueado por falta de {block_info.get('blocked_by_deliverable_title')}",
+                        description=block_info.get("detail", "Falta entregable requerido."),
+                        recommendation=f"Cargar y validar el entregable «{block_info.get('blocked_by_deliverable_title')}» en estado 'Apto como Evidencia'.",
+                        evidence_refs={
+                            "verdict": verdict,
+                            "unverifiable_reason": unverifiable_reason,
+                            "blocked_by": block_info.get("blocked_by_deliverable_title"),
+                            "deliverable_type": block_info.get("blocked_by_deliverable_type")
+                        }
+                    )
+                    self.db.add(finding)
+                    self.db.commit()
+                    generated_findings.append(finding)
+                    continue
 
             result = rule.evaluate(inputs)
 

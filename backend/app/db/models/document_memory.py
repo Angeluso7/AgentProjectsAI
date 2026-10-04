@@ -12,14 +12,14 @@ class Document(Base):
     )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     project_version_id = Column(String(36), ForeignKey("project_versions.id", ondelete="SET NULL"), nullable=True)
     
     filename = Column(String(255), nullable=False)
-    file_path = Column(String(500), nullable=False)
-    file_hash_sha256 = Column(String(64), index=True, nullable=False)
-    file_size_bytes = Column(Integer, nullable=False)
+    file_path = Column(String(500), nullable=True)
+    file_hash_sha256 = Column(String(64), index=True, nullable=True)
+    file_size_bytes = Column(Integer, nullable=True)
     mime_type = Column(String(100), default="application/pdf", nullable=False)
     page_count = Column(Integer, default=1, nullable=False)
     status = Column(String(30), default="uploaded") # uploaded, processing, ready, failed, archived
@@ -54,8 +54,8 @@ class DocumentSheet(Base):
     date_str = Column(String(50), nullable=True)
     
     # Geometría y dimensiones
-    width_px = Column(Integer, nullable=False)
-    height_px = Column(Integer, nullable=False)
+    width_px = Column(Integer, default=3000, nullable=True)
+    height_px = Column(Integer, default=2000, nullable=True)
     width_mm = Column(Float, nullable=True)
     height_mm = Column(Float, nullable=True)
     dpi = Column(Integer, default=150, nullable=False)
@@ -173,8 +173,8 @@ class ExtractedTable(Base):
     # window_schedule, door_schedule, area_schedule, load_schedule, material_list, unknown_table
     
     title = Column(String(255), nullable=True)
-    bbox = Column(JSON, nullable=False) # [x0, y0, x1, y1] en píxeles
-    bbox_normalized = Column(JSON, nullable=False) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
+    bbox = Column(JSON, default=lambda: [0, 0, 100, 100], nullable=True) # [x0, y0, x1, y1] en píxeles
+    bbox_normalized = Column(JSON, default=lambda: [0.0, 0.0, 1.0, 1.0], nullable=True) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
     
     row_count = Column(Integer, default=0, nullable=False)
     column_count = Column(Integer, default=0, nullable=False)
@@ -211,8 +211,8 @@ class ExtractedTableCell(Base):
     normalized_text = Column(Text, nullable=True)
     confidence = Column(Float, default=1.0, nullable=False)
     
-    bbox = Column(JSON, nullable=False) # [x0, y0, x1, y1] píxeles
-    bbox_normalized = Column(JSON, nullable=False) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
+    bbox = Column(JSON, default=lambda: [0, 0, 50, 50], nullable=True) # [x0, y0, x1, y1] píxeles
+    bbox_normalized = Column(JSON, default=lambda: [0.0, 0.0, 0.5, 0.5], nullable=True) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
     
     is_header = Column(Boolean, default=False, nullable=False)
     source_text_refs = Column(JSON, default=list) # IDs de ExtractedText que alimentan la celda
@@ -241,8 +241,8 @@ class DetectedSymbol(Base):
     # door_symbol, window_symbol, luminaire_symbol, switch_symbol, outlet_symbol, sanitary_fixture, panel_symbol, unknown_symbol_candidate
     
     discipline = Column(String(50), default="architecture", nullable=False) # architecture, electrical, plumbing, structural
-    bbox = Column(JSON, nullable=False) # [x0, y0, x1, y1] en píxeles
-    bbox_normalized = Column(JSON, nullable=False) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
+    bbox = Column(JSON, default=lambda: [0, 0, 100, 100], nullable=True) # [x0, y0, x1, y1] en píxeles
+    bbox_normalized = Column(JSON, default=lambda: [0.0, 0.0, 1.0, 1.0], nullable=True) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
     polygon_points = Column(JSON, nullable=True) # opcional para geometrías complejas
     
     confidence = Column(Float, default=1.0, nullable=False)

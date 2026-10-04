@@ -176,15 +176,18 @@ class CandidateEnrichmentService:
     @classmethod
     def compute_completeness(
         cls,
-        title_or_item: Any,
+        title_or_item: Any = None,
         description: Optional[str] = None,
         function_or_role: Optional[str] = None,
         item_type: Optional[str] = None,
         is_web_suggested: bool = False,
         requires_validation: bool = True,
         has_table_matrix: bool = False,
-        crop_image_path: Optional[str] = None
+        crop_image_path: Optional[str] = None,
+        title: Optional[str] = None,
     ) -> str:
+        if title is not None and title_or_item is None:
+            title_or_item = title
         """
         Calcula el estado de completitud de un elemento de forma determinística y tipada:
         - web_suggested: tiene sugerencias de IA/web pendientes de confirmación.

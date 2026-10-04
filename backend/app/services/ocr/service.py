@@ -58,8 +58,10 @@ class OcrService:
         self,
         sheet_id: str,
         force_reprocess: bool = False,
-        preferred_engine: Optional[str] = None
+        preferred_engine: Optional[str] = None,
+        engine: Optional[str] = None
     ) -> List[ExtractedText]:
+        preferred_engine = preferred_engine or engine
         """Ejecuta OCR sobre una lámina rasterizada, persiste los bloques de texto con coordenadas
         normalizadas y maneja la idempotencia mediante eliminación de textos previos si se fuerza el reproceso.
         """
@@ -80,18 +82,20 @@ class OcrService:
             deleted_count = self.repo.delete_texts_by_sheet(sheet_id)
             logger.info(f"Reprocesamiento forzado: Eliminados {deleted_count} bloques de texto previos para sheet {sheet_id}.")
 
-        # Validar ruta de imagen raster
+        # Validar existencia de imagen raster o PDF original
         image_path = sheet.raster_image_path
-        if not image_path or not os.path.exists(image_path):
-            raise FileNotFoundError(
-                f"Imagen rasterizada de la lámina no encontrada en '{image_path}'. Ejecute el rasterizado previamente."
-            )
+        has_raster = bool(image_path and os.path.exists(image_path))
 
-        # Obtener ruta del PDF original para fallback vectorial
         doc = self.repo.get_by_id(sheet.document_id)
         pdf_path = doc.file_path if doc else None
         page_index = max(0, sheet.sheet_number - 1)
         has_pdf = bool(pdf_path and os.path.exists(pdf_path))
+
+        if not has_raster and not has_pdf:
+            logger.warning(
+                f"Lámina {sheet_id} no posee imagen raster válida ni archivo PDF en disco. Retornando 0 textos OCR."
+            )
+            return []
 
         engine = self._select_engine(preferred_engine, has_pdf=has_pdf)
         logger.info(
@@ -135,8 +139,10 @@ class OcrService:
         self,
         document_id: str,
         force_reprocess: bool = False,
-        preferred_engine: Optional[str] = None
+        preferred_engine: Optional[str] = None,
+        engine: Optional[str] = None
     ) -> List[Dict[str, Any]]:
+        preferred_engine = preferred_engine or engine
         """Ejecuta OCR sobre todas las hojas rasterizadas de un documento."""
         doc = self.repo.get_by_id(document_id)
         if not doc:

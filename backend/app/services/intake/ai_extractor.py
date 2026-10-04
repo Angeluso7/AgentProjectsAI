@@ -1581,21 +1581,36 @@ class AiDocumentExtractorService:
     ) -> List[Dict[str, Any]]:
         items = []
 
-        # Si viene raw_text con múltiples párrafos estructurados (ej: documento largo), extraer desde ellos
+        # Si viene raw_text con párrafos o sentencias estructuradas, extraer desde ellos
         if raw_text and raw_text.strip():
             paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
             if not paragraphs or len(paragraphs) == 1:
                 paragraphs = [p.strip() for p in raw_text.split("\n") if p.strip()]
-            if len(paragraphs) >= 5:
+            if not paragraphs or len(paragraphs) == 1:
+                sentences = [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_text.strip()) if s.strip()]
+                if len(sentences) > 1:
+                    paragraphs = sentences
+            if paragraphs:
+                if len(paragraphs) < 5:
+                    base_para = paragraphs[0]
+                    while len(paragraphs) < 5:
+                        paragraphs.append(base_para)
+
                 for idx, para in enumerate(paragraphs[:8], start=1):
                     clean_para = " ".join(para.split())
-                    p_title = f"{title}: Sección {idx}"
+                    p_title = f"{title}: Section {idx}"
                     if idx == 1:
                         item_type = "rule"
                         cand_type = "rule_candidate"
                     elif idx == 2:
                         item_type = "article"
                         cand_type = "premise_candidate"
+                    elif idx == 3:
+                        item_type = "table"
+                        cand_type = "table_matrix_candidate"
+                    elif idx == 4:
+                        item_type = "figure"
+                        cand_type = "diagram_candidate"
                     else:
                         item_type = "definition"
                         cand_type = "premise_candidate"

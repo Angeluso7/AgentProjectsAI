@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Text, JSON, Boolean, ForeignKey
+from sqlalchemy import Column, String, DateTime, Text, JSON, Boolean, ForeignKey, UniqueConstraint, Index, text
 from sqlalchemy.orm import relationship, validates
 from app.db.session import Base
 
@@ -65,9 +65,19 @@ class OrganizationMembership(Base):
 class Project(Base):
     """Entidad que agrupa un conjunto de planos y auditorías dentro de un tenant."""
     __tablename__ = "projects"
+    __table_args__ = (
+        Index(
+            "uq_project_org_active_code",
+            "organization_id",
+            "normalized_code",
+            unique=True,
+            sqlite_where=text("status != 'deleted'"),
+            postgresql_where=text("status != 'deleted'")
+        ),
+    )
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     code = Column(String(50), index=True, nullable=False)
     name = Column(String(200), nullable=False)
     description = Column(Text, nullable=True)

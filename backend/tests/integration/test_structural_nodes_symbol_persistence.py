@@ -235,9 +235,10 @@ def test_postgres_live_persistence_without_truncation():
                 VALUES ('{test_org_id}', 'PG Test Org', 'pg-test-{uuid.uuid4().hex[:6]}', 'active', NOW(), NOW())
                 ON CONFLICT DO NOTHING;
             """))
+            proj_code = f"PG-CODE-{uuid.uuid4().hex[:6]}"
             conn.execute(text(f"""
-                INSERT INTO projects (id, organization_id, code, name, discipline, status, created_at, updated_at)
-                VALUES ('{test_proj_id}', '{test_org_id}', 'PG-CODE-{uuid.uuid4().hex[:6]}', 'Test Project', 'piping', 'active', NOW(), NOW())
+                INSERT INTO projects (id, organization_id, code, normalized_code, name, discipline, status, created_at, updated_at)
+                VALUES ('{test_proj_id}', '{test_org_id}', '{proj_code}', '{proj_code.lower()}', 'Test Project', 'piping', 'active', NOW(), NOW())
                 ON CONFLICT DO NOTHING;
             """))
             conn.execute(text(f"""

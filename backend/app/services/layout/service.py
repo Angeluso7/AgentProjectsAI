@@ -70,6 +70,15 @@ class LayoutService:
         logger.info(f"Layout segmentado para hoja {sheet.id}: {len(persisted)} regiones creadas.")
         return persisted
 
+    def segment_document_layout(
+        self,
+        document_id: str,
+        force_reprocess: bool = False
+    ) -> List[List[SheetRegion]]:
+        """Segmenta todas las láminas de un documento."""
+        sheets = self.repo.list_sheets_by_document(document_id)
+        return [self.segment_sheet_layout(sheet.id, force_reprocess=force_reprocess) for sheet in sheets]
+
     def match_and_extract_title_block(
         self,
         sheet_id: str,

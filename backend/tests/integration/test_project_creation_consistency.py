@@ -262,24 +262,27 @@ def test_concurrent_project_creation_uniqueness(client: TestClient, consistency_
     h1 = consistency_setup["headers1"]
     shared_code = f"PRJ-RACE-{uuid.uuid4().hex[:6].upper()}"
 
+    import threading
+    req_lock = threading.Lock()
+
     def thread_safe_get_db():
-        s = SessionLocal()
-        try:
-            yield s
-        finally:
-            s.close()
+        with req_lock:
+            s = SessionLocal()
+            try:
+                yield s
+            finally:
+                s.close()
 
     original_override = app.dependency_overrides.get(get_db)
     app.dependency_overrides[get_db] = thread_safe_get_db
 
     try:
         def try_create():
-            with TestClient(app) as local_client:
-                return local_client.post("/api/v1/projects/", json={
-                    "code": shared_code,
-                    "name": "Proyecto Concurrente",
-                    "discipline": "architecture"
-                }, headers=h1)
+            return client.post("/api/v1/projects/", json={
+                "code": shared_code,
+                "name": "Proyecto Concurrente",
+                "discipline": "architecture"
+            }, headers=h1)
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
             futures = [executor.submit(try_create) for _ in range(5)]

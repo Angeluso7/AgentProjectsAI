@@ -35,7 +35,7 @@ class TestEvaluationEngine(unittest.TestCase):
         # Organigramas y usuarios de prueba
         self.org_a = Organization(id="org-a", name="Org Alpha", slug="org-a")
         self.org_b = Organization(id="org-b", name="Org Beta", slug="org-b")
-        self.user_a = User(id="user-a", email="auditor_a@alpha.cl", full_name="Auditor Alpha")
+        self.user_a = User(id="user-a", email="auditor_a@alpha.cl", display_name="Auditor Alpha", password_hash="dummy_hash")
         self.mem_a = OrganizationMembership(id="mem-a", user_id="user-a", organization_id="org-a", role="audit_lead")
 
         self.db.add_all([self.org_a, self.org_b, self.user_a, self.mem_a])
@@ -206,7 +206,7 @@ class TestEvaluationEngine(unittest.TestCase):
             organization_id="org-a"
         )
         ds_global = svc.create_dataset(
-            EvaluationDatasetCreate(name="DS Global", dataset_type="benchmark"),
+            EvaluationDatasetCreate(name="DS Global", dataset_type="benchmark", source_policy="anonymized"),
             organization_id=None
         )
 

@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, Optional
 from sqlalchemy.orm import Session
 
-from app.db.session import SessionLocal
+import app.db.session as session_module
 from app.db.repositories.operations_repository import OperationsRepository
 from app.services.ingest.service import IngestService
 from app.services.ocr.service import OcrService
@@ -30,7 +30,7 @@ class JobDispatcher:
 
     def _execute_job_in_isolated_session(self, job_id: str) -> None:
         """Ejecuta el job en una sesión aislada de base de datos para prevenir interferencia de hilos."""
-        db = SessionLocal()
+        db = session_module.SessionLocal()
         try:
             self._run_job_lifecycle(job_id, db)
         finally:

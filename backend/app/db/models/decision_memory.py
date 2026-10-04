@@ -168,7 +168,7 @@ class ReviewRun(Base):
     __tablename__ = "review_runs"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
 
     discipline_id = Column(String(36), ForeignKey("review_disciplines.id", ondelete="SET NULL"), nullable=True, index=True)
@@ -257,7 +257,7 @@ class RuleExecution(Base):
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     review_run_id = Column(String(36), ForeignKey("review_runs.id", ondelete="CASCADE"), nullable=True, index=True)
     job_id = Column(String(36), ForeignKey("processing_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
-    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
     sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="SET NULL"), nullable=True, index=True)
     rule_id = Column(String(36), ForeignKey("rule_definitions.id", ondelete="CASCADE"), nullable=False, index=True)
 
@@ -292,10 +292,10 @@ class RuleFinding(Base):
     __tablename__ = "rule_findings"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     review_run_id = Column(String(36), ForeignKey("review_runs.id", ondelete="CASCADE"), nullable=True, index=True)
     rule_execution_id = Column(String(36), ForeignKey("rule_executions.id", ondelete="SET NULL"), nullable=True, index=True)
-    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, index=True)
+    document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=True, index=True)
     sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=True, index=True)
     rule_id = Column(String(36), ForeignKey("rule_definitions.id", ondelete="SET NULL"), nullable=True, index=True)
 
@@ -414,7 +414,7 @@ class ReviewReport(Base):
     __tablename__ = "review_reports"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
-    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    organization_id = Column(String(36), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True, index=True)
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     review_run_id = Column(String(36), ForeignKey("review_runs.id", ondelete="CASCADE"), nullable=False, index=True)
 

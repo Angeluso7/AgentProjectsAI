@@ -341,7 +341,8 @@ class ReviewPipelineService:
         pipeline_run = self.db.query(ReviewPipelineRun).filter(ReviewPipelineRun.id == pipeline_run_id).first()
         if not pipeline_run:
             raise ValueError(f"Pipeline run '{pipeline_run_id}' no encontrado.")
-        
+        pipeline_run.status = "queued"
+        self.db.commit()
         return self.execute_pipeline(pipeline_run_id=pipeline_run.id, force_reprocess=True)
 
     def cancel_pipeline(self, pipeline_run_id: str) -> ReviewPipelineRun:

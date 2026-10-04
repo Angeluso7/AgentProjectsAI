@@ -49,6 +49,8 @@ class OperationsService:
 
         logger.info(f"Job encolado: ID={job.id}, Tipo={job_type}, Target={target_type}:{target_id}")
         self.dispatcher.dispatch(job.id, async_mode=async_mode)
+        if not async_mode:
+            self.db.refresh(job)
         return job
 
     def get_job(self, job_id: str) -> Optional[ProcessingJob]:

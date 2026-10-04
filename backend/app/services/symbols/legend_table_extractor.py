@@ -122,6 +122,7 @@ class LegendTableExtractor:
 
         raw_candidates = []
         render_mode = "vector"
+        img_bytes = None
 
         if preferred_mode == "vector_only" or (preferred_mode == "auto" and has_vector_drawings):
             logger.info(f"Pág {page_number}: usando pipeline VECTORIAL (PyMuPDF get_drawings, {len(drawings)} trazos).")
@@ -255,8 +256,8 @@ class LegendTableExtractor:
             cy = (cb[1] + cb[3]) / 2.0
             cx = (cb[0] + cb[2]) / 2.0
 
-            # Si la tabla en la página fue descartada como no simbólica y el candidato cae dentro de ella, descartar
-            if extracted_table and not extracted_table.has_symbols:
+            # Si una sub-tabla localizada en la página fue descartada como no simbólica y el candidato cae dentro de ella, descartar
+            if extracted_table and not extracted_table.has_symbols and extracted_table.row_count >= 2 and extracted_table.bbox_normalized != [0.0, 0.0, 1.0, 1.0]:
                 tx0, ty0, tx1, ty1 = extracted_table.bbox_normalized
                 if tx0 <= cx <= tx1 and ty0 <= cy <= ty1:
                     continue
@@ -266,6 +267,7 @@ class LegendTableExtractor:
                 cell_bbox_norm=cb,
                 cell_text="",
                 page=page,
+                image_bytes=img_bytes,
                 drawings=drawings,
                 crops_dir=os.path.join(settings.STORAGE_LOCAL_ROOT, "crops", "symbols"),
                 doc_uid=extraction_id[:8] if extraction_id else "doc",
