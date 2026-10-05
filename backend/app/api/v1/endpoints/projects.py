@@ -17,11 +17,55 @@ from app.schemas.project import (
     ProjectLifecycleResult
 )
 from app.schemas.document import (
-    ProjectDocumentView, to_project_document_view, DocumentProcessRequest
+    ProjectDocumentView, to_project_document_view, DocumentProcessRequest,
+    DocumentSymbolStatusView
 )
+from app.db.models.operations import ProcessingJob
+from app.db.models.document_memory import DetectedSymbol
 from app.core.deps import get_current_tenant, require_role, TenantContext
 
 router = APIRouter()
+
+
+def _build_symbol_status(
+    doc_id: str,
+    job: Optional[ProcessingJob],
+    doc_syms: List[DetectedSymbol],
+    default_sheet_id: Optional[str] = None
+) -> Optional[DocumentSymbolStatusView]:
+    """Construye el DTO unificado del estado de detección de simbología para un documento."""
+    if not job and not doc_syms:
+        return None
+
+    total = len(doc_syms)
+    matched = sum(1 for s in doc_syms if s.matching_status == "matched")
+    unknown = sum(1 for s in doc_syms if s.matching_status == "unknown_symbol")
+    unmatched = sum(1 for s in doc_syms if s.matching_status == "unmatched")
+    has_active_catalog = not any(
+        s.match_evidence and s.match_evidence.get("catalog_status") == "no_active_catalog"
+        for s in doc_syms
+    )
+    target_sheet = doc_syms[0].sheet_id if doc_syms else default_sheet_id
+
+    job_id = job.id if job else None
+    job_status = job.status if job else ("completed" if total > 0 else None)
+    stage = job.current_stage if job else None
+    progress = job.progress_percent if job else None
+    err = job.error_message if job else None
+
+    return DocumentSymbolStatusView(
+        job_id=job_id,
+        job_status=job_status,
+        stage=stage,
+        progress_percent=progress,
+        total_symbols=total,
+        matched_count=matched,
+        unknown_count=unknown,
+        unmatched_count=unmatched,
+        has_active_catalog=has_active_catalog,
+        target_sheet_id=target_sheet,
+        error_message=err
+    )
 
 @router.get("", response_model=List[ProjectRead], include_in_schema=False)
 @router.get("/", response_model=List[ProjectRead])
@@ -362,7 +406,14 @@ async def upload_project_document(
             dpi=dpi,
             metadata_extra=meta_extra
         )
-        return to_project_document_view(doc, project)
+        job = db.query(ProcessingJob).filter(
+            ProcessingJob.target_id == doc.id,
+            ProcessingJob.job_type == "document_symbol_detect"
+        ).order_by(ProcessingJob.created_at.desc()).first()
+        doc_syms = db.query(DetectedSymbol).filter(DetectedSymbol.document_id == doc.id).all()
+        first_sheet_id = doc.sheets[0].id if getattr(doc, "sheets", None) else None
+        sym_stat = _build_symbol_status(doc.id, job, doc_syms, default_sheet_id=first_sheet_id)
+        return to_project_document_view(doc, project, symbol_status=sym_stat)
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
@@ -384,8 +435,34 @@ def list_project_documents(
 
     doc_repo = DocumentRepository(db)
     docs = doc_repo.list_by_project_all_statuses(project_id=project_id, organization_id=tenant.organization.id)
-    
-    views = [to_project_document_view(d, project) for d in docs]
+
+    doc_ids = [d.id for d in docs]
+    jobs_by_doc = {}
+    syms_by_doc = {}
+    if doc_ids:
+        jobs = db.query(ProcessingJob).filter(
+            ProcessingJob.target_id.in_(doc_ids),
+            ProcessingJob.job_type == "document_symbol_detect"
+        ).order_by(ProcessingJob.created_at.desc()).all()
+        for j in jobs:
+            if j.target_id not in jobs_by_doc:
+                jobs_by_doc[j.target_id] = j
+
+        all_syms = db.query(DetectedSymbol).filter(DetectedSymbol.document_id.in_(doc_ids)).all()
+        for s in all_syms:
+            syms_by_doc.setdefault(s.document_id, []).append(s)
+
+    views = []
+    for d in docs:
+        first_sheet_id = d.sheets[0].id if getattr(d, "sheets", None) else None
+        sym_stat = _build_symbol_status(
+            d.id,
+            jobs_by_doc.get(d.id),
+            syms_by_doc.get(d.id, []),
+            default_sheet_id=first_sheet_id
+        )
+        views.append(to_project_document_view(d, project, symbol_status=sym_stat))
+
     if status_filter:
         views = [
             v for v in views
@@ -412,7 +489,14 @@ def get_project_document(
     if not doc or doc.project_id != project_id or doc.organization_id != tenant.organization.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento no encontrado en este proyecto")
 
-    return to_project_document_view(doc, project)
+    job = db.query(ProcessingJob).filter(
+        ProcessingJob.target_id == doc.id,
+        ProcessingJob.job_type == "document_symbol_detect"
+    ).order_by(ProcessingJob.created_at.desc()).first()
+    doc_syms = db.query(DetectedSymbol).filter(DetectedSymbol.document_id == doc.id).all()
+    first_sheet_id = doc.sheets[0].id if getattr(doc, "sheets", None) else None
+    sym_stat = _build_symbol_status(doc.id, job, doc_syms, default_sheet_id=first_sheet_id)
+    return to_project_document_view(doc, project, symbol_status=sym_stat)
 
 
 @router.post("/{project_id}/documents/{document_id}/process", response_model=ProjectDocumentView)
