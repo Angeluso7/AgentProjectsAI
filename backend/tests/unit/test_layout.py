@@ -172,3 +172,45 @@ def test_layout_fallback_when_no_title_block(client, db_session):
     data = res.json()
     assert data["regions_count"] >= 1
     assert data["title_block"]["status"] == "not_found"
+
+def test_piping_title_block_patterns_and_table_keywords():
+    """Verifica que TITLE_BLOCK_PATTERNS reconozca códigos complejos, disciplinas de piping y palabras clave de tablas."""
+    import re
+    from app.services.layout.analyzer import TITLE_BLOCK_PATTERNS, TABLE_KEYWORDS, LayoutAnalyzer
+    from app.db.models.document_memory import ExtractedText
+
+    # 1. Códigos de lámina con multi-guión y más dígitos
+    sheet_code_patterns = TITLE_BLOCK_PATTERNS["sheet_code"]
+    for code in ["PID-GAS-001", "DWG-PIP-101", "01-PID-001", "ARQ-01", "PL-02"]:
+        matched = False
+        for p in sheet_code_patterns:
+            m = re.search(p, code, re.IGNORECASE)
+            if m:
+                matched = True
+                assert m.group(1).upper() == code.upper()
+                break
+        assert matched, f"Código {code} no fue reconocido por TITLE_BLOCK_PATTERNS['sheet_code']"
+
+    # 2. Disciplinas de piping
+    disc_patterns = TITLE_BLOCK_PATTERNS["discipline"]
+    for disc in ["piping", "cañerías", "cañerias", "tuberías", "tuberias", "mecánica", "mecanica", "procesos"]:
+        matched = any(re.search(p, disc, re.IGNORECASE) for p in disc_patterns)
+        assert matched, f"Disciplina {disc} no fue reconocida por TITLE_BLOCK_PATTERNS['discipline']"
+
+    # 3. Keywords de tablas de piping en segment_layout
+    analyzer = LayoutAnalyzer(width_px=1000, height_px=1000)
+    texts = [
+        ExtractedText(
+            text="CUADRO DE VALVULAS",
+            bbox_normalized=[0.1, 0.1, 0.4, 0.15],
+            confidence=0.9
+        ),
+        ExtractedText(
+            text="V-101 GATE VALVE",
+            bbox_normalized=[0.1, 0.16, 0.4, 0.20],
+            confidence=0.9
+        )
+    ]
+    segments = analyzer.segment_layout(texts)
+    table_segments = [s for s in segments if s.region_type == "table_candidate"]
+    assert len(table_segments) >= 1

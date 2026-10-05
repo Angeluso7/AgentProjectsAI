@@ -18,7 +18,7 @@ TITLE_BLOCK_PATTERNS = {
     "sheet_code": [
         r"plano\s*(?:n[°o\.]?|num|c[oó]d(?:igo)?)\s*[:\s]?\s*([a-zA-Z0-9\-_/]+)",
         r"l[aá]mina\s*(?:n[°o\.]?)?\s*[:\s]?\s*([a-zA-Z0-9\-_/]+)",
-        r"\b([A-Z]{2,4}-\d{1,3})\b",
+        r"\b([A-Z]{2,4}-\d{1,3}|[A-Z]{2,4}(?:-[A-Z0-9]{2,4})+-\d{1,4}|\d{1,3}-[A-Z]{2,4}-\d{1,4})\b",
         r"\b(PL-\d{1,3})\b"
     ],
     "scale_text": [
@@ -45,7 +45,7 @@ TITLE_BLOCK_PATTERNS = {
         r"\b(corte\s+[^\n\r]+)"
     ],
     "discipline": [
-        r"\b(arquitectura|estructura[s]?|instalaciones|electricidad|sanitario|climatizaci[oó]n|gas|mep|urbanismo)\b"
+        r"\b(arquitectura|estructura[s]?|instalaciones|electricidad|sanitario|climatizaci[oó]n|gas|mep|urbanismo|piping|cañer[ií]as|tuber[ií]as|mec[aá]nica|procesos)\b"
     ],
     "drawn_by": [
         r"dibuj(?:o|ante|ó)?\.?\s*[:\s]?\s*([a-zA-Z\.\s]+)",
@@ -65,7 +65,13 @@ TITLE_BLOCK_PATTERNS = {
 
 NOTES_KEYWORDS = ["notas generales", "notas:", "especificaciones", "notas tecnicas", "notas técnicas", "observaciones", "criterios de diseño"]
 LEGEND_KEYWORDS = ["simbologia", "simbología", "leyenda", "abreviaturas", "cuadro de simbolos", "convenciones"]
-TABLE_KEYWORDS = ["cuadro de vanos", "cuadro de puertas", "cuadro de ventanas", "cuadro de cargas", "cuadro de superficies", "tabla de", "resumen de"]
+TABLE_KEYWORDS = [
+    "cuadro de vanos", "cuadro de puertas", "cuadro de ventanas", "cuadro de cargas", "cuadro de superficies",
+    "tabla de", "resumen de",
+    "cuadro de valvulas", "cuadro de válvulas", "cuadro de tuberias", "cuadro de tuberías",
+    "valve schedule", "pipe schedule", "lista de materiales", "listado de materiales",
+    "equipment list", "instrument index"
+]
 
 def bbox_to_polygon(bbox_norm: List[float]) -> List[List[float]]:
     x0, y0, x1, y1 = bbox_norm
