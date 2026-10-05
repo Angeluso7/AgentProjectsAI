@@ -120,3 +120,34 @@ def test_ocr_missing_sheet_returns_404(client):
     """Verifica que solicitar OCR sobre un sheet inexistente retorne 404."""
     res = client.post("/api/v1/ocr/sheets/non-existent-id", json={"force_reprocess": False})
     assert res.status_code == 404
+
+def test_vector_pdf_ocr_engine_extracts_all_blocks(tmp_path):
+    """Verifica que VectorPdfOcrEngine extraiga TODOS los bloques de texto de un PDF y no solo el primero."""
+    import fitz
+    from app.services.ocr.engines import VectorPdfOcrEngine
+
+    pdf_path = str(tmp_path / "multiblock_sample.pdf")
+    doc = fitz.open()
+    page = doc.new_page(width=800, height=600)
+    page.insert_text(fitz.Point(50, 50), "BLOQUE 1: PROYECTO GAS")
+    page.insert_text(fitz.Point(50, 100), "BLOQUE 2: NOTAS GENERALES")
+    page.insert_text(fitz.Point(50, 150), "BLOQUE 3: CUADRO DE VALVULAS")
+    page.insert_text(fitz.Point(50, 200), "BLOQUE 4: PID-GAS-001")
+    doc.save(pdf_path)
+    doc.close()
+
+    engine = VectorPdfOcrEngine()
+    assert engine.is_available()
+    blocks = engine.extract(
+        image_path="",
+        width_px=800,
+        height_px=600,
+        pdf_path=pdf_path,
+        page_index=0
+    )
+    assert len(blocks) == 4
+    extracted_texts = [b.clean_text for b in blocks]
+    assert "BLOQUE 1: PROYECTO GAS" in extracted_texts
+    assert "BLOQUE 2: NOTAS GENERALES" in extracted_texts
+    assert "BLOQUE 3: CUADRO DE VALVULAS" in extracted_texts
+    assert "BLOQUE 4: PID-GAS-001" in extracted_texts

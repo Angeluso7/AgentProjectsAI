@@ -184,3 +184,35 @@ def test_extract_incomplete_table_generates_review_task(client, db_session):
     tasks = db_session.query(ReviewTask).filter(ReviewTask.sheet_id == sheet.id).all()
     assert len(tasks) >= 1
     assert any(task.task_type == "table_structure_review" for task in tasks)
+
+def test_table_classifier_piping_and_legend_categories():
+    """Verifica que TableClassifier reconozca valve_schedule, equipment_schedule y legend_table."""
+    from app.services.tables.classifier import TableClassifier
+    classifier = TableClassifier()
+
+    # Valve schedule
+    v_type, v_conf, _ = classifier.classify_table(
+        title="CUADRO DE VALVULAS",
+        headers=["TAG", "TIPO / DESCRIPCION", "DIAMETRO"],
+        sample_cells=["V-101", "GATE VALVE COMPUERTA", "2 INCH"]
+    )
+    assert v_type == "valve_schedule"
+    assert v_conf >= 0.80
+
+    # Equipment schedule
+    eq_type, eq_conf, _ = classifier.classify_table(
+        title="EQUIPMENT SCHEDULE",
+        headers=["TAG", "EQUIPMENT NAME", "CAPACITY"],
+        sample_cells=["P-101", "BOMBA CENTRIFUGA", "50 GPM"]
+    )
+    assert eq_type == "equipment_schedule"
+    assert eq_conf >= 0.80
+
+    # Legend table
+    leg_type, leg_conf, _ = classifier.classify_table(
+        title="CUADRO DE SIMBOLOGIA",
+        headers=["SIMBOLO", "DESCRIPCION", "NORMA"],
+        sample_cells=["VALVULA GLOBO", "ISA 5.1"]
+    )
+    assert leg_type == "legend_table"
+    assert leg_conf >= 0.80

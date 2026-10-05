@@ -266,7 +266,7 @@ class VectorPdfOcrEngine(BaseOcrEngine):
         blocks: List[OcrRawBlock] = []
 
         for b in raw_blocks:
-            if len(b) < 6 or b[5] != 0:
+            if len(b) < 7 or b[6] != 0:
                 continue  # Ignorar bloques no textuales (ej: imágenes embebidas)
             x0, y0, x1, y1, raw_text = b[0], b[1], b[2], b[3], b[4]
             clean_text = clean_text_string(raw_text)

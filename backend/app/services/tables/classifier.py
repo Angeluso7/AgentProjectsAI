@@ -25,6 +25,20 @@ class TableClassifier:
         "material_list": [
             r"LISTA.*MATERIAL", r"ESPECIFICACI.*MATERIAL", r"PARTIDA",
             r"CANTIDAD", r"UNIDAD", r"PROVEEDOR", r"CODIGO.*ITEM"
+        ],
+        "valve_schedule": [
+            r"CUADRO.*V[AÁ]LVULA", r"VALVE\s*SCHEDULE", r"V[AÁ]LVULAS?", r"TAG.*VALV",
+            r"GATE\s*VALVE", r"GLOBE\s*VALVE", r"CHECK\s*VALVE", r"BALL\s*VALVE",
+            r"COMPUERTA", r"RETENCI[OÓ]N"
+        ],
+        "equipment_schedule": [
+            r"EQUIPMENT\s*(?:SCHEDULE|LIST)", r"LISTA.*EQUIPOS?", r"CUADRO.*EQUIPOS?",
+            r"BOMBAS?", r"COMPRESOR", r"INTERCAMBIADOR", r"RECIPIENTE", r"VESSEL",
+            r"TANK", r"PUMP", r"HEAT\s*EXCHANGER"
+        ],
+        "legend_table": [
+            r"CUADRO.*SIMBOLOG[IÍ]A", r"SIMBOLOG[IÍ]A", r"LEYENDA.*T[EÉ]CNICA",
+            r"SYMBOL\s*LEGEND", r"LEGEND\s*TABLE", r"ABREVIATURAS?", r"CONVENCIONES?"
         ]
     }
 
