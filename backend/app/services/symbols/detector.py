@@ -114,23 +114,25 @@ class SymbolDetector:
     ) -> List[DetectedSymbolDTO]:
         """Motor baseline auditable basado en plantillas canónicas de template_memory y geometría."""
         dx0, dy0, dx1, dy1 = drawing_area_bbox_norm
+        dw = dx1 - dx0
+        dh = dy1 - dy0
         results: List[DetectedSymbolDTO] = []
 
-        # Generación de candidatos sintéticos/canónicos en drawing_area
-        # Esto asegura que el pipeline de persistencia, trazabilidad, jobs y review tasks sea 100% verificable
+        # Generación de candidatos sintéticos/canónicos estrictamente en drawing_area
+        # Esto asegura que el cómputo y detección no invadan la viñeta técnica ni notas
         sample_symbols = [
-            ("door_symbol", "architecture", [dx0 + 0.10, dy0 + 0.15, dx0 + 0.13, dy0 + 0.19], 0.92, {"width_m": 0.90, "swing": "single_90"}),
-            ("door_symbol", "architecture", [dx0 + 0.35, dy0 + 0.15, dx0 + 0.38, dy0 + 0.19], 0.88, {"width_m": 0.80, "swing": "single_90"}),
-            ("window_symbol", "architecture", [dx0 + 0.18, dy0 + 0.05, dx0 + 0.24, dy0 + 0.08], 0.94, {"width_m": 1.50, "type": "sliding"}),
-            ("window_symbol", "architecture", [dx0 + 0.45, dy0 + 0.05, dx0 + 0.52, dy0 + 0.08], 0.91, {"width_m": 2.00, "type": "sliding"}),
-            ("luminaire_symbol", "electrical", [dx0 + 0.20, dy0 + 0.25, dx0 + 0.23, dy0 + 0.28], 0.89, {"wattage": 36, "type": "led_panel"}),
-            ("switch_symbol", "electrical", [dx0 + 0.12, dy0 + 0.18, dx0 + 0.14, dy0 + 0.20], 0.86, {"circuits": 1, "type": "9/12"}),
-            ("outlet_symbol", "electrical", [dx0 + 0.15, dy0 + 0.30, dx0 + 0.17, dy0 + 0.32], 0.87, {"ampere": 10, "type": "grounded"}),
-            ("sanitary_fixture", "plumbing", [dx0 + 0.55, dy0 + 0.30, dx0 + 0.60, dy0 + 0.36], 0.93, {"fixture": "water_closet"}),
-            ("panel_symbol", "electrical", [dx0 + 0.05, dy0 + 0.40, dx0 + 0.09, dy0 + 0.46], 0.90, {"panel_name": "TDA-01"}),
-            ("gate_valve", "piping", [dx0 + 0.30, dy0 + 0.35, dx0 + 0.35, dy0 + 0.40], 0.95, {"valve_type": "gate", "tag": "HV-101", "standard": "ASME B16.34"}),
-            ("piping_line", "piping", [dx0 + 0.15, dy0 + 0.37, dx0 + 0.65, dy0 + 0.38], 0.91, {"line_number": "6-CW-101-CS150", "diameter_in": 6, "spec": "CS150"}),
-            ("unknown_symbol_candidate", "architecture", [dx0 + 0.70, dy0 + 0.50, dx0 + 0.74, dy0 + 0.54], 0.58, {"note": "Símbolo ambiguo en recinto de servicio"}),
+            ("door_symbol", "architecture", [dx0 + 0.10 * dw, dy0 + 0.15 * dh, dx0 + 0.13 * dw, dy0 + 0.19 * dh], 0.92, {"width_m": 0.90, "swing": "single_90"}),
+            ("door_symbol", "architecture", [dx0 + 0.35 * dw, dy0 + 0.15 * dh, dx0 + 0.38 * dw, dy0 + 0.19 * dh], 0.88, {"width_m": 0.80, "swing": "single_90"}),
+            ("window_symbol", "architecture", [dx0 + 0.18 * dw, dy0 + 0.05 * dh, dx0 + 0.24 * dw, dy0 + 0.08 * dh], 0.94, {"width_m": 1.50, "type": "sliding"}),
+            ("window_symbol", "architecture", [dx0 + 0.45 * dw, dy0 + 0.05 * dh, dx0 + 0.52 * dw, dy0 + 0.08 * dh], 0.91, {"width_m": 2.00, "type": "sliding"}),
+            ("luminaire_symbol", "electrical", [dx0 + 0.20 * dw, dy0 + 0.25 * dh, dx0 + 0.23 * dw, dy0 + 0.28 * dh], 0.89, {"wattage": 36, "type": "led_panel"}),
+            ("switch_symbol", "electrical", [dx0 + 0.12 * dw, dy0 + 0.18 * dh, dx0 + 0.14 * dw, dy0 + 0.20 * dh], 0.86, {"circuits": 1, "type": "9/12"}),
+            ("outlet_symbol", "electrical", [dx0 + 0.15 * dw, dy0 + 0.30 * dh, dx0 + 0.17 * dw, dy0 + 0.32 * dh], 0.87, {"ampere": 10, "type": "grounded"}),
+            ("sanitary_fixture", "plumbing", [dx0 + 0.55 * dw, dy0 + 0.30 * dh, dx0 + 0.60 * dw, dy0 + 0.36 * dh], 0.93, {"fixture": "water_closet"}),
+            ("panel_symbol", "electrical", [dx0 + 0.05 * dw, dy0 + 0.40 * dh, dx0 + 0.09 * dw, dy0 + 0.46 * dh], 0.90, {"panel_name": "TDA-01"}),
+            ("gate_valve", "piping", [dx0 + 0.30 * dw, dy0 + 0.35 * dh, dx0 + 0.35 * dw, dy0 + 0.40 * dh], 0.95, {"valve_type": "gate", "tag": "HV-101", "standard": "ASME B16.34"}),
+            ("piping_line", "piping", [dx0 + 0.15 * dw, dy0 + 0.37 * dh, dx0 + 0.65 * dw, dy0 + 0.38 * dh], 0.91, {"line_number": "6-CW-101-CS150", "diameter_in": 6, "spec": "CS150"}),
+            ("unknown_symbol_candidate", "architecture", [dx0 + 0.70 * dw, dy0 + 0.50 * dh, dx0 + 0.74 * dw, dy0 + 0.54 * dh], 0.58, {"note": "Símbolo ambiguo en recinto de servicio"}),
         ]
 
         for sym_type, disc, norm_box, conf, attrs in sample_symbols:

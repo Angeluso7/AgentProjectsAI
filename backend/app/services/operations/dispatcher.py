@@ -16,12 +16,18 @@ from app.core.logging import logger
 _thread_pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="job_worker")
 _active_futures = set()
 
-def wait_for_all_jobs(timeout: float = 3.0) -> None:
-    """Espera que todos los jobs en segundo plano completen su ejecución (útil para pruebas)."""
+def wait_for_all_jobs(timeout: float = 15.0) -> None:
+    """Espera que todos los jobs en segundo plano (incluidos los encadenados) completen su ejecución."""
     from concurrent.futures import wait
-    current_futures = list(_active_futures)
-    if current_futures:
-        wait(current_futures, timeout=timeout)
+    start_t = time.time()
+    while time.time() - start_t < timeout:
+        current_futures = list(_active_futures)
+        if not current_futures:
+            time.sleep(0.05)
+            if not _active_futures:
+                break
+        else:
+            wait(current_futures, timeout=0.5)
 
 class JobDispatcher:
     """Despachador y ejecutor de tareas asíncronas con reintentos acotados y registro de auditoría."""
@@ -83,6 +89,17 @@ class JobDispatcher:
             )
             logger.info(f"Job '{job.id}' [{job.job_type}] completado exitosamente.")
 
+            # Encadenamiento de jobs secuenciales
+            payload = job.input_payload or {}
+            next_job_id = payload.get("next_job_id")
+            if next_job_id:
+                is_async = payload.get("async_mode", True)
+                logger.info(
+                    f"Job '{job.id}' [{job.job_type}] completado. "
+                    f"Despachando siguiente job en cadena: '{next_job_id}' (async_mode={is_async})"
+                )
+                self.dispatch(next_job_id, async_mode=is_async)
+
         except Exception as e:
             err_msg = str(e)
             stack = traceback.format_exc()
@@ -128,6 +145,23 @@ class JobDispatcher:
                     job_id=job.id,
                     payload={"job_type": job.job_type, "target_id": job.target_id, "error": err_msg}
                 )
+
+                # Cancelar jobs encadenados dependientes para prevenir cascada
+                payload = job.input_payload or {}
+                chained_id = payload.get("next_job_id")
+                while chained_id:
+                    nxt = repo.get_job(chained_id)
+                    if nxt and nxt.status in ["queued", "running", "waiting"]:
+                        repo.update_job_status(
+                            job_id=nxt.id,
+                            status="cancelled",
+                            stage="cancelled_due_to_parent_failure",
+                            error_message=f"Cancelado debido a fallo en etapa previa '{job.job_type}': {err_msg}",
+                            actor_type="worker"
+                        )
+                        chained_id = (nxt.input_payload or {}).get("next_job_id")
+                    else:
+                        break
 
     def _execute_handler(self, job: Any, db: Session, repo: OperationsRepository) -> Dict[str, Any]:
         """Ejecuta el servicio de dominio correspondiente envolviendo capacidades existentes."""
