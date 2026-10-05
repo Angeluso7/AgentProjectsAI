@@ -226,6 +226,21 @@ class CadEntitiesSummaryRead(BaseModel):
     error: Optional[str] = None
 
 
+class DocumentSymbolStatusView(BaseModel):
+    """Estado y resumen de detección de simbología para el documento."""
+    job_id: Optional[str] = None
+    job_status: Optional[str] = None  # "queued" | "running" | "completed" | "failed"
+    stage: Optional[str] = None
+    progress_percent: Optional[int] = None
+    total_symbols: int = 0
+    matched_count: int = 0
+    unknown_count: int = 0
+    unmatched_count: int = 0
+    has_active_catalog: bool = True
+    target_sheet_id: Optional[str] = None
+    error_message: Optional[str] = None
+
+
 class ProjectDocumentView(BaseModel):
     """Contrato de lectura unificado para documentos de proyecto en la UI."""
     id: str
@@ -250,6 +265,7 @@ class ProjectDocumentView(BaseModel):
     sheets_count: int = 0
     sheets: Optional[List[DocumentSheetRead]] = []
     context_metadata: Optional[Dict[str, Any]] = None
+    symbol_status: Optional[DocumentSymbolStatusView] = None
 
     class Config:
         from_attributes = True
@@ -259,7 +275,11 @@ class ProjectDocumentView(BaseModel):
 UnifiedDocumentRead = ProjectDocumentView
 
 
-def to_project_document_view(doc: Any, project: Optional[Any] = None) -> ProjectDocumentView:
+def to_project_document_view(
+    doc: Any,
+    project: Optional[Any] = None,
+    symbol_status: Optional[DocumentSymbolStatusView] = None
+) -> ProjectDocumentView:
     """Convierte un modelo Document de SQLAlchemy a ProjectDocumentView normalizado."""
     import os
 
@@ -338,7 +358,8 @@ def to_project_document_view(doc: Any, project: Optional[Any] = None) -> Project
         can_open=can_open,
         sheets_count=sheets_count,
         sheets=sheet_list,
-        context_metadata=meta
+        context_metadata=meta,
+        symbol_status=symbol_status
     )
 
 

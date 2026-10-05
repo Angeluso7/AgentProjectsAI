@@ -775,6 +775,20 @@ export interface DocumentSheet {
   symbols?: DetectedSymbolItem[];
 }
 
+export interface DocumentSymbolStatus {
+  job_id?: string | null;
+  job_status?: 'queued' | 'running' | 'completed' | 'failed' | string | null;
+  stage?: string | null;
+  progress_percent?: number | null;
+  total_symbols: number;
+  matched_count: number;
+  unknown_count: number;
+  unmatched_count: number;
+  has_active_catalog: boolean;
+  target_sheet_id?: string | null;
+  error_message?: string | null;
+}
+
 export interface ProjectDocumentView {
   id: string;
   project_id: string;
@@ -798,6 +812,7 @@ export interface ProjectDocumentView {
   sheets_count: number;
   sheets?: DocumentSheet[];
   context_metadata?: Record<string, any>;
+  symbol_status?: DocumentSymbolStatus | null;
 }
 
 export type UnifiedDocument = ProjectDocumentView;
@@ -832,6 +847,7 @@ export interface DocumentItem {
   can_process?: boolean;
   can_retry?: boolean;
   can_open?: boolean;
+  symbol_status?: DocumentSymbolStatus | null;
 }
 
 export interface BatchFileResultItem {

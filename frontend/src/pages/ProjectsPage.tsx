@@ -7,7 +7,8 @@ import {
   RefreshCw, Eye, AlertCircle, Clock, ExternalLink, Plus, Trash2,
   FolderKanban, Archive, ArchiveRestore, Download, Edit3, Check, Search,
   Filter, Building2, Shield, Calendar, BarChart3, ChevronRight, HardDriveDownload,
-  Compass, SquareCheck, UploadCloud, Eraser, Play, RotateCcw, FileDown, HardDrive
+  Compass, SquareCheck, UploadCloud, Eraser, Play, RotateCcw, FileDown, HardDrive,
+  Shapes
 } from 'lucide-react';
 import { DeleteDocumentModal } from '../components/DeleteDocumentModal';
 import { ProjectFormModal, PROJECT_STAGES, PROJECT_DISCIPLINES } from '../components/ProjectFormModal';
@@ -17,6 +18,99 @@ import { DocumentDeliverableModal } from '../components/DocumentDeliverableModal
 import { ProjectMaturityProfileView } from '../components/ProjectMaturityProfileView';
 import { BatchDocumentUploadModal } from '../components/BatchDocumentUploadModal';
 
+
+export const DocumentSymbolDetectionIndicator: React.FC<{ doc: DocumentItem | ProjectDocumentView }> = ({ doc }) => {
+  if (!doc.symbol_status) return null;
+  const status = doc.symbol_status;
+
+  const navigateToViewer = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    localStorage.setItem('viewer_target_doc_id', doc.id);
+    if (status.target_sheet_id) {
+      localStorage.setItem('viewer_target_sheet_id', status.target_sheet_id);
+    } else if (doc.sheets && doc.sheets.length > 0) {
+      localStorage.setItem('viewer_target_sheet_id', doc.sheets[0].id);
+    }
+    localStorage.setItem('viewer_target_layer', 'symbols');
+    window.dispatchEvent(new CustomEvent('navigate-tab', { detail: { tab: 'viewer' } }));
+  };
+
+  return (
+    <div className="mt-2.5 pt-2 border-t border-slate-800/70" data-testid="symbol-detection-status">
+      {/* Caso 1: Job corriendo o en cola */}
+      {(status.job_status === 'running' || status.job_status === 'queued') && (
+        <div className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-amber-950/50 text-amber-300 border border-amber-800/50 animate-pulse text-[11px] font-medium" data-testid="symbol-status-detecting">
+          <RefreshCw className="w-3 h-3 animate-spin text-amber-400 shrink-0" />
+          <span>Detectando símbolos...</span>
+        </div>
+      )}
+
+      {/* Caso 2: Símbolos encontrados pero catálogo no disponible para validar */}
+      {status.job_status !== 'running' && status.job_status !== 'queued' &&
+       status.total_symbols > 0 &&
+       (!status.has_active_catalog || status.unknown_count > 0) && (
+        <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-amber-950/40 border border-amber-800/40 text-amber-300 text-[11px]" data-testid="symbol-status-no-catalog">
+          <div className="flex items-center gap-1.5 min-w-0" title="Símbolos detectados pero no validados por falta de catálogo canónico activo">
+            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="font-semibold truncate">
+              {`${status.total_symbols} detectados, catálogo no disponible para validar`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={navigateToViewer}
+            className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-900/70 hover:bg-amber-800 text-amber-200 border border-amber-700/60 flex items-center gap-1 shrink-0 transition shadow-sm"
+            title="Ver símbolos en Visor de Planos"
+            data-testid="btn-view-symbols"
+          >
+            <span>Ver en Visor</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Caso 3: Símbolos encontrados con catálogo activo / normal */}
+      {status.job_status !== 'running' && status.job_status !== 'queued' &&
+       status.total_symbols > 0 &&
+       status.has_active_catalog && status.unknown_count === 0 && (
+        <div className="flex items-center justify-between gap-2 p-2 rounded-lg bg-cyan-950/40 border border-cyan-800/40 text-cyan-300 text-[11px]" data-testid="symbol-status-detected">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Shapes className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="font-semibold truncate">
+              {`Simbología: ${status.total_symbols} elementos detectados`}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={navigateToViewer}
+            className="px-2 py-0.5 rounded text-[10px] font-bold bg-cyan-900/70 hover:bg-cyan-800 text-cyan-200 border border-cyan-700/60 flex items-center gap-1 shrink-0 transition shadow-sm"
+            title="Ver símbolos en Visor de Planos"
+            data-testid="btn-view-symbols"
+          >
+            <span>Ver en Visor</span>
+            <ExternalLink className="w-2.5 h-2.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Caso 4: Job completado sin símbolos */}
+      {status.job_status === 'completed' && status.total_symbols === 0 && (
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-slate-900 text-slate-400 border border-slate-800" data-testid="symbol-status-none">
+          <Shapes className="w-3 h-3 text-slate-500" />
+          <span>Simbología: 0 elementos detectados</span>
+        </div>
+      )}
+
+      {/* Caso 5: Job falló */}
+      {status.job_status === 'failed' && (
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-medium bg-rose-950/40 text-rose-400 border border-rose-800/40" title={status.error_message || 'Fallo en detección de símbolos'} data-testid="symbol-status-failed">
+          <AlertCircle className="w-3 h-3 text-rose-400" />
+          <span>Detección de símbolos falló</span>
+        </div>
+      )}
+    </div>
+  );
+};
 
 export const ProjectsPage: React.FC = () => {
   const {
@@ -82,6 +176,25 @@ export const ProjectsPage: React.FC = () => {
       loadDocuments(activeProjectId);
     }
   }, [inspectedProjectId, activeProjectId]);
+
+  // Polling automático para actualizar documentos si hay jobs de detección de símbolos corriendo o en cola
+  useEffect(() => {
+    const hasRunningJobs = documents.some(
+      (d) => d.symbol_status?.job_status === 'running' || d.symbol_status?.job_status === 'queued'
+    );
+    if (!hasRunningJobs) return;
+
+    const timer = setInterval(() => {
+      const pid = inspectedProjectId || activeProjectId;
+      if (pid) {
+        apiService.getProjectDocuments(pid).then((docs) => {
+          setDocuments(docs as any);
+        }).catch(() => {});
+      }
+    }, 2500);
+
+    return () => clearInterval(timer);
+  }, [documents, inspectedProjectId, activeProjectId]);
 
   const loadDocuments = async (projectId: string) => {
     try {
@@ -845,6 +958,9 @@ export const ProjectsPage: React.FC = () => {
                               <span>Págs: {doc.page_count ?? doc.sheets_count ?? 1}</span>
                             </span>
                           </div>
+
+                          {/* Indicador de Estado de Detección de Simbología */}
+                          <DocumentSymbolDetectionIndicator doc={doc} />
 
                           {/* Detalle de error si falló */}
                           {procStatus === 'failed' && (

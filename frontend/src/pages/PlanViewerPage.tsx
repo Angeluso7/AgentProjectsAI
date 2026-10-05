@@ -289,7 +289,15 @@ export const PlanViewerPage: React.FC = () => {
       setFindings(sheetFindings);
       setManualAnnotations(anns);
 
-      if (sheetFindings.length > 0) {
+      const targetLayer = localStorage.getItem('viewer_target_layer');
+      if (targetLayer === 'symbols') {
+        setShowSymbols(true);
+        if (sheetSymbols.length > 0) {
+          setSelectedSymbol(sheetSymbols[0]);
+          setSelectedEntity({ type: 'symbol', data: sheetSymbols[0] });
+        }
+        localStorage.removeItem('viewer_target_layer');
+      } else if (sheetFindings.length > 0) {
         handleSelectFinding(sheetFindings[0]);
       } else if (sheetSymbols.length > 0) {
         setSelectedSymbol(sheetSymbols[0]);

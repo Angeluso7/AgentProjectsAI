@@ -4,7 +4,7 @@ import App from '../src/App';
 import { PipelinePage, PipelinePageProps } from '../src/pages/PipelinePage';
 import { PlanViewerPage } from '../src/pages/PlanViewerPage';
 import { DashboardPage } from '../src/pages/DashboardPage';
-import { ProjectsPage } from '../src/pages/ProjectsPage';
+import { ProjectsPage, DocumentSymbolDetectionIndicator } from '../src/pages/ProjectsPage';
 import { SourcesPage } from '../src/pages/SourcesPage';
 import { RulesPage } from '../src/pages/RulesPage';
 import { ReviewPage } from '../src/pages/ReviewPage';
@@ -746,7 +746,119 @@ async function runTestSuite() {
   }
   console.log('  ✓ [UI STATE F] API error renders failed visual status, INVENTORY_API_ERROR, and retry button.');
 
-  console.log('\n🎉 ALL 15 FRONTEND & SYMBOL INVENTORY COMPONENT TESTS PASSED SUCCESSFULLY! No crashes or unhandled nulls.');
+  // Test Section: Document Symbol Detection Status Indicator (ProjectsPage)
+  console.log('\n--- Test 8: Document Symbol Detection Indicator in Projects Page ---');
+
+  // Case 1: Job running or queued -> "Detectando símbolos..."
+  const docDetecting: any = {
+    id: 'doc-symbol-detecting-001',
+    name: 'plano_arquitectura_p1.pdf',
+    symbol_status: {
+      job_id: 'job-sym-001',
+      job_status: 'running',
+      stage: 'running',
+      progress_percent: 45,
+      total_symbols: 0,
+      matched_count: 0,
+      unknown_count: 0,
+      unmatched_count: 0,
+      has_active_catalog: true,
+      target_sheet_id: 'sheet-001',
+      error_message: null
+    }
+  };
+  const detectingHtml = ReactDOMServer.renderToString(<DocumentSymbolDetectionIndicator doc={docDetecting} />);
+  if (!detectingHtml.includes('Detectando símbolos...')) {
+    throw new Error('Case 1 FAILED: Detecting state did not render "Detectando símbolos..."');
+  }
+  console.log('  ✓ [SYMBOL STATUS 1] detecting/running renders "Detectando símbolos..." with spinner indicator.');
+
+  // Case 2: Detected symbols with active catalog -> "Simbología: X elementos detectados" + "Ver en Visor"
+  const docDetected: any = {
+    id: 'doc-symbol-detected-002',
+    name: 'plano_arquitectura_p2.pdf',
+    sheets: [{ id: 'sheet-002', name: 'Lámina 2' }],
+    symbol_status: {
+      job_id: 'job-sym-002',
+      job_status: 'completed',
+      stage: 'completed',
+      progress_percent: 100,
+      total_symbols: 8,
+      matched_count: 8,
+      unknown_count: 0,
+      unmatched_count: 0,
+      has_active_catalog: true,
+      target_sheet_id: 'sheet-002',
+      error_message: null
+    }
+  };
+  const detectedHtml = ReactDOMServer.renderToString(<DocumentSymbolDetectionIndicator doc={docDetected} />);
+  if (!detectedHtml.includes('Simbología: 8 elementos detectados') || !detectedHtml.includes('Ver en Visor')) {
+    throw new Error('Case 2 FAILED: Detected with catalog missing count or "Ver en Visor" button.');
+  }
+  console.log('  ✓ [SYMBOL STATUS 2] detected with active catalog renders "Simbología: 8 elementos detectados" and link to PlanViewer.');
+
+  // Case 3: Detected symbols but catalog unavailable (unknown_symbol) -> "3 detectados, catálogo no disponible para validar" + "Ver en Visor"
+  const docNoCatalog: any = {
+    id: 'doc-symbol-nocat-003',
+    name: 'plano_arquitectura_p3.pdf',
+    sheets: [{ id: 'sheet-003', name: 'Lámina 3' }],
+    symbol_status: {
+      job_id: 'job-sym-003',
+      job_status: 'completed',
+      stage: 'completed',
+      progress_percent: 100,
+      total_symbols: 3,
+      matched_count: 0,
+      unknown_count: 3,
+      unmatched_count: 0,
+      has_active_catalog: false,
+      target_sheet_id: 'sheet-003',
+      error_message: null
+    }
+  };
+  const noCatHtml = ReactDOMServer.renderToString(<DocumentSymbolDetectionIndicator doc={docNoCatalog} />);
+  if (!noCatHtml.includes('3 detectados, catálogo no disponible para validar') || !noCatHtml.includes('Ver en Visor')) {
+    throw new Error('Case 3 FAILED: Detected without catalog missing "3 detectados, catálogo no disponible para validar" or "Ver en Visor"');
+  }
+  console.log('  ✓ [SYMBOL STATUS 3] detected without active catalog renders "3 detectados, catálogo no disponible para validar" and link.');
+
+  // Case 4: Completed with 0 symbols
+  const docZeroSymbols: any = {
+    id: 'doc-symbol-zero-004',
+    symbol_status: {
+      job_id: 'job-sym-004',
+      job_status: 'completed',
+      total_symbols: 0,
+      has_active_catalog: true,
+      unknown_count: 0
+    }
+  };
+  const zeroHtml = ReactDOMServer.renderToString(<DocumentSymbolDetectionIndicator doc={docZeroSymbols} />);
+  if (!zeroHtml.includes('Simbología: 0 elementos detectados')) {
+    throw new Error('Case 4 FAILED: Completed with 0 symbols missing "Simbología: 0 elementos detectados"');
+  }
+  console.log('  ✓ [SYMBOL STATUS 4] completed with 0 symbols renders "Simbología: 0 elementos detectados".');
+
+  // Case 5: Symbol detection job failed
+  const docFailedSymbols: any = {
+    id: 'doc-symbol-failed-005',
+    symbol_status: {
+      job_id: 'job-sym-005',
+      job_status: 'failed',
+      total_symbols: 0,
+      has_active_catalog: false,
+      unknown_count: 0,
+      error_message: 'Corrupted image raster'
+    }
+  };
+  const failedSymHtml = ReactDOMServer.renderToString(<DocumentSymbolDetectionIndicator doc={docFailedSymbols} />);
+  if (!failedSymHtml.includes('Detección de símbolos falló')) {
+    throw new Error('Case 5 FAILED: Failed job missing "Detección de símbolos falló"');
+  }
+  console.log('  ✓ [SYMBOL STATUS 5] failed job renders "Detección de símbolos falló".');
+
+  console.log('\n🎉 ALL 16 FRONTEND & SYMBOL DETECTION COMPONENT TESTS PASSED SUCCESSFULLY! No crashes or unhandled nulls.');
 }
 
 runTestSuite().catch((err) => {
