@@ -178,10 +178,11 @@ export const ProjectsPage: React.FC = () => {
   }, [inspectedProjectId, activeProjectId]);
 
   // Polling automático para actualizar documentos si hay jobs de detección de símbolos corriendo o en cola
+  const hasRunningJobs = documents.some(
+    (d) => d.symbol_status?.job_status === 'running' || d.symbol_status?.job_status === 'queued'
+  );
+
   useEffect(() => {
-    const hasRunningJobs = documents.some(
-      (d) => d.symbol_status?.job_status === 'running' || d.symbol_status?.job_status === 'queued'
-    );
     if (!hasRunningJobs) return;
 
     const timer = setInterval(() => {
@@ -194,7 +195,7 @@ export const ProjectsPage: React.FC = () => {
     }, 2500);
 
     return () => clearInterval(timer);
-  }, [documents, inspectedProjectId, activeProjectId]);
+  }, [hasRunningJobs, inspectedProjectId, activeProjectId]);
 
   const loadDocuments = async (projectId: string) => {
     try {
