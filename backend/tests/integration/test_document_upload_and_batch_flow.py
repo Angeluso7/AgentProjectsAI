@@ -10,6 +10,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models.core import Organization, User, OrganizationMembership, Project
 from app.core.security import hash_password, create_access_token
+from app.services.operations.dispatcher import wait_for_all_jobs
+
 
 def _get_test_context(client: TestClient, db_session: Session):
     # 1. Crear Organización
@@ -205,7 +207,7 @@ def test_batch_document_upload_multi_files(client: TestClient, db_session: Sessi
     batch_res = res.json()
 
     assert batch_res["total_files"] == 4
-    assert batch_res["successful_count"] == 4
+    assert batch_res["successful_count"] == 4, f"Fallo en batch upload: {batch_res['results']}"
     assert batch_res["duplicated_count"] == 0
     assert batch_res["failed_count"] == 0
     assert len(batch_res["results"]) == 4
@@ -216,6 +218,7 @@ def test_batch_document_upload_multi_files(client: TestClient, db_session: Sessi
     assert list_res.status_code == 200
     docs_in_proj = list_res.json()
     assert len(docs_in_proj) >= 4
+    wait_for_all_jobs(timeout=5.0)
 
 
 def test_batch_upload_edge_cases_duplicate_and_failure(client: TestClient, db_session: Session):
@@ -253,7 +256,7 @@ def test_batch_upload_edge_cases_duplicate_and_failure(client: TestClient, db_se
     batch_res = res.json()
 
     assert batch_res["total_files"] == 3
-    assert batch_res["successful_count"] == 1
+    assert batch_res["successful_count"] == 1, f"Fallo en batch edge cases: {batch_res['results']}"
     assert batch_res["duplicated_count"] == 1
     assert batch_res["failed_count"] == 1
 
@@ -263,6 +266,8 @@ def test_batch_upload_edge_cases_duplicate_and_failure(client: TestClient, db_se
     assert results_map["plano_duplicado.pdf"]["status"] == "already_exists"
     assert results_map["archivo_vacio.pdf"]["status"] == "failed"
     assert "vacío" in results_map["archivo_vacio.pdf"]["error_message"].lower()
+    wait_for_all_jobs(timeout=5.0)
+
 
 
 def test_batch_upload_invalid_project(client: TestClient, db_session: Session):

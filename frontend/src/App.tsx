@@ -170,7 +170,7 @@ export function App() {
           {currentTab === 'evaluation' && <EvaluationPage key={refreshKey} />}
           {currentTab === 'knowledge' && <KnowledgePage key={refreshKey} />}
           {currentTab === 'memories' && <MemoriesConsolePage key={refreshKey} />}
-          {currentTab === 'mlops' && <KnowledgePage key={refreshKey} />}
+          {/* TODO: MLOps & Active Learning (feedback loop, fine-tuning y active learning) previsto para fase posterior */}
         </div>
       </div>
     </ProjectProvider>

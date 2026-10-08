@@ -248,12 +248,14 @@ async def batch_upload_documents(
                 error_message=None
             ))
         except Exception as err:
+            logger.error(f"Fallo en procesamiento de archivo '{filename}' en batch upload: {err}", exc_info=True)
             failed_count += 1
             results.append(BatchFileResultItem(
                 filename=filename,
                 status="failed",
                 error_message=str(err)
             ))
+
 
     return BatchUploadResponse(
         project_id=project_id,

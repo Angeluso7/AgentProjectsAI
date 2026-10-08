@@ -41,9 +41,10 @@ def db_session():
         db.close()
         try:
             from app.services.operations.dispatcher import wait_for_all_jobs
-            wait_for_all_jobs(timeout=3.0)
+            wait_for_all_jobs(timeout=10.0)
         except Exception:
             pass
+
         import time
         for i in range(15):
             try:
