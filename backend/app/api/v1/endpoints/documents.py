@@ -217,7 +217,7 @@ async def batch_upload_documents(
                 continue
 
             file_hash = ingest_svc.calculate_file_hash(content)
-            existing = ingest_svc.repo.get_by_hash(file_hash)
+            existing = ingest_svc.repo.get_by_project_and_hash(project_id, file_hash)
             is_duplicate = existing is not None
 
             doc = ingest_svc.ingest_file(
