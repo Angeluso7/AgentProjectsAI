@@ -204,13 +204,14 @@ async def batch_upload_documents(
     failed_count = 0
 
     for upload_file in files:
-        filename = upload_file.filename or "unnamed_file"
+        raw_name = upload_file.filename or "unnamed_file"
+        clean_basename = os.path.basename(raw_name.replace("\\", "/"))
         try:
             content = await upload_file.read()
             if not content:
                 failed_count += 1
                 results.append(BatchFileResultItem(
-                    filename=filename,
+                    filename=clean_basename,
                     status="failed",
                     error_message="El archivo está vacío."
                 ))
@@ -220,13 +221,18 @@ async def batch_upload_documents(
             existing = ingest_svc.repo.get_by_project_and_hash(project_id, file_hash)
             is_duplicate = existing is not None
 
+            file_meta = {}
+            if "/" in raw_name or "\\" in raw_name:
+                file_meta["relative_path"] = raw_name
+
             doc = ingest_svc.ingest_file(
                 project_id=project_id,
-                filename=filename,
+                filename=clean_basename,
                 file_bytes=content,
                 version_id=version_id,
                 auto_process=auto_process,
-                dpi=dpi
+                dpi=dpi,
+                metadata_extra=file_meta
             )
 
             if is_duplicate:
@@ -238,7 +244,7 @@ async def batch_upload_documents(
 
             documents.append(doc)
             results.append(BatchFileResultItem(
-                filename=filename,
+                filename=clean_basename,
                 status=status_label,
                 document_id=doc.id,
                 file_size_bytes=len(content),
@@ -248,13 +254,19 @@ async def batch_upload_documents(
                 error_message=None
             ))
         except Exception as err:
-            logger.error(f"Fallo en procesamiento de archivo '{filename}' en batch upload: {err}", exc_info=True)
+            logger.error(f"Fallo en procesamiento de archivo '{clean_basename}' en batch upload: {err}", exc_info=True)
             failed_count += 1
             results.append(BatchFileResultItem(
-                filename=filename,
+                filename=clean_basename,
                 status="failed",
                 error_message=str(err)
             ))
+        finally:
+            try:
+                await upload_file.close()
+            except Exception:
+                pass
+
 
 
     return BatchUploadResponse(

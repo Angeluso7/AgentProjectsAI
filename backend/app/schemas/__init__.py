@@ -51,8 +51,10 @@ from app.schemas.review import (
     FindingEvidenceRead, HumanFeedbackCreate, HumanFeedbackRead
 )
 from app.schemas.intake import (
-    SourceAssetCreate, SourceAssetRead, SourceAssetApprovalRequest, SourceAssetIngestResponse
+    SourceAssetCreate, SourceAssetRead, SourceAssetApprovalRequest, SourceAssetIngestResponse,
+    BatchSourceUploadResponse, BatchSourceFileResultItem
 )
+
 from app.schemas.symbol_catalog import (
     SymbolGeometricFeatureDTO, SymbolFeatureRelationDTO, SymbolSourceEvidenceDTO,
     SymbolTemplateVersionDetail, CanonicalSymbolTemplateDetail,

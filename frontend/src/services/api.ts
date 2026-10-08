@@ -21,6 +21,7 @@ import {
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
   PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem,
+  BatchSourceUploadResponse, BatchSourceFileResultItem,
   ExtractedItem, ExtractionItemsSummaryStats, FieldProvenanceEntry
 } from '../types';
 
@@ -304,6 +305,20 @@ export const apiService = {
     const res = await apiClient.post<SourceAssetItem>('/intake/sources/upload', formData);
     return res.data;
   },
+  batchUploadSources: async (
+    formData: FormData,
+    onProgress?: (percent: number) => void
+  ): Promise<BatchSourceUploadResponse> => {
+    const res = await apiClient.post<BatchSourceUploadResponse>('/intake/sources/batch-upload', formData, {
+      onUploadProgress: (progressEvent) => {
+        if (onProgress && progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(percent);
+        }
+      },
+    });
+    return res.data;
+  },
   getSourceDependencies: async (sourceId: string): Promise<SourceDependenciesInfo> => {
     const res = await apiClient.get<SourceDependenciesInfo>(`/intake/sources/${sourceId}/dependencies`);
     return res.data;
@@ -564,7 +579,12 @@ export const apiService = {
     formData.append('project_id', projectId);
     if (versionId) formData.append('version_id', versionId);
     files.forEach((file) => {
-      formData.append('files', file);
+      const relPath = (file as any).webkitRelativePath;
+      if (relPath) {
+        formData.append('files', file, relPath);
+      } else {
+        formData.append('files', file);
+      }
     });
     const res = await apiClient.post<BatchUploadResponse>('/documents/batch-upload', formData, {
       onUploadProgress: (progressEvent) => {
