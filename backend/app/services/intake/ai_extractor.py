@@ -3,6 +3,8 @@ import re
 import hashlib
 import uuid
 import difflib
+import json
+import logging
 from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
@@ -12,6 +14,9 @@ from app.db.models.intake import SourceAsset
 from app.db.models.intake_extractions import SourceExtraction, ExtractedItem
 from app.services.rules.deduplication_service import RuleDeduplicationService
 from app.services.extraction.candidate_enrichment_service import CandidateEnrichmentService
+from app.services.ai.claude_client import ClaudeClient, ClaudeClientError
+
+logger = logging.getLogger(__name__)
 
 class AiDocumentExtractorService:
     """
@@ -20,9 +25,10 @@ class AiDocumentExtractorService:
     - Opción 2: Generación e investigación estructurada en base a búsquedas en Internet.
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: Session, claude_client: Optional[ClaudeClient] = None):
         self.db = db
         self.repo = IntakeExtractionRepository(db)
+        self.claude_client = claude_client or ClaudeClient()
 
     # =========================================================
     # OPCIÓN 1: GENERAR INFORMACIÓN EN BASE AL DOCUMENTO
@@ -72,7 +78,7 @@ class AiDocumentExtractorService:
             source_file_path=actual_file_path,
             summary=summary_text,
             metadata_info={
-                "ai_engine": "Gemini-1.5-Pro / MultimodalEvidenceExtractor-v2",
+                "ai_engine": f"Claude Sonnet ({self.claude_client.model})" if self.claude_client.is_available() else "Local Heuristic Extractor (Offline Fallback)",
                 "confidence": 0.95,
                 "input_source": "stored_local_document" if actual_file_path else "raw_text",
                 "local_file_path": actual_file_path
@@ -1572,6 +1578,114 @@ class AiDocumentExtractorService:
         return "Autoridad Técnica Competente"
 
     def _generate_structured_items_from_doc(
+        self,
+        title: str,
+        doc_type: str,
+        discipline: str,
+        authority: Optional[str],
+        raw_text: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        # 1. Si ClaudeClient está disponible, intentar extracción estructurada real con Claude
+        if self.claude_client.is_available():
+            try:
+                claude_items = self._extract_structured_items_with_claude(
+                    title=title,
+                    doc_type=doc_type,
+                    discipline=discipline,
+                    authority=authority,
+                    raw_text=raw_text
+                )
+                if claude_items and len(claude_items) > 0:
+                    return claude_items
+            except Exception as e:
+                logger.warning(
+                    f"Invocación a Claude falló o no disponible ({e}). Aplicando fallback explícito a heurística local."
+                )
+
+        # 2. Fallback determinístico / heurístico local
+        return self._generate_structured_items_from_doc_heuristic(
+            title=title,
+            doc_type=doc_type,
+            discipline=discipline,
+            authority=authority,
+            raw_text=raw_text
+        )
+
+    def _extract_structured_items_with_claude(
+        self,
+        title: str,
+        doc_type: str,
+        discipline: str,
+        authority: Optional[str],
+        raw_text: Optional[str]
+    ) -> List[Dict[str, Any]]:
+        """Invoca el SDK oficial de Claude para estructurar normativas en formato JSON."""
+        system_prompt = (
+            "Eres un auditor técnico y experto en normativa de ingeniería y construcción (OGUC, NCh, SEC, NFPA).\n"
+            "Tu tarea es analizar el documento o texto normativo proporcionado y extraer una lista estructurada "
+            "de elementos técnicos en formato JSON estricto.\n"
+            "Devuelve EXCLUSIVAMENTE un objeto JSON válido con la clave 'items', que contenga una lista de objetos con:\n"
+            "- 'item_type': uno de ['chapter', 'article', 'rule', 'table', 'figure', 'definition']\n"
+            "- 'candidate_type': uno de ['rule_candidate', 'premise_candidate', 'table_matrix_candidate', 'diagram_candidate', 'example_candidate']\n"
+            "- 'code_or_number': identificador o código normativo (ej: 'Art. 4.1.1', 'Capítulo 1', 'SEC-01', 'TAB-01')\n"
+            "- 'title': título del elemento normativo\n"
+            "- 'description': resumen del requisito técnico\n"
+            "- 'content_text': texto normativo o especificación técnica completa\n"
+            "- 'derived_text': regla o premisa operativa derivada\n"
+            "- 'ocr_text': cita textual representativa\n"
+            "- 'target_destination': 'rules_engine' si es regla verificable, o 'knowledge_base'\n"
+            "- 'item_nature': 'official_rule'\n"
+            "- 'page_number': 1\n"
+            "Genera entre 4 y 8 elementos técnicos sustantivos."
+        )
+
+        content_preview = (raw_text[:12000] if raw_text else f"Norma técnica o documento '{title}' para la disciplina {discipline}.")
+        user_prompt = (
+            f"Documento: {title}\n"
+            f"Tipo: {doc_type}\n"
+            f"Disciplina: {discipline}\n"
+            f"Autoridad: {authority or 'Autoridad Técnica Competente'}\n\n"
+            f"Texto / Contenido a Estructurar:\n{content_preview}"
+        )
+
+        response_text = self.claude_client.complete(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            max_tokens=3000,
+            temperature=0.1
+        )
+
+        cleaned_json = response_text.strip()
+        if cleaned_json.startswith("```"):
+            cleaned_json = re.sub(r"^```(?:json)?\s*", "", cleaned_json)
+            cleaned_json = re.sub(r"\s*```$", "", cleaned_json)
+
+        parsed = json.loads(cleaned_json)
+        raw_items = parsed.get("items", []) if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+
+        sanitized_items = []
+        for idx, it in enumerate(raw_items, 1):
+            if not isinstance(it, dict):
+                continue
+            item_type = str(it.get("item_type") or "rule").lower()
+            cand_type = it.get("candidate_type") or ("rule_candidate" if item_type == "rule" else "premise_candidate")
+            sanitized_items.append({
+                "item_type": item_type,
+                "candidate_type": cand_type,
+                "code_or_number": it.get("code_or_number") or f"CLA-{idx:02d}",
+                "title": it.get("title") or f"{title}: Elemento {idx}",
+                "description": it.get("description") or it.get("content_text", "")[:220],
+                "content_text": it.get("content_text") or it.get("description", ""),
+                "derived_text": it.get("derived_text") or it.get("content_text", "")[:150],
+                "ocr_text": it.get("ocr_text") or it.get("content_text", ""),
+                "target_destination": it.get("target_destination") or ("rules_engine" if item_type == "rule" else "knowledge_base"),
+                "item_nature": it.get("item_nature") or "official_rule",
+                "page_number": it.get("page_number", 1)
+            })
+
+        return sanitized_items
+
+    def _generate_structured_items_from_doc_heuristic(
         self,
         title: str,
         doc_type: str,

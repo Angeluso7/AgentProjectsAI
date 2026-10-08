@@ -41,7 +41,8 @@ dependencies = [
   "python-multipart",
   "ezdxf",
   "qdrant-client",
-  "openpyxl"
+  "openpyxl",
+  "anthropic"
 ]
 
 [project.optional-dependencies]

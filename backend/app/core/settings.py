@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api/v1"
     SECRET_KEY: str = Field(default="insecure-dev-secret-key-change-in-production", validation_alias="SECRET_KEY")
     CORS_ORIGINS: List[str] = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:5173"]
+
+    # Proveedor de Inteligencia Artificial (Anthropic Claude)
+    ANTHROPIC_API_KEY: Optional[str] = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
+    ANTHROPIC_MODEL: str = Field(default="claude-sonnet-5-5", validation_alias="ANTHROPIC_MODEL")
     
     # Base de Datos PostgreSQL + PostGIS / SQLite
     DATABASE_URL: str = Field(
@@ -68,7 +72,7 @@ class Settings(BaseSettings):
     ]
     
     class Config:
-        env_file = ".env"
+        env_file = (".env", "../.env")
         env_file_encoding = "utf-8"
         case_sensitive = True
         extra = "ignore"

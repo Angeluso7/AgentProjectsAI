@@ -229,7 +229,7 @@ def test_assistant_dynamic_escalation_to_tier_3(test_setup):
     assert exec_resp.status_code == 200
     data = exec_resp.json()
     assert data["tier_used"] == 3
-    assert data["engine_model_used"] == "openai_gpt4o"
+    assert data["engine_model_used"] == "claude_sonnet"
     assert data["was_escalated"] is True
     assert data["escalation_reason"] == "critical_severity"
     assert data["cost_estimate_usd"] > 0.0
