@@ -312,6 +312,24 @@ class EngineRegistry:
             "parameters": {"strict_formatting": True}
         },
         {
+            "id": "claude_sonnet",
+            "category": "llm",
+            "provider": "Anthropic",
+            "model_name": "Claude 3.5 Sonnet",
+            "version": "3.5",
+            "engine_type": "api_cloud",
+            "cost_tier": "pago",
+            "status": "active" if bool(settings.ANTHROPIC_API_KEY and not str(settings.ANTHROPIC_API_KEY).startswith("sk-ant-xxxxx")) else "inactive",
+            "is_active": bool(settings.ANTHROPIC_API_KEY and not str(settings.ANTHROPIC_API_KEY).startswith("sk-ant-xxxxx")),
+            "is_installed": True,
+            "required_credentials": ["ANTHROPIC_API_KEY"],
+            "has_credentials": bool(settings.ANTHROPIC_API_KEY and not str(settings.ANTHROPIC_API_KEY).startswith("sk-ant-xxxxx")),
+            "disciplines": ["all"],
+            "description": "Motor de inferencia técnica, estructuración y auditoría conectado a Anthropic Claude API.",
+            "notes": "Conectado vía SDK oficial de Anthropic. Conmuta a fallback heurístico determinístico si no hay credenciales o ante error.",
+            "parameters": {"model": settings.ANTHROPIC_MODEL, "temperature": 0.1, "max_tokens": 4096}
+        },
+        {
             "id": "google_gemini_flash",
             "category": "llm",
             "provider": "Google DeepMind",
@@ -321,12 +339,12 @@ class EngineRegistry:
             "cost_tier": "mixto",
             "status": "inactive",
             "is_active": False,
-            "is_installed": True,
+            "is_installed": False,
             "required_credentials": ["GEMINI_API_KEY"],
             "has_credentials": False,
             "disciplines": ["all"],
-            "description": "Razonamiento multimodal avanzado, auditoría de discrepancias complejas y síntesis ejecutiva.",
-            "notes": "Tier gratuito disponible y bajo costo por millón de tokens en tier de pago.",
+            "description": "Motor cloud no conectado en esta versión. Sin implementación activa.",
+            "notes": "Inactivo / Sin conexión activa.",
             "parameters": {"temperature": 0.1, "max_output_tokens": 2048}
         },
         {
@@ -339,12 +357,12 @@ class EngineRegistry:
             "cost_tier": "pago",
             "status": "inactive",
             "is_active": False,
-            "is_installed": True,
+            "is_installed": False,
             "required_credentials": ["OPENAI_API_KEY"],
             "has_credentials": False,
             "disciplines": ["all"],
-            "description": "Modelo de lenguaje avanzado para análisis de memorias explicativas y resolución de conflictos.",
-            "notes": "Requiere suscripción o créditos activos en OpenAI Platform.",
+            "description": "Motor cloud no conectado en esta versión. Sin implementación activa.",
+            "notes": "Inactivo / Sin conexión activa.",
             "parameters": {"temperature": 0.2, "max_tokens": 2000}
         },
 
@@ -409,14 +427,14 @@ class EngineRegistry:
         {
             "task_id": "reasoning",
             "task_name": "Inferencia Técnica y Resolución Semántica",
-            "free_default_engine_id": "deepseek_r1_local",
-            "free_default_name": "DeepSeek-R1 / Qwen2.5-14B Local (Ollama)",
-            "paid_enabled_engine_id": "gpt4o_cloud",
-            "paid_enabled_name": "OpenAI GPT-4o / Claude 3.5 Sonnet / Gemini 1.5 Pro",
-            "fallback_criteria": "Servicio local de inferencia no disponible, ventana de contexto > 16.000 tokens o latencia de respuesta > 30s.",
-            "escalation_conditions": "Contradicciones normativas complejas (ej. OGUC Art. 4.3.7 sectorización vs evacuación), arbitraje de auditoría o disputas de cumplimiento legal.",
-            "active_mode": "free_default",
-            "last_evaluated_tier": "gratis"
+            "free_default_engine_id": "fastapi_rule_reasoner",
+            "free_default_name": "Local Heuristic Reasoner (Offline Fallback)",
+            "paid_enabled_engine_id": "claude_sonnet",
+            "paid_enabled_name": "Anthropic Claude 3.5 Sonnet (Conectado)",
+            "fallback_criteria": "Servicio en la nube no disponible o ANTHROPIC_API_KEY no configurada.",
+            "escalation_conditions": "Contradicciones normativas complejas, arbitraje de auditoría o disputas de cumplimiento legal.",
+            "active_mode": "paid_enabled" if bool(settings.ANTHROPIC_API_KEY and not str(settings.ANTHROPIC_API_KEY).startswith("sk-ant-xxxxx")) else "free_default",
+            "last_evaluated_tier": "pago" if bool(settings.ANTHROPIC_API_KEY and not str(settings.ANTHROPIC_API_KEY).startswith("sk-ant-xxxxx")) else "gratis"
         },
         {
             "task_id": "qa_qc_rules",
@@ -447,9 +465,21 @@ class EngineRegistry:
         # Cargar valores por defecto de motores
         for d in self._DEFAULT_ENGINES:
             eng = EngineDefinition(**d)
-            if eng.required_credentials:
-                has_all = all(bool(os.getenv(k)) for k in eng.required_credentials)
+            if eng.id in ["google_gemini_flash", "openai_gpt4o"]:
+                eng.is_active = False
+                eng.is_installed = False
+                eng.status = "inactive"
+                eng.has_credentials = False
+            elif eng.required_credentials:
+                has_all = all(
+                    bool(os.getenv(k) or getattr(settings, k, None)) and not str(os.getenv(k) or getattr(settings, k, "")).startswith("sk-ant-xxxxx")
+                    for k in eng.required_credentials
+                )
                 eng.has_credentials = has_all
+                if not has_all:
+                    eng.is_active = False
+                    if eng.status == "active":
+                        eng.status = "inactive"
             self._engines[eng.category][eng.id] = eng
 
         # Cargar valores por defecto de políticas por tarea

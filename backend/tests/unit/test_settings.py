@@ -6,3 +6,5 @@ def test_settings_loaded_correctly():
     assert settings.API_V1_PREFIX == "/api/v1"
     assert settings.DEFAULT_RENDER_DPI in [150, 300]
     assert 0.0 < settings.UNCERTAINTY_MIN_CONF < settings.UNCERTAINTY_MAX_CONF < 1.0
+    assert hasattr(settings, "ANTHROPIC_API_KEY")
+    assert settings.ANTHROPIC_MODEL == "claude-sonnet-5-5"

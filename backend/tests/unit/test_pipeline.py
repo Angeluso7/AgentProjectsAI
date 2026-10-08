@@ -13,7 +13,10 @@ from app.services.operations.pipeline_service import ReviewPipelineService
 from app.core.security import hash_password, create_access_token
 from app.main import app
 
-TEST_DB_URL = "sqlite:////tmp/test_pipeline.db"
+import tempfile
+
+TEST_DB_PATH = os.path.join(tempfile.gettempdir(), f"test_pipeline_{uuid.uuid4().hex[:8]}.db")
+TEST_DB_URL = f"sqlite:///{TEST_DB_PATH.replace(os.sep, '/')}"
 engine = create_engine(TEST_DB_URL, connect_args={"check_same_thread": False})
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -27,9 +30,9 @@ def setup_test_db():
             Base.metadata.drop_all(bind=engine)
         except Exception:
             pass
-        if os.path.exists("/tmp/test_pipeline.db"):
+        if os.path.exists(TEST_DB_PATH):
             try:
-                os.remove("/tmp/test_pipeline.db")
+                os.remove(TEST_DB_PATH)
             except Exception:
                 pass
 

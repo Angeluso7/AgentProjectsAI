@@ -130,6 +130,15 @@
           "strict_formatting": true
         }
       },
+      "claude_sonnet": {
+        "is_active": true,
+        "status": "active",
+        "parameters": {
+          "model": "claude-sonnet-5-5",
+          "temperature": 0.1,
+          "max_tokens": 4096
+        }
+      },
       "google_gemini_flash": {
         "is_active": false,
         "status": "inactive",

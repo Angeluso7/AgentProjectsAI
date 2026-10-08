@@ -1,13 +1,19 @@
 import re
 import uuid
+import logging
 from typing import Dict, List, Any, Optional, Tuple
 from app.schemas.assistant import AssistantTaskTypeEnum, AssistantTaskCatalogItem
 from app.schemas.knowledge_base import KnowledgeSearchResultItem
+from app.services.ai.claude_client import ClaudeClient
+
+logger = logging.getLogger(__name__)
 
 class AiEngineRouter:
     """
     Orquestador inteligente y despachador de motores de IA con estrategia de 3 Tiers.
     Selecciona el motor más adecuado según tipo de tarea, criticidad, ambigüedad y costo.
+    Tier 1: Heurístico local (gratis / determinístico / fallback honesto).
+    Tier 2 / 3: Claude 3.5 Sonnet vía Anthropic SDK.
     """
 
     # Definición de Tiers
@@ -22,19 +28,19 @@ class AiEngineRouter:
         },
         2: {
             "tier": 2,
-            "engine_id": "google_gemini_flash",
-            "name": "Gemini 2.0 Flash (Tier 2 - Balanceado / Intermedio)",
-            "provider": "Google DeepMind",
-            "cost_per_req_usd": 0.00015,
-            "latency_ms": 320.0
+            "engine_id": "claude_sonnet",
+            "name": "Claude 3.5 Sonnet (Tier 2 - Balanceado / Anthropic)",
+            "provider": "Anthropic",
+            "cost_per_req_usd": 0.0030,
+            "latency_ms": 550.0
         },
         3: {
             "tier": 3,
-            "engine_id": "openai_gpt4o",
-            "name": "GPT-4o Omnimodal (Tier 3 - Premium / Alta Exigencia)",
-            "provider": "OpenAI",
-            "cost_per_req_usd": 0.0050,
-            "latency_ms": 880.0
+            "engine_id": "claude_sonnet",
+            "name": "Claude 3.5 Sonnet (Tier 3 - Premium / Anthropic)",
+            "provider": "Anthropic",
+            "cost_per_req_usd": 0.0030,
+            "latency_ms": 550.0
         }
     }
 
@@ -50,6 +56,9 @@ class AiEngineRouter:
         AssistantTaskTypeEnum.stage_synthesis.value: 2,
         AssistantTaskTypeEnum.symbol_clarification.value: 1,
     }
+
+    def __init__(self, claude_client: Optional[ClaudeClient] = None):
+        self.claude_client = claude_client or ClaudeClient()
 
     @classmethod
     def get_task_catalog(cls) -> List[AssistantTaskCatalogItem]:
@@ -78,7 +87,7 @@ class AiEngineRouter:
                 name="Sugerencia y Formulación de Reglas QA/QC",
                 description="Formula definiciones de reglas QA/QC reutilizables basadas en lecciones de auditoría.",
                 default_tier=2,
-                default_engine="google_gemini_flash",
+                default_engine="claude_sonnet",
                 capabilities=["Estructuración de inputs", "Tipificación de lógica", "Asignación de severidad"],
                 escalation_triggers=["Reglas complejas multidiciplinares"]
             ),
@@ -105,7 +114,7 @@ class AiEngineRouter:
                 name="Apoyo Contextual a Revisión Técnica",
                 description="Asiste al auditor humano recomendando veredictos y puntos de control según antecedentes.",
                 default_tier=2,
-                default_engine="google_gemini_flash",
+                default_engine="claude_sonnet",
                 capabilities=["Sugerencia de veredicto canónico", "Chequeo de precedentes", "Detección de incongruencias"],
                 escalation_triggers=["Veredictos contradictorios o hallazgos de alto impacto"]
             ),
@@ -114,7 +123,7 @@ class AiEngineRouter:
                 name="Borrador de Observación Técnica / RFI / Bloqueo",
                 description="Redacta formalmente observaciones, solicitudes de información o bloqueos con recomendación.",
                 default_tier=2,
-                default_engine="google_gemini_flash",
+                default_engine="claude_sonnet",
                 capabilities=["Redacción formal de hallazgos", "Recomendación de rectificación", "Asignación de severidad"],
                 escalation_triggers=["Severidad CRÍTICA", "Bloqueos documentales mayores (Escala a Tier 3)"]
             ),
@@ -132,7 +141,7 @@ class AiEngineRouter:
                 name="Síntesis Ejecutiva de Corte de Etapa",
                 description="Sintetiza el estado consolidado de la auditoría para la emisión formal del snapshot.",
                 default_tier=2,
-                default_engine="google_gemini_flash",
+                default_engine="claude_sonnet",
                 capabilities=["Resumen de veredicto global", "Evaluación de riesgos", "Trazabilidad delta"],
                 escalation_triggers=["Veredicto NO APROBABLE o bloqueado (Escala a Tier 3)"]
             )
@@ -235,8 +244,42 @@ class AiEngineRouter:
             )
         rag_text_context = "\n\n".join(rag_context_blocks) if rag_context_blocks else "*(No se encontraron antecedentes normativos o reglas aprobadas específicas en la Base de Conocimiento)*"
 
+        # Invocación real a Claude si el motor es claude_sonnet (Tier 2/3) y está disponible
+        if engine_id == "claude_sonnet" and self.claude_client.is_available():
+            try:
+                system_prompt = (
+                    "Eres el Asistente Técnico y Auditor de Plan Review AI Hybrid para ingeniería y arquitectura.\n"
+                    "Debes responder de manera formal, técnica y concisa usando formato Markdown.\n"
+                    "Básate en los antecedentes RAG y el contexto suministrado para formular respuestas fundamentadas."
+                )
+                user_msg = (
+                    f"Tipo de tarea: {task_type}\n"
+                    f"Consulta/Requerimiento: {prompt}\n"
+                    f"Contexto adicional: {context_data}\n\n"
+                    f"Fuentes y Antecedentes RAG:\n{rag_text_context}"
+                )
+                claude_text = self.claude_client.complete(
+                    system_prompt=system_prompt,
+                    user_prompt=user_msg,
+                    max_tokens=2048,
+                    temperature=0.1
+                )
+                if claude_text and claude_text.strip():
+                    structured_out = self._build_structured_output(
+                        task_type=task_type,
+                        prompt=prompt,
+                        context_data=context_data,
+                        executed_tier=executed_tier,
+                        rag_sources=rag_sources
+                    )
+                    return claude_text, structured_out, 0.95, cost_usd
+            except Exception as e:
+                logger.warning(
+                    f"Llamada a Claude no disponible o fallida ({e}); aplicando fallback explícito a heurística local Tier 1."
+                )
+
         # =========================================================================
-        # DESPACHO POR TIPO DE TAREA
+        # DESPACHO POR TIPO DE TAREA (TIER 1 / FALLBACK DETERMINÍSTICO)
         # =========================================================================
 
         if task_type == AssistantTaskTypeEnum.normative_query.value:
@@ -413,3 +456,88 @@ class AiEngineRouter:
             0.85,
             cost_usd
         )
+
+    def _build_structured_output(
+        self,
+        task_type: str,
+        prompt: str,
+        context_data: Dict[str, Any],
+        executed_tier: int,
+        rag_sources: List[KnowledgeSearchResultItem]
+    ) -> Dict[str, Any]:
+        """Construye la carga útil estructurada asociada a la tarea para interoperabilidad con el frontend."""
+        if task_type == AssistantTaskTypeEnum.normative_query.value:
+            top_src = rag_sources[0] if rag_sources else None
+            article_match = top_src.title if top_src else "Criterio General"
+            return {
+                "matched_article": article_match,
+                "domain": "normative_knowledge",
+                "compliance_check": "Verificación dimensional requerida",
+                "sources_count": len(rag_sources)
+            }
+        elif task_type == AssistantTaskTypeEnum.observation_rfi_draft.value:
+            obs_code = context_data.get("code") or f"OBS-GEN-{uuid.uuid4().hex[:4].upper()}"
+            severity = context_data.get("severity") or ("critical" if executed_tier == 3 else "high")
+            disc = context_data.get("discipline") or "architecture"
+            title = context_data.get("title") or f"Discrepancia técnica en {prompt[:60]}"
+            return {
+                "code": obs_code,
+                "item_type": context_data.get("item_type", "technical_observation"),
+                "title": title,
+                "severity": severity,
+                "discipline": disc,
+                "description": prompt,
+                "recommendation": "Rectificar láminas y tablas afectadas asegurando consistencia dimensional.",
+                "tier_level": executed_tier
+            }
+        elif task_type == AssistantTaskTypeEnum.rule_suggestion.value:
+            rule_code = context_data.get("rule_code") or f"RULE_CUSTOM_{uuid.uuid4().hex[:6].upper()}_V1"
+            return {
+                "code": rule_code,
+                "name": f"Validación Asistida: {prompt[:70]}",
+                "rule_logic_type": "deterministic_threshold",
+                "severity_default": context_data.get("severity", "high"),
+                "discipline": context_data.get("discipline", "general"),
+                "category": "cross_reconciliation",
+                "description": prompt
+            }
+        elif task_type == AssistantTaskTypeEnum.completeness_assistance.value:
+            stage = context_data.get("stage") or "Ingeniería Básica"
+            return {
+                "stage": stage,
+                "gatekeeper_requirements_checked": len(rag_sources),
+                "status": "gatekeeper_evaluated"
+            }
+        elif task_type == AssistantTaskTypeEnum.document_classification.value:
+            suggested_type = context_data.get("deliverable_type") or "plano_general"
+            disc = context_data.get("discipline") or "architecture"
+            return {
+                "suggested_deliverable_type": suggested_type,
+                "discipline": disc,
+                "readiness_status": "classified",
+                "confidence": 0.94
+            }
+        elif task_type == AssistantTaskTypeEnum.review_support.value:
+            return {
+                "recommended_action": "verify_cross_reconciliation",
+                "suggested_verdict": context_data.get("suggested_verdict", "no_cumple_menor"),
+                "tolerance_mm": 5.0
+            }
+        elif task_type == AssistantTaskTypeEnum.finding_explanation.value:
+            rule_code = context_data.get("rule_code", "RULE_GENERAL")
+            return {
+                "rule_code": rule_code,
+                "root_cause": "Discrepancia entre capa vectorial y cuadro tabular",
+                "severity": context_data.get("severity", "medium")
+            }
+        elif task_type == AssistantTaskTypeEnum.stage_synthesis.value:
+            stage = context_data.get("stage", "Ingeniería")
+            verdict = context_data.get("global_stage_verdict", "aprobable_con_observaciones")
+            return {
+                "stage": stage,
+                "global_stage_verdict": verdict,
+                "tier": executed_tier,
+                "synthesis_summary": prompt
+            }
+        return {"status": "completed"}
+
