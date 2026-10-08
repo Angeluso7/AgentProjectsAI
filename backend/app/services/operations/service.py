@@ -53,6 +53,99 @@ class OperationsService:
             self.db.refresh(job)
         return job
 
+    def submit_document_intake_chain(
+        self,
+        document_id: str,
+        project_id: Optional[str] = None,
+        discipline: Optional[str] = None,
+        async_mode: bool = True
+    ) -> List[ProcessingJob]:
+        """
+        Encola en secuencia los 4 jobs de procesamiento para un documento:
+        OCR (document_ocr) -> Layout (document_layout) -> Tablas (document_table_extract) -> Símbolos (document_symbol_detect).
+        Cada etapa espera a que la anterior termine antes de arrancar.
+        """
+        # 4. Job de Simbología (último en la cadena)
+        job_sym = self.repo.create_job(
+            job_type="document_symbol_detect",
+            target_type="document",
+            target_id=document_id,
+            project_id=project_id,
+            pipeline_name="document_intake_pipeline",
+            requested_by="system",
+            priority=5,
+            input_payload={
+                "discipline": discipline,
+                "engine": "yolo_sahi_hybrid",
+                "auto_match_catalog": True,
+                "async_mode": async_mode
+            }
+        )
+
+        # 3. Job de Extracción de Tablas
+        job_tables = self.repo.create_job(
+            job_type="document_table_extract",
+            target_type="document",
+            target_id=document_id,
+            project_id=project_id,
+            pipeline_name="document_intake_pipeline",
+            requested_by="system",
+            priority=5,
+            input_payload={
+                "next_job_id": job_sym.id,
+                "async_mode": async_mode
+            }
+        )
+        job_sym.parent_job_id = job_tables.id
+
+        # 2. Job de Segmentación de Layout y Viñetas
+        job_layout = self.repo.create_job(
+            job_type="document_layout",
+            target_type="document",
+            target_id=document_id,
+            project_id=project_id,
+            pipeline_name="document_intake_pipeline",
+            requested_by="system",
+            priority=5,
+            input_payload={
+                "next_job_id": job_tables.id,
+                "async_mode": async_mode
+            }
+        )
+        job_tables.parent_job_id = job_layout.id
+
+        # 1. Job de OCR (primer eslabón)
+        job_ocr = self.repo.create_job(
+            job_type="document_ocr",
+            target_type="document",
+            target_id=document_id,
+            project_id=project_id,
+            pipeline_name="document_intake_pipeline",
+            requested_by="system",
+            priority=5,
+            input_payload={
+                "next_job_id": job_layout.id,
+                "async_mode": async_mode
+            }
+        )
+        job_layout.parent_job_id = job_ocr.id
+        self.db.commit()
+
+        logger.info(
+            f"Cadena de intake encolada para doc {document_id}: "
+            f"OCR({job_ocr.id}) -> Layout({job_layout.id}) -> Tablas({job_tables.id}) -> Símbolos({job_sym.id})"
+        )
+
+        # Disparar el primer eslabón (OCR)
+        self.dispatcher.dispatch(job_ocr.id, async_mode=async_mode)
+        if not async_mode:
+            self.db.refresh(job_ocr)
+            self.db.refresh(job_layout)
+            self.db.refresh(job_tables)
+            self.db.refresh(job_sym)
+
+        return [job_ocr, job_layout, job_tables, job_sym]
+
     def get_job(self, job_id: str) -> Optional[ProcessingJob]:
         return self.repo.get_job(job_id)
 

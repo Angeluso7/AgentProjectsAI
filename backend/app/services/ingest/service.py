@@ -473,7 +473,7 @@ class IngestService:
             except Exception as e:
                 logger.warning(f"Extracción de secciones/tablas PDF falló para '{doc.filename}': {e}")
 
-            # Disparo asíncrono de detección de símbolos y matching (no bloquea el upload)
+            # Disparo asíncrono encadenado: OCR -> Layout -> Tablas -> Símbolos (no bloquea el upload)
             try:
                 from app.services.operations.service import OperationsService
                 ops_svc = OperationsService(self.db)
@@ -481,21 +481,15 @@ class IngestService:
                 if not doc_discipline and getattr(doc, "project", None):
                     doc_discipline = doc.project.discipline
 
-                ops_svc.submit_job(
-                    job_type="document_symbol_detect",
-                    target_type="document",
-                    target_id=doc.id,
+                ops_svc.submit_document_intake_chain(
+                    document_id=doc.id,
                     project_id=doc.project_id,
-                    input_payload={
-                        "discipline": doc_discipline,
-                        "engine": "yolo_sahi_hybrid",
-                        "auto_match_catalog": True
-                    },
+                    discipline=doc_discipline,
                     async_mode=True
                 )
-                logger.info(f"Job asíncrono document_symbol_detect encolado para documento {doc.id} (disciplina: {doc_discipline})")
+                logger.info(f"Pipeline automático OCR -> Layout -> Tablas -> Símbolos encolado para doc {doc.id} (disciplina: {doc_discipline})")
             except Exception as job_err:
-                logger.warning(f"No se pudo encolar job asíncrono document_symbol_detect para doc {doc.id}: {job_err}")
+                logger.warning(f"No se pudo encolar pipeline automático para doc {doc.id}: {job_err}")
 
             logger.info(f"Documento procesado exitosamente: {doc.filename} ({page_count} hojas rasterizadas a {target_dpi} DPI)")
             return doc

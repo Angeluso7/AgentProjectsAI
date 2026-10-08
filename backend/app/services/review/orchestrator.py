@@ -344,22 +344,113 @@ class ReviewOrchestrator:
         s1.status = "succeeded"
         s1.completed_at = datetime.utcnow()
 
-        # Fase 2: Raster y OCR
+        doc_ids = [d["document_id"] for d in included_docs]
+        all_sheets = db.query(DocumentSheet).filter(DocumentSheet.document_id.in_(doc_ids)).all()
+
+        # Fase 2: Raster y OCR (Ejecución real / verificación de artefactos)
         s2 = step_records[2]
         s2.status = "running"
         s2.started_at = datetime.utcnow()
-        s2.input_summary = {"document_count": len(included_docs)}
-        s2.output_summary = {"ocr_status": "ready"}
-        s2.status = "succeeded"
+        s2.input_summary = {"document_count": len(included_docs), "document_ids": doc_ids}
+
+        from app.services.ocr.service import OcrService
+        ocr_svc = OcrService(db)
+        total_ocr_texts = 0
+        ocr_errors = []
+        sheets_processed = 0
+
+        for sheet in all_sheets:
+            texts = db.query(ExtractedText).filter(ExtractedText.sheet_id == sheet.id).all()
+            if not texts:
+                try:
+                    texts = ocr_svc.process_sheet_ocr(sheet_id=sheet.id, force_reprocess=False)
+                except Exception as ocr_err:
+                    logger.error(f"Fase 2 OCR falló para lámina {sheet.id}: {ocr_err}")
+                    ocr_errors.append(f"Sheet {sheet.sheet_code or sheet.id}: {str(ocr_err)}")
+                    continue
+            total_ocr_texts += len(texts)
+            sheets_processed += 1
+
+        if ocr_errors:
+            if total_ocr_texts > 0:
+                s2.status = "partial"
+                s2.output_summary = {
+                    "ocr_status": "partial",
+                    "total_texts": total_ocr_texts,
+                    "errors": ocr_errors,
+                    "processed_sheets": sheets_processed,
+                    "total_sheets": len(all_sheets)
+                }
+            else:
+                s2.status = "failed"
+                s2.output_summary = {
+                    "ocr_status": "failed",
+                    "reason": "No se pudieron extraer textos OCR en ninguna lámina",
+                    "errors": ocr_errors
+                }
+        else:
+            s2.status = "succeeded"
+            s2.output_summary = {
+                "ocr_status": "ready",
+                "total_texts": total_ocr_texts,
+                "sheets_count": len(all_sheets)
+            }
         s2.completed_at = datetime.utcnow()
 
-        # Fase 3: Viñetas y segmentación
+        # Fase 3: Viñetas y segmentación (Ejecución real / verificación de artefactos)
         s3 = step_records[3]
         s3.status = "running"
         s3.started_at = datetime.utcnow()
-        s3.input_summary = {"phases_target": "title_blocks"}
-        s3.output_summary = {"title_blocks_ready": True}
-        s3.status = "succeeded"
+        s3.input_summary = {"phases_target": "title_blocks_and_layout"}
+
+        from app.services.layout.service import LayoutService
+        layout_svc = LayoutService(db)
+        total_regions = 0
+        total_title_blocks = 0
+        layout_errors = []
+        layout_sheets_processed = 0
+
+        for sheet in all_sheets:
+            regions = db.query(SheetRegion).filter(SheetRegion.sheet_id == sheet.id).all()
+            tb = db.query(TitleBlockExtraction).filter(TitleBlockExtraction.sheet_id == sheet.id).first()
+            if not regions or not tb:
+                try:
+                    layout_svc.process_sheet(sheet_id=sheet.id, force_reprocess=False)
+                    regions = db.query(SheetRegion).filter(SheetRegion.sheet_id == sheet.id).all()
+                    tb = db.query(TitleBlockExtraction).filter(TitleBlockExtraction.sheet_id == sheet.id).first()
+                except Exception as lay_err:
+                    logger.error(f"Fase 3 Layout falló para lámina {sheet.id}: {lay_err}")
+                    layout_errors.append(f"Sheet {sheet.sheet_code or sheet.id}: {str(lay_err)}")
+                    continue
+            total_regions += len(regions)
+            if tb:
+                total_title_blocks += 1
+            layout_sheets_processed += 1
+
+        if layout_errors or (total_regions == 0 and len(all_sheets) > 0):
+            if total_regions > 0:
+                s3.status = "partial"
+                s3.output_summary = {
+                    "layout_status": "partial",
+                    "total_regions": total_regions,
+                    "title_blocks_found": total_title_blocks,
+                    "errors": layout_errors
+                }
+            else:
+                s3.status = "failed"
+                s3.output_summary = {
+                    "layout_status": "failed",
+                    "reason": "No se pudieron generar regiones de layout ni viñetas en las láminas",
+                    "errors": layout_errors
+                }
+        else:
+            s3.status = "succeeded"
+            s3.output_summary = {
+                "layout_status": "ready",
+                "total_regions": total_regions,
+                "title_blocks_found": total_title_blocks,
+                "sheets_count": len(all_sheets)
+            }
         s3.completed_at = datetime.utcnow()
 
         # Fase 4: Simbología y Tablas
@@ -368,11 +459,25 @@ class ReviewOrchestrator:
         s4.started_at = datetime.utcnow()
         s4.input_summary = {"catalog_version": "ISA-5.1-2009-CANONICAL-V1"}
 
+        from app.services.tables.service import TableService
+        table_svc = TableService(db)
+        total_tables = 0
+        for sheet in all_sheets:
+            tbs = db.query(ExtractedTable).filter(ExtractedTable.sheet_id == sheet.id).all()
+            if not tbs:
+                try:
+                    tbs = table_svc.extract_tables_from_sheet(sheet_id=sheet.id, force_reprocess=False)
+                except Exception as tab_err:
+                    logger.warning(f"Extracción de tablas para lámina {sheet.id} advirtió: {tab_err}")
+                    tbs = []
+            total_tables += len(tbs)
+
         from app.services.symbols.symbol_inventory_service import SymbolInventoryService
         inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, review_run, force_rebuild=True)
 
         s4.output_summary = {
             "symbol_extraction_status": "ready",
+            "tables_extracted_count": total_tables,
             "inventory_groups_count": len(inv_groups),
             "valid_symbol_occurrences": inv_metrics.get("valid_symbol_occurrences", 0),
             "unknown_symbols_count": inv_metrics.get("unknown", 0),
@@ -385,8 +490,7 @@ class ReviewOrchestrator:
         db.commit()
 
         # 6. Recopilar evidencias de las láminas para evaluación
-        doc_ids = [d["document_id"] for d in included_docs]
-        sheets = db.query(DocumentSheet).filter(DocumentSheet.document_id.in_(doc_ids)).all()
+        sheets = all_sheets
 
         # Mapear dependencias
         rule_dependencies: Dict[str, List[str]] = {}

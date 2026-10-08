@@ -50,7 +50,7 @@ class SymbolService:
             regions = layout_svc.segment_sheet_layout(sheet_id=sheet_id, force_reprocess=False)
 
         drawing_region = next((r for r in regions if r.region_type == "drawing_area"), None)
-        drawing_bbox_norm = drawing_region.bbox_normalized if drawing_region else [0.05, 0.05, 0.70, 0.90]
+        drawing_bbox_norm = drawing_region.bbox_normalized if drawing_region else [0.0, 0.0, 1.0, 1.0]
 
         doc = getattr(sheet, "document", None) or self.db.query(Document).filter(Document.id == sheet.document_id).first()
         proj_id = doc.project_id if doc else None
