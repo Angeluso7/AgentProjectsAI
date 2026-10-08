@@ -5,7 +5,6 @@ import {
   BookOpen, 
   ShieldCheck, 
   CheckCircle2, 
-  BrainCircuit,
   Database,
   Inbox,
   Activity,
@@ -35,7 +34,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentTab, setCurrentTab }) =
     { id: 'evaluation', label: 'Golden Dataset & Scorecard', icon: Award },
     { id: 'knowledge', label: 'Base de Conocimiento', icon: BookOpen },
     { id: 'memories', label: 'Las 4 Memorias', icon: Database },
-    { id: 'mlops', label: 'MLOps & Active Learning', icon: BrainCircuit },
+    // TODO: MLOps & Active Learning (feedback loop, fine-tuning y active learning) previsto para fase posterior como módulo dedicado
   ];
 
   return (

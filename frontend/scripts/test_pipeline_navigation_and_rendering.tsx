@@ -19,6 +19,7 @@ import { ResetPasswordPage } from '../src/pages/ResetPasswordPage';
 import { ProjectProvider } from '../src/context/ProjectContext';
 import { apiService, apiClient } from '../src/services/api';
 import { ReviewRunDetailModal } from '../src/components/ReviewRunDetailModal';
+import { Sidebar } from '../src/components/Sidebar';
 
 // Global mocks
 const storage: Record<string, string> = {
@@ -107,7 +108,14 @@ async function runTestSuite() {
     if (!appHtml || appHtml.length === 0) {
       throw new Error('App rendered empty HTML string.');
     }
-    console.log(`✅ App rendered successfully (HTML size: ${(appHtml.length / 1024).toFixed(1)} KB) without Router errors.`);
+    const sidebarHtml = ReactDOMServer.renderToString(<Sidebar currentTab="knowledge" setCurrentTab={() => {}} />);
+    if (!sidebarHtml.includes('Base de Conocimiento')) {
+      throw new Error('Sidebar is missing "Base de Conocimiento" navigation item.');
+    }
+    if (sidebarHtml.includes('MLOps &amp; Active Learning') || sidebarHtml.includes('MLOps & Active Learning')) {
+      throw new Error('Sidebar still contains deprecated duplicate "MLOps & Active Learning" item.');
+    }
+    console.log(`✅ App and Sidebar rendered successfully (App HTML size: ${(appHtml.length / 1024).toFixed(1)} KB); single Base de Conocimiento verified without duplicate MLOps.`);
   } catch (err: any) {
     console.error('❌ Test 1 FAILED:', err.message);
     throw err;
