@@ -1100,6 +1100,69 @@ class IntakeExtractionRepository:
             "confirmed_rules_count": len(valid_rules)
         }
 
+    def bulk_validate_rule_items(
+        self,
+        doc_id: str,
+        item_ids: Optional[List[str]] = None,
+        user_id: str = "system"
+    ) -> Dict[str, Any]:
+        """
+        Valida masivamente los ítems de tipo regla dentro de un documento normativo.
+        - Si item_ids viene especificado y no vacío, valida solo esos ítems.
+        - Si item_ids es None o vacío, valida TODOS los ítems de tipo regla del documento.
+        - Excluye estrictamente elementos tipo symbol/simbolo/symbol_candidate/table/tabla/figure/figura/image/sello/foto.
+        - Excluye elementos en estado 'eliminado'.
+        - Actualiza el estado a 'validada'.
+        - Actualiza doc.rules_count y metadata_info.
+        """
+        doc = self.get_rule_document_by_id(doc_id)
+        if not doc:
+            raise ValueError(f"Documento normativo '{doc_id}' no encontrado.")
+
+        items = self.get_rule_document_items(doc_id)
+        non_rule_types = {
+            "symbol", "simbolo", "symbol_candidate",
+            "table", "tabla",
+            "figure", "figura", "image", "sello", "foto"
+        }
+
+        target_ids = set(item_ids) if item_ids else None
+        validated_count = 0
+
+        for it in items:
+            itype = (it.item_type or "").strip().lower()
+            if itype in non_rule_types:
+                continue
+            if it.status == "eliminado":
+                continue
+            if target_ids is not None and it.id not in target_ids:
+                continue
+
+            it.status = "validada"
+            validated_count += 1
+
+        valid_rules = [
+            it for it in items
+            if it.status in ["validada", "active", "accepted"]
+            and (it.item_type or "").strip().lower() not in non_rule_types
+        ]
+        doc.rules_count = len(valid_rules)
+        doc.metadata_info = {
+            **(doc.metadata_info or {}),
+            "last_bulk_validated_at": datetime.utcnow().isoformat(),
+            "last_bulk_validated_by": user_id,
+            "validated_rules_count": len(valid_rules),
+        }
+        doc.updated_at = datetime.utcnow()
+        self.db.commit()
+
+        return {
+            "message": f"Se validaron {validated_count} regla(s) documental(es) exitosamente.",
+            "document_id": doc.id,
+            "validated_count": validated_count,
+            "total_validated_rules": len(valid_rules),
+        }
+
     def promote_rule_document_to_baseline(
         self,
         doc_id: str,

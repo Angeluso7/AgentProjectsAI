@@ -1748,6 +1748,17 @@ export interface RuleDocument {
   updated_at: string;
 }
 
+export interface BulkValidateRuleItemsRequest {
+  item_ids?: string[];
+}
+
+export interface BulkValidateRuleItemsResponse {
+  message: string;
+  document_id: string;
+  validated_count: number;
+  total_validated_rules: number;
+}
+
 export interface DocumentOcrPage {
   page_number: number;
   text_content: string;
