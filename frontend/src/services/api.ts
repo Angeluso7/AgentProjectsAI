@@ -1803,6 +1803,47 @@ export const apiService = {
     return res.data;
   },
 
+  // Casos de Investigación de Símbolos Desconocidos (IA Multimodal & Curación HITL)
+  listResearchCases: async (
+    status?: string,
+    limit?: number
+  ): Promise<import('../types').SymbolUnknownResearchCaseItem[]> => {
+    const res = await apiClient.get<import('../types').SymbolUnknownResearchCaseItem[]>('/symbol-catalog/research-cases', {
+      params: { status, limit }
+    });
+    return res.data;
+  },
+
+  getResearchCase: async (
+    caseId: string
+  ): Promise<import('../types').SymbolUnknownResearchCaseItem> => {
+    const res = await apiClient.get<import('../types').SymbolUnknownResearchCaseItem>(`/symbol-catalog/research-cases/${caseId}`);
+    return res.data;
+  },
+
+  runAiResearch: async (
+    caseId: string
+  ): Promise<import('../types').SymbolUnknownResearchCaseItem> => {
+    const res = await apiClient.post<import('../types').SymbolUnknownResearchCaseItem>(`/symbol-catalog/research-cases/${caseId}/ai-research`);
+    return res.data;
+  },
+
+  promoteResearchCase: async (
+    caseId: string,
+    payload: import('../types').PromoteResearchCaseRequest
+  ): Promise<import('../types').PromoteResearchCaseResponse> => {
+    const res = await apiClient.post<import('../types').PromoteResearchCaseResponse>(`/symbol-catalog/research-cases/${caseId}/promote`, payload);
+    return res.data;
+  },
+
+  dismissResearchCase: async (
+    caseId: string,
+    payload: import('../types').DismissResearchCaseRequest
+  ): Promise<import('../types').SymbolUnknownResearchCaseItem> => {
+    const res = await apiClient.post<import('../types').SymbolUnknownResearchCaseItem>(`/symbol-catalog/research-cases/${caseId}/dismiss`, payload);
+    return res.data;
+  },
+
   // One-Click Review Orquestado por Especialidad y Punto de Revisión
   getReviewDisciplines: async (activeOnly: boolean = true): Promise<import('../types').ReviewDisciplineItem[]> => {
     const res = await apiClient.get<import('../types').ReviewDisciplineItem[]>('/review/disciplines', {

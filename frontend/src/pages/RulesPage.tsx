@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { DocumentContentReviewModal } from '../components/DocumentContentReviewModal';
 import { SymbolCurationStudioModal } from '../components/SymbolCurationStudioModal';
+import { ResearchCasesPanel } from '../components/ResearchCasesPanel';
 
 export const RulesPage: React.FC = () => {
   const [rules, setRules] = useState<RuleDefinitionItem[]>([]);
@@ -22,6 +23,7 @@ export const RulesPage: React.FC = () => {
   const [selectedRuleDocId, setSelectedRuleDocId] = useState<string | null>(null);
   const [showContentModal, setShowContentModal] = useState(false);
   const [selectedStudioDoc, setSelectedStudioDoc] = useState<RuleDocument | null>(null);
+  const [showResearchCasesModal, setShowResearchCasesModal] = useState(false);
 
   // Modal de Impacto de Eliminación
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -222,14 +224,34 @@ export const RulesPage: React.FC = () => {
               Documentos Normativos & Fuentes Incorporados ({ruleDocuments.length})
             </h2>
           </div>
-          <button
-            className="btn btn-secondary"
-            onClick={loadRuleDocuments}
-            style={{ padding: '5px 12px', fontSize: '12px' }}
-          >
-            <RefreshCw size={14} className={loadingDocs ? 'animate-spin' : ''} />
-            <span>Actualizar Documentos</span>
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => setShowResearchCasesModal(true)}
+              style={{
+                padding: '5px 12px',
+                fontSize: '12px',
+                borderColor: '#a855f7',
+                color: '#c084fc',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px'
+              }}
+              title="Abrir consola de investigación guiada por IA y curación HITL para símbolos desconocidos"
+            >
+              <Sparkles size={14} color="#c084fc" />
+              <span>Casos de Investigación IA</span>
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={loadRuleDocuments}
+              style={{ padding: '5px 12px', fontSize: '12px' }}
+            >
+              <RefreshCw size={14} className={loadingDocs ? 'animate-spin' : ''} />
+              <span>Actualizar Documentos</span>
+            </button>
+          </div>
         </div>
 
         <div className="card" style={{ padding: '0', overflow: 'hidden' }}>
@@ -534,6 +556,15 @@ export const RulesPage: React.FC = () => {
           }}
         />
       )}
+
+      {/* CONSOLA DE INVESTIGACIÓN IA & CURACIÓN HITL DE SÍMBOLOS DESCONOCIDOS */}
+      <ResearchCasesPanel
+        isOpen={showResearchCasesModal}
+        onClose={() => setShowResearchCasesModal(false)}
+        onCaseUpdated={() => {
+          loadRuleDocuments();
+        }}
+      />
 
       {/* MODAL DE IMPACTO DE ELIMINACIÓN DE DOCUMENTO NORMATIVO */}
       {showDeleteModal && deletingDoc && (
