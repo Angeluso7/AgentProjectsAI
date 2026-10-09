@@ -118,3 +118,18 @@ class DeleteRuleResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+
+class BulkValidateRuleItemsRequest(BaseModel):
+    item_ids: Optional[List[str]] = Field(None, description="Lista opcional de IDs de ítems a validar. Si se omite o está vacía, valida todos los ítems de tipo regla del documento.")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class BulkValidateRuleItemsResponse(BaseModel):
+    message: str
+    document_id: str
+    validated_count: int
+    total_validated_rules: int
+
+    model_config = ConfigDict(extra="forbid")
+

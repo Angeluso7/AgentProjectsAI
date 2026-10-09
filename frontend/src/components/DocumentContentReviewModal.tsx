@@ -4,7 +4,7 @@ import {
   Filter, Layers, CheckCircle2, AlertCircle, Clock, Eye,
   Table as TableIcon, Shapes, FileText, BookmarkPlus, ArrowRight,
   Database, HelpCircle, Globe, ExternalLink, ShieldCheck, Link2,
-  Search, RefreshCw, GripHorizontal, SquareCheck, Loader2, Save
+  Search, RefreshCw, GripHorizontal, SquareCheck, Loader2, Save, CheckSquare, Square
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import { RuleDocument, RuleDocumentItem } from '../types';
@@ -38,6 +38,10 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [isStudioOpen, setIsStudioOpen] = useState(false);
   const [zoomImage, setZoomImage] = useState<string | null>(null);
+
+  // Validación Masiva de Reglas
+  const [bulkValidating, setBulkValidating] = useState<boolean>(false);
+  const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
 
   // Estado de Edición de Regla Individual
   const [editingItem, setEditingItem] = useState<RuleDocumentItem | null>(null);
@@ -215,6 +219,40 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
       setEditingItem(null);
     } catch (err) {
       console.error('Error guardando edición de regla:', err);
+    }
+  };
+
+  // Validación Masiva de Reglas del Documento
+  const handleBulkValidateRules = async (specificIds?: string[]) => {
+    if (!ruleDocumentId) return;
+    setBulkValidating(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const targetIds = specificIds && specificIds.length > 0 ? specificIds : undefined;
+      const res = await apiService.bulkValidateRuleItems(ruleDocumentId, targetIds ? { item_ids: targetIds } : {});
+
+      // Actualizar estado local de los items en memoria
+      setItems((prev) =>
+        prev.map((it) => {
+          if (!isRuleItem(it)) return it;
+          if (targetIds && !targetIds.includes(it.id)) return it;
+          return { ...it, status: 'validada' };
+        })
+      );
+
+      // Limpiar selección
+      setSelectedRuleIds([]);
+      setSuccessMessage(res.message || `Se validaron ${res.validated_count} regla(s) documental(es) exitosamente.`);
+
+      // Actualizar doc.rules_count local si doc está presente
+      if (doc) {
+        setDoc((prev) => prev ? { ...prev, rules_count: res.total_validated_rules ?? prev.rules_count } : null);
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.detail || 'Error en la validación masiva de reglas.');
+    } finally {
+      setBulkValidating(false);
     }
   };
 
@@ -428,11 +466,17 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
     return true;
   });
 
+  const isRuleItem = (item: RuleDocumentItem) =>
+    !['symbol', 'simbolo', 'symbol_candidate', 'table', 'tabla', 'figure', 'figura', 'image', 'sello', 'foto'].includes(
+      (item.item_type || '').toLowerCase()
+    ) && item.status !== 'eliminado';
+
   const totalCount = items.length;
   const symbolCount = items.filter((i) => ['symbol', 'simbolo', 'symbol_candidate'].includes((i.item_type || '').toLowerCase())).length;
   const tableCount = items.filter((i) => ['table', 'tabla'].includes((i.item_type || '').toLowerCase())).length;
   const figureCount = items.filter((i) => ['figure', 'figura', 'image', 'sello', 'foto'].includes((i.item_type || '').toLowerCase())).length;
-  const ruleCount = items.filter((i) => !['symbol', 'simbolo', 'symbol_candidate', 'table', 'tabla', 'figure', 'figura', 'image', 'sello', 'foto'].includes((i.item_type || '').toLowerCase())).length;
+  const ruleCount = items.filter(isRuleItem).length;
+  const pendingRulesCount = items.filter((i) => isRuleItem(i) && !['validada', 'active', 'accepted'].includes(i.status)).length;
 
   if (!isOpen) return null;
 
@@ -512,6 +556,32 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
         </div>
 
         <div className="flex items-center gap-2">
+          {ruleCount > 0 && (
+            <button
+              onClick={() => handleBulkValidateRules(selectedRuleIds.length > 0 ? selectedRuleIds : undefined)}
+              disabled={bulkValidating || (pendingRulesCount === 0 && selectedRuleIds.length === 0)}
+              className="px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-xs font-bold flex items-center gap-1.5 shadow transition-all"
+              title={
+                selectedRuleIds.length > 0
+                  ? `Validar ${selectedRuleIds.length} regla(s) seleccionada(s)`
+                  : pendingRulesCount > 0
+                  ? `Validar en bloque todas las ${pendingRulesCount} reglas pendientes de este documento`
+                  : 'Todas las reglas ya están validadas'
+              }
+            >
+              {bulkValidating ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <CheckCircle2 className="w-3.5 h-3.5" />
+              )}
+              <span>
+                {selectedRuleIds.length > 0
+                  ? `Validar Seleccionadas (${selectedRuleIds.length})`
+                  : `Validar Reglas (${pendingRulesCount})`}
+              </span>
+            </button>
+          )}
+
           {(symbolCount > 0 || (doc?.symbols_count || 0) > 0) && (
             <button
               onClick={() => setIsStudioOpen(true)}
@@ -728,12 +798,90 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
           </div>
         ) : (
           <div className="space-y-3">
+            {/* Banner de Validación Masiva Rápida para Reglas */}
+            {pendingRulesCount > 0 && (categoryFilter === 'all' || categoryFilter === 'rules') && (
+              <div
+                style={{ backgroundColor: '#064e3b25', borderColor: '#05966955' }}
+                className="p-3 rounded-xl border flex items-center justify-between gap-3 flex-wrap text-xs text-emerald-200 shadow-sm"
+              >
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <div>
+                    <span className="font-semibold text-emerald-300">
+                      {pendingRulesCount} regla(s) pendiente(s) de validación
+                    </span>
+                    <p className="text-[11px] text-emerald-400/80">
+                      Valida en bloque para habilitar su confirmación y promoción hacia Baseline QA/QC del Sistema.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {selectedRuleIds.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedRuleIds([])}
+                      className="px-2.5 py-1 text-[11px] text-slate-400 hover:text-slate-200 rounded-lg hover:bg-slate-800 transition-colors"
+                    >
+                      Deseleccionar ({selectedRuleIds.length})
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const allPendingIds = items.filter((i) => isRuleItem(i) && !['validada', 'active', 'accepted'].includes(i.status)).map((i) => i.id);
+                      setSelectedRuleIds(selectedRuleIds.length === allPendingIds.length ? [] : allPendingIds);
+                    }}
+                    className="px-2.5 py-1 text-[11px] font-medium text-emerald-300 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-800/80 rounded-lg transition-colors"
+                  >
+                    {selectedRuleIds.length > 0 && selectedRuleIds.length === pendingRulesCount
+                      ? 'Deseleccionar todas'
+                      : `Seleccionar todas (${pendingRulesCount})`}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleBulkValidateRules(selectedRuleIds.length > 0 ? selectedRuleIds : undefined)}
+                    disabled={bulkValidating}
+                    className="px-3 py-1 text-[11px] font-bold text-white bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 rounded-lg shadow flex items-center gap-1.5 transition-all disabled:opacity-50"
+                  >
+                    {bulkValidating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                    <span>
+                      {selectedRuleIds.length > 0
+                        ? `Validar Seleccionadas (${selectedRuleIds.length})`
+                        : `Validar Todas (${pendingRulesCount})`}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {filteredItems.map((item) => (
               <div
                 key={item.id}
-                style={{ backgroundColor: '#020617', borderColor: '#334155' }}
-                className="p-4 rounded-xl border hover:border-slate-600 flex items-start justify-between gap-4 transition-all"
+                style={{ backgroundColor: '#020617', borderColor: selectedRuleIds.includes(item.id) ? '#059669' : '#334155' }}
+                className={`p-4 rounded-xl border flex items-start justify-between gap-4 transition-all ${
+                  selectedRuleIds.includes(item.id) ? 'ring-1 ring-emerald-500/50' : 'hover:border-slate-600'
+                }`}
               >
+                {/* Checkbox de Selección Masiva para Reglas */}
+                {isRuleItem(item) && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSelectedRuleIds((prev) =>
+                        prev.includes(item.id) ? prev.filter((id) => id !== item.id) : [...prev, item.id]
+                      );
+                    }}
+                    className="mt-1 p-0.5 text-slate-400 hover:text-teal-400 transition-colors shrink-0"
+                    title={selectedRuleIds.includes(item.id) ? 'Deseleccionar regla' : 'Seleccionar regla para acción masiva'}
+                  >
+                    {selectedRuleIds.includes(item.id) ? (
+                      <CheckSquare className="w-4 h-4 text-emerald-400" />
+                    ) : (
+                      <Square className="w-4 h-4 text-slate-600 hover:text-slate-400" />
+                    )}
+                  </button>
+                )}
                 {/* Contenido: Recorte Visual + Metadatos y Enunciado */}
                 {(() => {
                   const cropPath = item.crop_image_path || item.metadata_payload?.crop_image_path;

@@ -19,7 +19,7 @@ import {
   SourceDocumentPagesResponse, PageCropResponse, RuleSummarizeResponse,
   ExtractedTableItem, ExtractedTableCellItem, DetectedSymbolItem,
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
-  DeleteRuleResponse,
+  DeleteRuleResponse, BulkValidateRuleItemsRequest, BulkValidateRuleItemsResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
   PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem,
   BatchSourceUploadResponse, BatchSourceFileResultItem,
@@ -1333,6 +1333,10 @@ export const apiService = {
   },
   deleteRuleDocumentItem: async (docId: string, itemId: string): Promise<any> => {
     const res = await apiClient.delete(`/rules/documents/${docId}/items/${itemId}`);
+    return res.data;
+  },
+  bulkValidateRuleItems: async (docId: string, payload?: BulkValidateRuleItemsRequest): Promise<BulkValidateRuleItemsResponse> => {
+    const res = await apiClient.post(`/rules/documents/${docId}/items/bulk-validate`, payload || {});
     return res.data;
   },
   confirmRuleDocumentContent: async (docId: string, payload?: any): Promise<any> => {

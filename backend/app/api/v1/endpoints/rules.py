@@ -6,7 +6,8 @@ from app.db.session import get_db
 from app.db.models.decision_memory import RuleDefinition, RuleExecution, RuleFinding
 from app.schemas.qa_rule import (
     RuleDefinitionRead, RuleFindingRead, RuleEvaluationSummaryResponse,
-    UpdateRuleStatusRequest, DeleteRuleResponse
+    UpdateRuleStatusRequest, DeleteRuleResponse,
+    BulkValidateRuleItemsRequest, BulkValidateRuleItemsResponse
 )
 from app.schemas.operations import AsyncJobAcceptedResponse
 from app.schemas.intake_extractions import (
@@ -153,6 +154,30 @@ def delete_rule_document_item(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Item de documento no encontrado.")
     return {"message": "Item eliminado del documento exitosamente."}
+
+@router.post("/documents/{doc_id}/items/bulk-validate", response_model=BulkValidateRuleItemsResponse)
+def bulk_validate_rule_items(
+    doc_id: str,
+    payload: Optional[BulkValidateRuleItemsRequest] = None,
+    db: Session = Depends(get_db)
+):
+    """
+    Valida masivamente ítems de tipo regla dentro de un documento normativo.
+    - Si se envía `item_ids`, valida solo los ítems indicados.
+    - Si se omite o está vacío, valida todos los ítems de tipo regla del documento (excluyendo símbolos, tablas, figuras y eliminados).
+    """
+    repo = IntakeExtractionRepository(db)
+    try:
+        item_ids = payload.item_ids if payload else None
+        res = repo.bulk_validate_rule_items(doc_id, item_ids=item_ids)
+        return BulkValidateRuleItemsResponse(**res)
+    except ValueError as ve:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND if "no encontrado" in str(ve).lower() else status.HTTP_400_BAD_REQUEST,
+            detail=str(ve)
+        )
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error en validación masiva de reglas: {str(e)}")
 
 @router.post("/documents/{doc_id}/confirm-content", response_model=ConfirmRuleDocumentContentResponse)
 def confirm_rule_document_content(
