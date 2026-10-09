@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class ReviewDisciplineResponse(BaseModel):
@@ -171,11 +171,24 @@ class SymbolInventoryMetricsResponse(BaseModel):
     by_document: Dict[str, Any] = {}
 
 
+class SymbolExecutiveSummaryItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_index: int = Field(..., description="Índice numérico correlativo (ITEM)")
+    symbol_code: str = Field(..., description="Código corto del símbolo (ej. V-001 o PIP-VALVE-GATE)")
+    description: str = Field(..., description="Descripción o función técnica en lenguaje simple")
+    found: bool = Field(..., description="Indica si fue encontrado en el proyecto evaluado (Sí/No)")
+    quantity: int = Field(0, description="Cantidad total de apariciones encontradas")
+    sheet_labels: List[str] = Field(default_factory=list, description="Lista de láminas donde aparece el símbolo")
+    sheets_display: str = Field("-", description="Texto formateado de páginas/láminas separadas por coma")
+
+
 class SymbolInventoryResponse(BaseModel):
     status: str = Field("available", description="Estado del inventario: available | pending | unavailable | failed")
     metrics: SymbolInventoryMetricsResponse = Field(default_factory=SymbolInventoryMetricsResponse)
     groups: List[SymbolInventoryGroupResponse] = Field(default_factory=list)
     excluded_groups: List[SymbolInventoryGroupResponse] = Field(default_factory=list)
+    executive_summary: List[SymbolExecutiveSummaryItem] = Field(default_factory=list, description="Resumen gráfico de simbología por punto de revisión")
     reason_code: Optional[str] = None
     reason_message: Optional[str] = None
     can_generate: bool = False

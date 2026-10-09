@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   X,
   ShieldCheck,
@@ -22,8 +22,18 @@ import {
   MapPin,
   Search,
   ChevronRight,
-  ArrowLeft
+  ChevronDown,
+  ArrowLeft,
+  PieChart as PieChartIcon
 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip as RechartsTooltip,
+  Legend as RechartsLegend
+} from 'recharts';
 import {
   ReviewRunDetailResponse,
   ReviewFindingDetail,
@@ -31,7 +41,8 @@ import {
   SymbolInventoryResponse,
   SymbolInventoryMetrics,
   SymbolInventoryGroupItem,
-  SymbolOccurrenceSummaryItem
+  SymbolOccurrenceSummaryItem,
+  SymbolExecutiveSummaryItem
 } from '../types';
 import { apiService } from '../services/api';
 
@@ -206,6 +217,54 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
     inventory.inventory_generated_at != null &&
     (metrics.valid_symbol_occurrences ?? 0) === 0 &&
     groups.length === 0;
+
+  // Derivación ejecutiva de simbología para el punto de revisión
+  const isSymbolRun = Boolean(
+    run.topic_code === 'PID_SYMBOLS' ||
+    run.discipline_code === 'PIPING' ||
+    (inventory.executive_summary && inventory.executive_summary.length > 0)
+  );
+
+  const executiveRows: SymbolExecutiveSummaryItem[] = useMemo(() => {
+    if (inventory.executive_summary && inventory.executive_summary.length > 0) {
+      return inventory.executive_summary;
+    }
+    if (!groups || groups.length === 0) return [];
+    return groups.map((g, idx) => {
+      const occSheetMap = g.occurrences_by_sheet || {};
+      const labels = Object.keys(occSheetMap).map((s, sIdx) => `Lámina ${sIdx + 1}`);
+      return {
+        item_index: idx + 1,
+        symbol_code: g.display_code || 'S-001',
+        description: g.canonical_name || g.description || 'Componente técnico de piping',
+        found: (g.total_occurrences || 0) > 0,
+        quantity: g.total_occurrences || 0,
+        sheet_labels: labels,
+        sheets_display: labels.length > 0 ? labels.join(', ') : ((g.total_occurrences || 0) > 0 ? 'Ubicación no determinada' : '-')
+      };
+    });
+  }, [inventory.executive_summary, groups]);
+
+  const foundCount = useMemo(() => executiveRows.filter((r) => r.found).length, [executiveRows]);
+  const missingCount = useMemo(() => executiveRows.filter((r) => !r.found).length, [executiveRows]);
+  const totalExecutiveOccurrences = useMemo(
+    () => executiveRows.reduce((acc, r) => acc + (r.quantity || 0), 0),
+    [executiveRows]
+  );
+  const distinctSheetsCount = useMemo(() => {
+    const s = new Set<string>();
+    executiveRows.forEach((r) => {
+      (r.sheet_labels || []).forEach((l) => s.add(l));
+    });
+    return s.size > 0 ? s.size : (foundCount > 0 ? 1 : 0);
+  }, [executiveRows, foundCount]);
+
+  const symbolChartData = useMemo(() => {
+    return [
+      { name: 'Encontrados', value: foundCount, color: '#10b981' },
+      { name: 'No encontrados / Faltantes', value: missingCount, color: '#f59e0b' }
+    ];
+  }, [foundCount, missingCount]);
 
   const handleDownload = async (reportId: string, format: string) => {
     setDownloadingId(reportId);
@@ -685,12 +744,33 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                           )}
                         </div>
 
-                        <p className="text-slate-600 dark:text-slate-300">
-                          {f.description}
-                        </p>
+                        {(() => {
+                          const [mainDesc, techDetail] = (f.description || '').includes(' / Detalle técnico: ')
+                            ? (f.description || '').split(' / Detalle técnico: ')
+                            : [f.description, null];
+
+                          return (
+                            <div className="space-y-1.5">
+                              <p className="text-slate-700 dark:text-slate-200 text-xs font-medium leading-relaxed">
+                                {mainDesc}
+                              </p>
+                              {techDetail && (
+                                <details className="group pt-0.5">
+                                  <summary className="cursor-pointer text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline list-none inline-flex items-center gap-1 select-none">
+                                    <span className="group-open:rotate-90 transition-transform inline-block text-[10px]">▸</span>
+                                    <span>Ver detalle técnico normativo</span>
+                                  </summary>
+                                  <div className="mt-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800 text-[11px] font-mono text-slate-600 dark:text-slate-400 leading-relaxed">
+                                    {techDetail}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {f.recommendation && (
-                          <div className="p-2.5 rounded bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-blue-900 dark:text-blue-200">
+                          <div className="p-2.5 rounded-lg bg-blue-50/50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/40 text-blue-900 dark:text-blue-200">
                             <strong>Recomendación:</strong> {f.recommendation}
                           </div>
                         )}
@@ -974,6 +1054,215 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                   {/* ESTADO 5: AVAILABLE CON GRUPOS */}
                   {inventory.status === 'available' && !isAvailableEmpty && (
                     <>
+                      {/* BLOQUE EJECUTIVO: RESUMEN GRÁFICO DE SIMBOLOGÍA POR PUNTO DE REVISIÓN */}
+                      {isSymbolRun && (
+                        <div className="p-5 rounded-2xl border border-slate-200 dark:border-slate-800 bg-gradient-to-br from-slate-50/80 via-white to-blue-50/20 dark:from-slate-900/90 dark:via-slate-900 dark:to-slate-950 space-y-5 shadow-sm">
+                          <div className="flex items-start justify-between flex-wrap gap-2 pb-3 border-b border-slate-200/80 dark:border-slate-800">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300 flex items-center gap-1">
+                                  <Sparkles className="w-3 h-3 text-blue-600" />
+                                  Punto de Revisión: {run.topic_name || 'Revisión de Válvulas y Equipos P&ID'}
+                                </span>
+                                <span className="text-[11px] font-mono text-slate-400">
+                                  [{run.topic_code || 'PID_SYMBOLS'}]
+                                </span>
+                              </div>
+                              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                                Resumen Gráfico de Simbología
+                              </h3>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                Estado de presencia y conteo de componentes evaluados para este punto de revisión.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* B) GRÁFICO MINIMALISTA (DONA CON RECHARTS) + TARJETAS DE SÍNTESIS */}
+                          <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                            {/* Columna de Gráfico */}
+                            <div className="md:col-span-5 flex flex-col items-center justify-center p-3 rounded-xl bg-white dark:bg-slate-950/40 border border-slate-200/80 dark:border-slate-800/80 min-h-[190px]">
+                              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                                Presencia de Símbolos en Láminas
+                              </span>
+                              <div className="w-full h-36 flex items-center justify-center">
+                                <ResponsiveContainer width="100%" height="100%">
+                                  <PieChart>
+                                    <Pie
+                                      data={symbolChartData}
+                                      cx="50%"
+                                      cy="50%"
+                                      innerRadius={36}
+                                      outerRadius={56}
+                                      paddingAngle={4}
+                                      dataKey="value"
+                                    >
+                                      {symbolChartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} stroke="transparent" />
+                                      ))}
+                                    </Pie>
+                                    <RechartsTooltip
+                                      contentStyle={{
+                                        backgroundColor: '#0f172a',
+                                        borderColor: '#334155',
+                                        borderRadius: '0.5rem',
+                                        fontSize: '11px',
+                                        color: '#fff'
+                                      }}
+                                    />
+                                    <RechartsLegend
+                                      verticalAlign="bottom"
+                                      height={28}
+                                      iconSize={8}
+                                      wrapperStyle={{ fontSize: '11px' }}
+                                    />
+                                  </PieChart>
+                                </ResponsiveContainer>
+                              </div>
+                            </div>
+
+                            {/* Columna de Métricas de Resumen */}
+                            <div className="md:col-span-7 grid grid-cols-2 gap-3">
+                              <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/40 bg-emerald-50/50 dark:bg-emerald-950/20">
+                                <div className="flex items-center gap-1.5 text-emerald-800 dark:text-emerald-300">
+                                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                  <span className="text-xs font-bold">Encontrados en Plano</span>
+                                </div>
+                                <p className="text-2xl font-black text-emerald-900 dark:text-emerald-100 mt-1">
+                                  {foundCount}
+                                </p>
+                                <p className="text-[11px] text-emerald-700/80 dark:text-emerald-400/80">
+                                  {executiveRows.length > 0 ? `${((foundCount / executiveRows.length) * 100).toFixed(0)}% del catálogo evaluado` : 'Símbolos presentes'}
+                                </p>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/50 dark:bg-amber-950/20">
+                                <div className="flex items-center gap-1.5 text-amber-800 dark:text-amber-300">
+                                  <AlertCircle className="w-4 h-4 text-amber-600" />
+                                  <span className="text-xs font-bold">No encontrados / Faltantes</span>
+                                </div>
+                                <p className="text-2xl font-black text-amber-900 dark:text-amber-100 mt-1">
+                                  {missingCount}
+                                </p>
+                                <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
+                                  {executiveRows.length > 0 ? `${((missingCount / executiveRows.length) * 100).toFixed(0)}% no detectado en plano` : 'Sin apariciones'}
+                                </p>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl border border-blue-200 dark:border-blue-900/40 bg-blue-50/50 dark:bg-blue-950/20">
+                                <div className="flex items-center gap-1.5 text-blue-800 dark:text-blue-300">
+                                  <Layers className="w-4 h-4 text-blue-600" />
+                                  <span className="text-xs font-bold">Total Apariciones</span>
+                                </div>
+                                <p className="text-2xl font-black text-blue-900 dark:text-blue-100 mt-1">
+                                  {totalExecutiveOccurrences}
+                                </p>
+                                <p className="text-[11px] text-blue-700/80 dark:text-blue-400/80">
+                                  Elementos contados en proyecto
+                                </p>
+                              </div>
+
+                              <div className="p-3.5 rounded-xl border border-purple-200 dark:border-purple-900/40 bg-purple-50/50 dark:bg-purple-950/20">
+                                <div className="flex items-center gap-1.5 text-purple-800 dark:text-purple-300">
+                                  <FileText className="w-4 h-4 text-purple-600" />
+                                  <span className="text-xs font-bold">Láminas con Simbología</span>
+                                </div>
+                                <p className="text-2xl font-black text-purple-900 dark:text-purple-100 mt-1">
+                                  {distinctSheetsCount}
+                                </p>
+                                <p className="text-[11px] text-purple-700/80 dark:text-purple-400/80">
+                                  Láminas con componentes
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* A) TABLA: RESUMEN GRÁFICO DE SIMBOLOGÍA */}
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                                <Shapes className="w-3.5 h-3.5 text-blue-600" />
+                                Tabla Resumen Gráfico de Simbología ({executiveRows.length} ítems)
+                              </h4>
+                              <span className="text-[11px] text-slate-500">
+                                ITEM | Símbolo | Descripción | Encontrado | Cantidad | Lámina
+                              </span>
+                            </div>
+
+                            <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden bg-white dark:bg-slate-900 shadow-sm">
+                              <div className="overflow-x-auto">
+                                <table className="w-full text-left text-xs">
+                                  <thead className="bg-slate-50 dark:bg-slate-950/60 border-b border-slate-200 dark:border-slate-800 text-[11px] font-bold uppercase text-slate-600 dark:text-slate-300">
+                                    <tr>
+                                      <th className="px-3.5 py-2.5 text-center w-12">ITEM</th>
+                                      <th className="px-3.5 py-2.5">Símbolo</th>
+                                      <th className="px-3.5 py-2.5">Descripción</th>
+                                      <th className="px-3.5 py-2.5 text-center">Encontrado (Sí/No)</th>
+                                      <th className="px-3.5 py-2.5 text-right">Cantidad</th>
+                                      <th className="px-3.5 py-2.5">Página/Lámina</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                    {executiveRows.map((row) => (
+                                      <tr
+                                        key={row.item_index}
+                                        className={`hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors ${
+                                          !row.found ? 'opacity-85 bg-slate-50/40 dark:bg-slate-950/20' : ''
+                                        }`}
+                                      >
+                                        <td className="px-3.5 py-2.5 text-center font-mono font-bold text-slate-500">
+                                          {row.item_index}
+                                        </td>
+                                        <td className="px-3.5 py-2.5 font-mono font-bold text-slate-900 dark:text-white">
+                                          <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300">
+                                            {row.symbol_code}
+                                          </span>
+                                        </td>
+                                        <td className="px-3.5 py-2.5 text-slate-700 dark:text-slate-200 max-w-md">
+                                          {row.description}
+                                        </td>
+                                        <td className="px-3.5 py-2.5 text-center">
+                                          {row.found ? (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800/60">
+                                              <Check className="w-3 h-3 text-emerald-600" />
+                                              Sí
+                                            </span>
+                                          ) : (
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100/80 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 border border-amber-200/80 dark:border-amber-800/60">
+                                              <X className="w-3 h-3 text-amber-600" />
+                                              No
+                                            </span>
+                                          )}
+                                        </td>
+                                        <td className="px-3.5 py-2.5 text-right font-mono font-bold text-slate-900 dark:text-white">
+                                          {row.quantity}
+                                        </td>
+                                        <td className="px-3.5 py-2.5 font-medium text-slate-600 dark:text-slate-300">
+                                          {row.sheets_display || '-'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* SECCIÓN DETALLADA DE INVENTARIO TÉCNICO Y NORMAS */}
+                      <div className="pt-4 border-t border-slate-200 dark:border-slate-800 space-y-3">
+                        <div className="flex items-center justify-between flex-wrap gap-2">
+                          <div>
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 dark:text-white">
+                              Inventario Técnico Detallado (Catálogo Canónico y Trazabilidad)
+                            </h4>
+                            <p className="text-[11px] text-slate-500">
+                              Detalle por plantilla técnica, normas de ingeniería, recortes y filtros avanzados.
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
                       {/* Tarjetas de Métricas de Cobertura */}
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                         <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/40 dark:bg-emerald-950/20">
