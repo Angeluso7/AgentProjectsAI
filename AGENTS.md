@@ -56,6 +56,10 @@ El sistema integra:
     - Toda query o lógica que deba resolver una coincidencia específica frente a un fallback genérico (ej. disciplina técnica solicitada vs. disciplina `GENERAL`) **NUNCA** debe confiar en el orden físico de las filas devuelto por un `OR` sin `ORDER BY`.
     - Debe implementarse una consulta explícita en dos pasos (primero coincidencia exacta activa; solo si no existe, consulta del fallback general) o utilizar un ordenamiento determinístico explícito (`order_by(..., ...)`).
 
+11. **Idempotencia Estricta en Migraciones de Esquema (`sa.inspect`):**
+    - Toda migración de Alembic que agregue una columna o índice a una tabla ya existente debe verificar primero mediante `sa.inspect(conn).get_columns(...)` si la columna ya existe antes de invocar `op.add_column(...)`, exactamente como en `0033_add_project_id_to_decision_traces.py` y `0035_add_discipline_code_to_document_deliverables.py`.
+    - Esto es obligatorio porque scripts de validación integral (como Gate 4) pueden reconstruir el esquema completo vía `Base.metadata.create_all()` usando los modelos ORM actuales antes de reproducir el historial de Alembic, provocando errores `DuplicateColumn` si las migraciones intermedias sobre tablas fuera de la ventana de downgrade probada no son idempotentes.
+
 ---
 
 ## 3. Mapa de Servicios Clave

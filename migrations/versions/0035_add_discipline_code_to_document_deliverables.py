@@ -18,17 +18,12 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Agregar columna discipline_code para desacoplar tipo de entregable de disciplina
-    op.add_column(
-        'document_deliverables',
-        sa.Column('discipline_code', sa.String(length=50), nullable=True)
-    )
-    op.create_index(
-        op.f('ix_document_deliverables_discipline_code'),
-        'document_deliverables',
-        ['discipline_code'],
-        unique=False
-    )
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    cols = [c['name'] for c in inspector.get_columns('document_deliverables')]
+    if 'discipline_code' not in cols:
+        op.add_column('document_deliverables', sa.Column('discipline_code', sa.String(length=50), nullable=True))
+        op.create_index(op.f('ix_document_deliverables_discipline_code'), 'document_deliverables', ['discipline_code'], unique=False)
 
 
 def downgrade() -> None:
