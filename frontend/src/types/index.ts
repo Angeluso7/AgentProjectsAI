@@ -2949,11 +2949,22 @@ export interface SymbolInventoryMetrics {
   by_document?: Record<string, any>;
 }
 
+export interface SymbolExecutiveSummaryItem {
+  item_index: number;
+  symbol_code: string;
+  description: string;
+  found: boolean;
+  quantity: number;
+  sheet_labels: string[];
+  sheets_display: string;
+}
+
 export interface SymbolInventoryResponse {
   status: 'available' | 'pending' | 'unavailable' | 'failed';
   metrics: SymbolInventoryMetrics;
   groups: SymbolInventoryGroupItem[];
   excluded_groups?: SymbolInventoryGroupItem[];
+  executive_summary?: SymbolExecutiveSummaryItem[];
   reason_code?: string | null;
   reason_message?: string | null;
   can_generate?: boolean;

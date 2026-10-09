@@ -774,12 +774,205 @@ class SymbolInventoryService:
         }
 
     @classmethod
+    def simplify_symbol_description(cls, name: Optional[str], description: Optional[str], code: Optional[str]) -> str:
+        """Convierte términos técnicos de piping a lenguaje cotidiano comprensible para no expertos."""
+        raw = f"{name or ''} {description or ''} {code or ''}".lower()
+        if "gate" in raw or "compuerta" in raw:
+            return "Válvula de compuerta (bloquea o permite el paso total del fluido en la cañería)"
+        if "globe" in raw or "globo" in raw:
+            return "Válvula de globo (regula el paso y cantidad de fluido con precisión)"
+        if "check" in raw or "retención" in raw or "retencion" in raw:
+            return "Válvula check (permite el avance del fluido en un solo sentido y evita retornos)"
+        if "ball" in raw or "bola" in raw:
+            return "Válvula de bola (apertura o corte rápido de un cuarto de vuelta)"
+        if "butterfly" in raw or "mariposa" in raw:
+            return "Válvula mariposa (disco giratorio para corte y regulación en tuberías grandes)"
+        if "relief" in raw or "safety" in raw or "seguridad" in raw or "alivio" in raw or "psv" in raw:
+            return "Válvula de seguridad o alivio (libera presión automáticamente para proteger el sistema)"
+        if "control" in raw:
+            return "Válvula de control automático (regula caudal o presión según señales del sistema)"
+        if "needle" in raw or "aguja" in raw:
+            return "Válvula de aguja (regulación muy fina de pequeños caudales)"
+        if "diaphragm" in raw or "diafragma" in raw:
+            return "Válvula de diafragma (aísla el fluido de piezas mecánicas, ideal para fluidos corrosivos)"
+        if "plug" in raw or "macho" in raw:
+            return "Válvula macho (bloqueo mediante obturador cilíndrico o cónico)"
+        if "instrument" in raw or "transmisor" in raw or "indicador" in raw:
+            return "Instrumento de medición (registra presión, temperatura o nivel en la línea)"
+        if "bomba" in raw or "pump" in raw:
+            return "Bomba de impulsión (mueve el fluido a lo largo de las cañerías)"
+        if "filtro" in raw or "strainer" in raw:
+            return "Filtro de cañería (retiene partículas e impurezas en el flujo)"
+        if "unknown" in raw or "desconocid" in raw or (code and str(code).startswith("U-")):
+            return "Símbolo técnico no identificado (figura en el plano pero falta en el catálogo)"
+        if "ambiguo" in raw:
+            return "Símbolo con lectura dudosa (requiere confirmación visual de cuál componente es)"
+
+        if name:
+            clean_name = name.strip()
+            return f"{clean_name} (componente de piping identificado en el plano)"
+        return "Componente técnico de piping"
+
+    @classmethod
+    def generate_executive_summary(
+        cls,
+        db: Session,
+        review_run: ReviewRun,
+        groups: List[SymbolInventoryGroup]
+    ) -> List[Dict[str, Any]]:
+        """
+        Produce el Resumen Gráfico de Simbología por Punto de Revisión con las columnas:
+        ITEM | Símbolo | Descripción | Encontrado (Sí/No) | Cantidad | Página/Lámina
+        """
+        standard_expected = [
+            {
+                "code": "PIP-VALVE-GATE",
+                "name": "Válvula de Compuerta",
+                "description": "Válvula de compuerta (bloquea o permite el paso total del fluido en la cañería)"
+            },
+            {
+                "code": "PIP-VALVE-GLOBE",
+                "name": "Válvula de Globo",
+                "description": "Válvula de globo (regula el paso y cantidad de fluido con precisión)"
+            },
+            {
+                "code": "PIP-VALVE-CHECK",
+                "name": "Válvula Check / Retención",
+                "description": "Válvula check (permite el avance del fluido en un solo sentido y evita retornos)"
+            },
+            {
+                "code": "PIP-VALVE-BALL",
+                "name": "Válvula de Bola",
+                "description": "Válvula de bola (apertura o corte rápido de un cuarto de vuelta)"
+            },
+            {
+                "code": "PIP-VALVE-BUTTERFLY",
+                "name": "Válvula Mariposa",
+                "description": "Válvula mariposa (disco giratorio para corte y regulación en tuberías grandes)"
+            },
+            {
+                "code": "PIP-VALVE-RELIEF",
+                "name": "Válvula de Alivio y Seguridad",
+                "description": "Válvula de seguridad o alivio (libera presión automáticamente para proteger el sistema)"
+            },
+            {
+                "code": "PIP-VALVE-CONTROL",
+                "name": "Válvula de Control",
+                "description": "Válvula de control automático (regula caudal o presión según señales del sistema)"
+            }
+        ]
+
+        sheet_ids = set()
+        for g in groups:
+            if g.occurrences_by_sheet:
+                sheet_ids.update(g.occurrences_by_sheet.keys())
+
+        sheet_map: Dict[str, DocumentSheet] = {}
+        if sheet_ids:
+            sheets = db.query(DocumentSheet).filter(DocumentSheet.id.in_(list(sheet_ids))).all()
+            sheet_map = {str(s.id): s for s in sheets}
+
+        found_items: List[Dict[str, Any]] = []
+        represented_codes = set()
+
+        for g in groups:
+            if g.catalog_status in ["figure_excluded", "not_symbol"]:
+                continue
+
+            code = g.display_code or "S-001"
+            name = g.canonical_name or code
+            desc = cls.simplify_symbol_description(name, g.description or g.technical_function, code)
+
+            sheet_labels: List[str] = []
+            if g.occurrences_by_sheet:
+                for s_id, cnt in sorted(g.occurrences_by_sheet.items()):
+                    if cnt > 0:
+                        s_obj = sheet_map.get(str(s_id))
+                        if s_obj:
+                            s_code = getattr(s_obj, "sheet_code", None)
+                            s_num = getattr(s_obj, "sheet_number", None)
+                            s_title = getattr(s_obj, "title", None) or getattr(s_obj, "sheet_name", None)
+                            if s_code and str(s_code).strip():
+                                label = f"Lámina {str(s_code).strip()}"
+                            elif s_num is not None:
+                                label = f"Lámina {s_num:02d}" if isinstance(s_num, int) else f"Lámina {s_num}"
+                            elif s_title and str(s_title).strip():
+                                label = str(s_title).strip()
+                            else:
+                                label = f"Lámina {str(s_id)[:6]}"
+                            if label not in sheet_labels:
+                                sheet_labels.append(label)
+
+            if not sheet_labels and g.total_occurrences > 0 and g.representative_occurrence_id:
+                rep = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first()
+                if rep and rep.sheet_id:
+                    s_obj = sheet_map.get(str(rep.sheet_id)) or db.query(DocumentSheet).filter(DocumentSheet.id == rep.sheet_id).first()
+                    if s_obj:
+                        s_code = getattr(s_obj, "sheet_code", None)
+                        s_num = getattr(s_obj, "sheet_number", None)
+                        if s_code:
+                            sheet_labels.append(f"Lámina {s_code}")
+                        elif s_num is not None:
+                            sheet_labels.append(f"Lámina {s_num:02d}" if isinstance(s_num, int) else f"Lámina {s_num}")
+
+            qty = g.total_occurrences or 0
+            is_found = qty > 0
+
+            found_items.append({
+                "symbol_code": code,
+                "description": desc,
+                "found": is_found,
+                "quantity": qty,
+                "sheet_labels": sheet_labels,
+                "sheets_display": ", ".join(sheet_labels) if sheet_labels else ("Lámina 01" if is_found else "-")
+            })
+
+            represented_codes.add(code.upper())
+            if g.canonical_name:
+                represented_codes.add(g.canonical_name.upper())
+
+        missing_items: List[Dict[str, Any]] = []
+        for std in standard_expected:
+            std_code = std["code"].upper()
+            std_name = std["name"].upper()
+            already_present = any(
+                std_code in rep or std_name in rep or rep in std_name
+                for rep in represented_codes
+            )
+            if not already_present:
+                missing_items.append({
+                    "symbol_code": std["code"],
+                    "description": std["description"],
+                    "found": False,
+                    "quantity": 0,
+                    "sheet_labels": [],
+                    "sheets_display": "-"
+                })
+
+        all_summary = sorted(found_items, key=lambda x: (-x["quantity"], x["symbol_code"])) + missing_items
+
+        executive_rows = []
+        for idx, row in enumerate(all_summary, start=1):
+            executive_rows.append({
+                "item_index": idx,
+                "symbol_code": row["symbol_code"],
+                "description": row["description"],
+                "found": row["found"],
+                "quantity": row["quantity"],
+                "sheet_labels": row["sheet_labels"],
+                "sheets_display": row["sheets_display"]
+            })
+
+        return executive_rows
+
+    @classmethod
     def format_run_inventory(cls, db: Session, review_run: ReviewRun) -> Dict[str, Any]:
         """
         Retorna la estructura segura de inventario de simbología garantizando el contrato de API:
         - status: available | pending | unavailable | failed
         - metrics con defaults seguros
         - groups y excluded_groups como listas
+        - executive_summary estructurado para lectura ejecutiva
         - versionado e historial de snapshot
         """
         default_metrics = cls.get_default_metrics()
@@ -793,6 +986,7 @@ class SymbolInventoryService:
                 "metrics": default_metrics,
                 "groups": [],
                 "excluded_groups": [],
+                "executive_summary": [],
                 "reason_code": "RUN_IN_PROGRESS",
                 "reason_message": "La corrida de revisión está en ejecución.",
                 "can_generate": False,
@@ -821,11 +1015,14 @@ class SymbolInventoryService:
                 existing_groups[0].created_at.isoformat() if existing_groups and existing_groups[0].created_at else None
             )
 
+            executive_summary = cls.generate_executive_summary(db, review_run, existing_groups)
+
             return {
                 "status": "available",
                 "metrics": metrics,
                 "groups": active_groups,
                 "excluded_groups": excluded_groups,
+                "executive_summary": executive_summary,
                 "reason_code": None,
                 "reason_message": None,
                 "can_generate": True,
@@ -836,12 +1033,13 @@ class SymbolInventoryService:
 
         # Caso sin grupos: ¿Se completó el build o es corrida histórica o corrida fallida?
         if inv_meta.get("inventory_build_completed") is True:
-            # Corrida procesada pero con 0 símbolos detectados
+            executive_summary = cls.generate_executive_summary(db, review_run, [])
             return {
                 "status": "available",
                 "metrics": default_metrics,
                 "groups": [],
                 "excluded_groups": [],
+                "executive_summary": executive_summary,
                 "reason_code": None,
                 "reason_message": None,
                 "can_generate": True,
@@ -856,6 +1054,7 @@ class SymbolInventoryService:
                 "metrics": default_metrics,
                 "groups": [],
                 "excluded_groups": [],
+                "executive_summary": [],
                 "reason_code": inv_meta.get("reason_code", "INVENTORY_BUILD_FAILED"),
                 "reason_message": inv_meta.get("reason_message", "Error al procesar inventario."),
                 "can_generate": True,
@@ -874,6 +1073,7 @@ class SymbolInventoryService:
             "metrics": default_metrics,
             "groups": [],
             "excluded_groups": [],
+            "executive_summary": [],
             "reason_code": "INVENTORY_NOT_GENERATED",
             "reason_message": "Esta corrida fue creada antes del inventario de simbología.",
             "can_generate": has_docs,

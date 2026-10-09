@@ -30,8 +30,8 @@ class SymUnknown001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="info",
-                title="Sin Simbología Extraída en la Lámina",
-                description="No se han detectado símbolos gráficos en el plano para verificar reconocimiento contra catálogo.",
+                title="No se encontraron símbolos para revisar",
+                description="No se detectaron dibujos de símbolos en este plano. / Detalle técnico: No se han extraído candidatos geométricos o símbolos gráficos en la lámina para verificar reconocimiento contra catálogo canónico ISA-5.1.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="EXTRACTION_FAILED",
@@ -71,8 +71,8 @@ class SymUnknown001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Simbología Canónica Validada Exitosamente",
-                description=f"Todos los {total_detected} símbolos gráficos analizados en el plano están reconocidos en el catálogo ISA-5.1.",
+                title="Todos los símbolos del plano fueron reconocidos",
+                description=f"Todos los {total_detected} símbolos del plano coinciden con la lista oficial. / Detalle técnico: Los {total_detected} símbolos analizados en el plano están reconocidos en el catálogo canónico ISA-5.1.",
                 evidence_refs=evidence,
                 expected_value=0,
                 observed_value=0,
@@ -100,11 +100,11 @@ class SymUnknown001Rule(BaseRule):
 
             findings.append({
                 "symbol_id": rep_id,
-                "title": f"Grupo {display_code}: {occ_count} ocurrencia(s) geométricamente válidas sin plantilla aprobada",
-                "description": f"El grupo '{display_code}' cuenta con {occ_count} ocurrencia(s) detectadas con geometría técnica válida sin plantilla aprobada en el catálogo.",
+                "title": f"Símbolo {display_code}: {occ_count} dibujo(s) que no coinciden con la lista oficial",
+                "description": f"Hay {occ_count} dibujo(s) en el plano que parecen símbolos pero no están en la lista oficial. / Detalle técnico: El grupo '{display_code}' cuenta con {occ_count} ocurrencias detectadas con geometría técnica válida sin plantilla aprobada en el catálogo canónico ISA-5.1.",
                 "bbox": bbox,
                 "severity": "high",
-                "recommendation": "Auditar el recorte representativo e incorporar la plantilla canónica a la biblioteca de símbolos.",
+                "recommendation": "Revisar la imagen del símbolo para confirmar si es un componente válido y agregarlo a la biblioteca, o pedir aclaración al proyectista.",
                 "evidence_refs": {
                     "display_code": display_code,
                     "total_occurrences": occ_count,
@@ -118,8 +118,8 @@ class SymUnknown001Rule(BaseRule):
             rule_name=self.name,
             status="failed",
             severity="high",
-            title=f"Se detectaron {unknown_count} símbolo(s) no reconocido(s) en P&ID",
-            description=f"Se encontraron {unknown_count} elementos gráficos de cañerías sin correspondencia en el catálogo ISA-5.1 aprobado.",
+            title=f"Hay {unknown_count} símbolo(s) en el plano que el sistema no pudo identificar todavía",
+            description=f"Se encontraron {unknown_count} dibujos en el plano que no coinciden con los símbolos conocidos del catálogo. / Detalle técnico: Se detectaron {unknown_count} elementos gráficos de cañerías sin correspondencia en el catálogo ISA-5.1 aprobado.",
             recommendation="Revisar cada símbolo no identificado para incorporar a la biblioteca del proyecto o solicitar aclaración al proyectista.",
             evidence_refs=evidence,
             expected_value=0,
@@ -159,8 +159,8 @@ class SymAmbiguous001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="info",
-                title="Sin Simbología Extraída en la Lámina",
-                description="No se dispone de símbolos extraídos para análisis de ambigüedad.",
+                title="No se encontraron símbolos para evaluar dudas",
+                description="No hay símbolos extraídos en el plano para analizar si son dudosos. / Detalle técnico: No se dispone de símbolos extraídos para análisis de ambigüedad clasificatoria.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="EXTRACTION_FAILED",
@@ -188,8 +188,8 @@ class SymAmbiguous001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Sin Conflictos de Ambigüedad de Simbología",
-                description=f"Los {len(inputs.symbols)} símbolos poseen clasificación unívoca sin ambigüedad relevante.",
+                title="Todos los símbolos se identificaron con total claridad",
+                description=f"Cada uno de los {len(inputs.symbols)} símbolos tiene una forma clara sin confusión con otros componentes. / Detalle técnico: Los {len(inputs.symbols)} símbolos poseen clasificación unívoca sin ambigüedad relevante (margen de confianza >= 15%).",
                 evidence_refs={"total_symbols": len(inputs.symbols), "ambiguous_count": 0},
                 confidence=0.95,
                 verdict="cumple"
@@ -201,11 +201,11 @@ class SymAmbiguous001Rule(BaseRule):
             bbox = getattr(s, "bbox", None) or getattr(s, "bounding_box", None)
             findings.append({
                 "symbol_id": s_id,
-                "title": f"Símbolo ambiguo en P&ID (ID: {s_id or 'N/A'})",
-                "description": "Existe solape o proximidad estrecha de probabilidades entre dos clases de símbolos.",
+                "title": f"Símbolo con dibujo dudoso (ID: {s_id or 'N/A'})",
+                "description": "El dibujo se parece a dos tipos de componentes al mismo tiempo. / Detalle técnico: Existe solape o proximidad estrecha de probabilidades (< 15%) entre dos clases de símbolos.",
                 "bbox": bbox,
                 "severity": "medium",
-                "recommendation": "Confirmar visualmente la variante exacta de válvula (e.g. compuerta vs globo con flow-arrow)."
+                "recommendation": "Mirar el dibujo para confirmar qué tipo de válvula es (por ejemplo, si es compuerta o globo con flecha de flujo)."
             })
 
         return RuleResult(
@@ -213,9 +213,9 @@ class SymAmbiguous001Rule(BaseRule):
             rule_name=self.name,
             status="warning",
             severity="medium",
-            title=f"Se detectaron {len(ambiguous)} símbolo(s) con ambigüedad clasificatoria",
-            description=f"{len(ambiguous)} símbolo(s) tienen una diferencia de confianza < 15% entre sus principales alternativas.",
-            recommendation="Realizar validación supervisada HITL para disambiguar las ocurrencias dudosas.",
+            title=f"Hay {len(ambiguous)} símbolo(s) que se parecen a más de un componente a la vez",
+            description=f"{len(ambiguous)} componentes en el plano tienen una forma que genera dudas entre dos opciones posibles. / Detalle técnico: {len(ambiguous)} símbolo(s) tienen una diferencia de confianza < 15% entre sus principales alternativas clasificatorias.",
+            recommendation="Confirmar visualmente las ocurrencias dudosas para asegurar que se identifique la válvula o equipo correcto.",
             evidence_refs={"total_symbols": len(inputs.symbols), "ambiguous_count": len(ambiguous)},
             confidence=0.85,
             verdict="no_cumple",
@@ -258,8 +258,8 @@ class SymLegendConsistency001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="medium",
-                title="Cuadro de Leyendas No Encontrado",
-                description="La lámina o paquete de revisión no contiene un cuadro técnico de leyendas de simbología para contrastar.",
+                title="No se encontró la tabla de leyenda en el plano",
+                description="El plano no incluye un cuadro explicativo de símbolos para comparar. / Detalle técnico: La entrega no contiene un cuadro técnico de leyendas de simbología (legend_table) en los documentos seleccionados.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="REQUIRED_DOCUMENT_TYPE_MISSING",
@@ -274,8 +274,8 @@ class SymLegendConsistency001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_applicable",
                 severity="info",
-                title="Sin Símbolos en Dibujo",
-                description="No hay símbolos en el dibujo para verificar contra la leyenda.",
+                title="Sin símbolos en el plano para comparar",
+                description="No hay símbolos en el dibujo para contrastar contra la tabla de leyendas. / Detalle técnico: No hay símbolos extraídos en el plano para verificar contra la leyenda.",
                 confidence=1.0,
                 verdict="no_aplica"
             )
@@ -307,8 +307,8 @@ class SymLegendConsistency001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Simbología Conciliada con Cuadro de Leyendas",
-                description="Todos los tipos de símbolos detectados en el plano cuentan con definición en el cuadro de leyendas.",
+                title="Todos los símbolos usados están explicados en la tabla de leyenda",
+                description="Cada componente dibujado en el plano tiene su explicación en la tabla de leyendas. / Detalle técnico: Conciliación exitosa: todos los tipos de símbolos detectados en el plano cuentan con definición en el cuadro de leyendas.",
                 evidence_refs={"legend_tables_count": len(legend_tables), "symbols_checked": len(inputs.symbols)},
                 confidence=0.90,
                 verdict="cumple"
@@ -321,11 +321,11 @@ class SymLegendConsistency001Rule(BaseRule):
             bbox = getattr(s, "bbox", None) or getattr(s, "bounding_box", None)
             findings.append({
                 "symbol_id": s_id,
-                "title": f"Símbolo '{s_type}' ausente en Cuadro de Leyendas",
-                "description": f"El componente '{s_type}' se utiliza en el diagrama P&ID pero no está listado en la leyenda oficial.",
+                "title": f"El componente '{s_type}' está dibujado pero falta en la tabla de leyenda",
+                "description": f"Se dibujó '{s_type}' en el plano, pero no figura en la lista explicativa de símbolos. / Detalle técnico: El componente '{s_type}' se utiliza en el diagrama P&ID pero no está listado en la leyenda oficial.",
                 "bbox": bbox,
                 "severity": "high",
-                "recommendation": "Agregar la definición gráfica del símbolo a la leyenda de lámina o transmittal."
+                "recommendation": "Agregar la definición y dibujo del símbolo a la tabla de leyendas del plano."
             })
 
         return RuleResult(
@@ -333,9 +333,9 @@ class SymLegendConsistency001Rule(BaseRule):
             rule_name=self.name,
             status="failed",
             severity="high",
-            title=f"Se detectaron {len(unreferenced_symbols)} símbolo(s) ausentes en el Cuadro de Leyendas",
-            description=f"{len(unreferenced_symbols)} componentes en el plano no están definidos en las tablas de leyenda del proyecto.",
-            recommendation="Actualizar el cuadro de leyendas de la entrega para evitar ambigüedad en obra y montaje.",
+            title=f"Hay {len(unreferenced_symbols)} símbolo(s) usados en el plano que no están en la tabla de leyenda",
+            description=f"{len(unreferenced_symbols)} componentes se dibujaron en el plano pero no figuran en el cuadro explicativo de símbolos. / Detalle técnico: {len(unreferenced_symbols)} componentes en el diagrama P&ID carecen de correspondencia con las entradas declaradas en las tablas de leyenda del proyecto.",
+            recommendation="Actualizar la tabla de símbolos del plano para incluir los elementos que faltan y evitar confusiones en obra o compras.",
             evidence_refs={"unreferenced_count": len(unreferenced_symbols), "legend_terms_count": len(declared_legend_terms)},
             expected_value=0,
             observed_value=len(unreferenced_symbols),
@@ -373,8 +373,8 @@ class SymTagMissing001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="info",
-                title="Sin Símbolos Extraídos",
-                description="No hay símbolos extraídos para verificar presencia de tags.",
+                title="No se encontraron componentes para verificar etiquetas",
+                description="No hay símbolos en el plano para comprobar si tienen código o etiqueta. / Detalle técnico: No se detectaron símbolos de cañería o instrumentación en la lámina para validar rotulado de tags de ingeniería.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="EXTRACTION_FAILED",
@@ -407,8 +407,8 @@ class SymTagMissing001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Tags de Simbología Completos",
-                description=f"Todos los {total} símbolos evaluados en el plano poseen tag de ingeniería asociado.",
+                title="Todos los componentes tienen su etiqueta identificatoria",
+                description=f"Cada uno de los {total} componentes del plano tiene su código identificador al lado. / Detalle técnico: Todos los {total} símbolos evaluados en el plano poseen tag de ingeniería asociado conforme a la norma de rotulado.",
                 evidence_refs={"total_symbols": total, "untagged_count": 0},
                 confidence=0.92,
                 verdict="cumple"
@@ -421,11 +421,11 @@ class SymTagMissing001Rule(BaseRule):
             bbox = getattr(s, "bbox", None) or getattr(s, "bounding_box", None)
             findings.append({
                 "symbol_id": s_id,
-                "title": f"Elemento '{stype}' sin Tag de Identificación",
-                "description": f"Se detectó componente de cañería en coordenadas de plano sin tag de línea/instrumento asociado.",
+                "title": f"Componente '{stype}' sin etiqueta de identificación",
+                "description": "Se encontró un componente en el plano que no tiene su código o número de etiqueta al lado. / Detalle técnico: Se detectó componente de cañería en coordenadas de plano sin tag de línea/instrumento asociado.",
                 "bbox": bbox,
                 "severity": "medium",
-                "recommendation": "Rotular el tag de proceso según el listado de líneas o numeración de instrumentos."
+                "recommendation": "Escribir el código o etiqueta correspondiente junto a este componente en el plano según el listado de líneas o instrumentos."
             })
 
         return RuleResult(
@@ -433,9 +433,9 @@ class SymTagMissing001Rule(BaseRule):
             rule_name=self.name,
             status="failed" if len(untagged) > 3 else "warning",
             severity="medium",
-            title=f"Se encontraron {len(untagged)} símbolo(s) sin Tag de Identificación",
-            description=f"{len(untagged)} componentes en el plano no poseen tag de ingeniería o tienen rotulado incompleto.",
-            recommendation="Asignar y rotular los tags de proceso faltantes en el plano P&ID.",
+            title=f"Hay {len(untagged)} componente(s) sin código o etiqueta en el plano",
+            description=f"{len(untagged)} componentes en el plano no tienen escrita su etiqueta de identificación o la tienen incompleta. / Detalle técnico: {len(untagged)} componentes en el plano carecen de tag de ingeniería o poseen rotulado incompleto.",
+            recommendation="Escribir las etiquetas o códigos faltantes junto a cada válvula o equipo en el plano P&ID.",
             evidence_refs={"total_symbols": total, "untagged_count": len(untagged)},
             expected_value=0,
             observed_value=len(untagged),
@@ -476,14 +476,14 @@ class GenDoc001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="critical",
-                title="Viñeta Técnica No Extraída",
-                description="No se ha extraído la viñeta técnica (title block) del plano para auditar su trazabilidad.",
+                title="No se encontró la viñeta o carátula del plano",
+                description="El sistema no pudo leer la carátula de datos del plano. / Detalle técnico: No se ha extraído la viñeta técnica (title block) del plano para auditar su trazabilidad documental.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="DOCUMENT_NOT_PROCESSED",
                 not_evaluable_reason_message="La lámina carece de extracción de viñeta técnica en base de datos.",
                 missing_requirements=["title_block"],
-                recommended_action="Procesar la extracción de viñeta técnica en el documento."
+                recommended_action="Verificar que el plano incluya su viñeta técnica estándar en el borde inferior o lateral."
             )
 
         missing_fields = []
@@ -511,8 +511,8 @@ class GenDoc001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Trazabilidad Documental Verificada",
-                description=f"Lámina {sheet_code} (Rev {rev}): campos críticos de viñeta completos y consistentes.",
+                title="Los datos principales de la carátula están completos",
+                description=f"La lámina {sheet_code} (Revisión {rev}) tiene código, título y número de revisión completos. / Detalle técnico: Lámina {sheet_code} (Rev {rev}): campos críticos de viñeta completos y consistentes.",
                 evidence_refs=evidence,
                 confidence=0.98,
                 verdict="cumple"
@@ -523,9 +523,9 @@ class GenDoc001Rule(BaseRule):
             rule_name=self.name,
             status="failed",
             severity="critical",
-            title=f"Viñeta Incompleta: Faltan campos críticos ({', '.join(missing_fields)})",
-            description=f"La viñeta técnica del documento no declara: {', '.join(missing_fields)}.",
-            recommendation="Completar los metadatos obligatorios de la viñeta conforme al estándar documental del proyecto.",
+            title=f"A la carátula del plano le faltan datos obligatorios ({', '.join(missing_fields)})",
+            description=f"La carátula del plano no indica los siguientes datos clave: {', '.join(missing_fields)}. / Detalle técnico: La viñeta técnica del documento no declara los campos normativos: {', '.join(missing_fields)}.",
+            recommendation="Completar los datos que faltan en la carátula del plano (código, título o número de revisión) antes de la entrega formal.",
             evidence_refs=evidence,
             confidence=0.95,
             verdict="no_cumple",
