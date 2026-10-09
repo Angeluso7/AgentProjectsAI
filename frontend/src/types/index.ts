@@ -470,7 +470,7 @@ export interface BatchSourceFileResultItem {
   filename: string;
   status: 'uploaded' | 'ready' | 'already_exists' | 'failed' | string;
   source_id?: string;
-  source_title?: string;
+  title?: string;
   file_size_bytes: number;
   mime_type?: string;
   error_message?: string;

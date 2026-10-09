@@ -45,11 +45,19 @@ def test_source_batch_upload_successful_with_folder_paths():
     assert len(body["sources"]) == 3
     assert len(body["results"]) == 3
 
-    # Verificar títulos con prefijo y rutas relativas
+    # Verificar títulos con prefijo y rutas relativas tanto en sources como en results
     titles = [s["title"] for s in body["sources"]]
     assert any("Norma Técnica - ASME B31 3" in t for t in titles)
     assert any("Norma Técnica - API 6D" in t for t in titles)
     assert any("Norma Técnica - ISA 5 1" in t for t in titles)
+
+    # Validar explícitamente el contrato de results[].title para evitar desalineaciones silenciosas de esquema
+    result_titles = [r["title"] for r in body["results"]]
+    assert len(result_titles) == 3
+    assert all(t is not None and len(t) > 0 for t in result_titles)
+    assert any("Norma Técnica - ASME B31 3" in t for t in result_titles)
+    assert any("Norma Técnica - API 6D" in t for t in result_titles)
+    assert any("Norma Técnica - ISA 5 1" in t for t in result_titles)
 
     # Verificar que el relative_path se preservó en metadata_payload
     for source in body["sources"]:
@@ -147,4 +155,6 @@ def test_source_batch_upload_duplicate_detection():
     res_map = {r["filename"]: r for r in body2["results"]}
     assert res_map["copia_duplicada.txt"]["status"] == "already_exists"
     assert res_map["copia_duplicada.txt"]["source_id"] == orig_source_id
+    assert res_map["copia_duplicada.txt"]["title"] is not None
     assert res_map["archivo_nuevo.txt"]["status"] == "uploaded"
+    assert res_map["archivo_nuevo.txt"]["title"] is not None

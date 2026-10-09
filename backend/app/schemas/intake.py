@@ -213,8 +213,10 @@ class RuleSummarizeResponse(BaseModel):
     extracted_parameters: Dict[str, Any] = {}
 
 class BatchSourceFileResultItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     filename: str
-    status: str # "success", "already_exists", "failed"
+    status: str # "uploaded", "already_exists", "failed"
     source_id: Optional[str] = None
     title: Optional[str] = None
     file_size_bytes: int = 0
@@ -222,6 +224,8 @@ class BatchSourceFileResultItem(BaseModel):
     error_message: Optional[str] = None
 
 class BatchSourceUploadResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     total_files: int
     successful_count: int
     duplicated_count: int

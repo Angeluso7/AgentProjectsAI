@@ -150,7 +150,7 @@ async def register_sources_batch(
                     filename=clean_basename,
                     status="already_exists",
                     source_id=existing.id,
-                    source_title=existing.title,
+                    title=existing.title,
                     file_size_bytes=len(content),
                     mime_type=existing.mime_type,
                     error_message=None
@@ -190,7 +190,7 @@ async def register_sources_batch(
                 filename=clean_basename,
                 status="uploaded",
                 source_id=source.id,
-                source_title=source.title,
+                title=source.title,
                 file_size_bytes=len(content),
                 mime_type=source.mime_type,
                 error_message=None

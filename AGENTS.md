@@ -36,6 +36,10 @@ El sistema integra:
    - `ANTHROPIC_API_KEY`, tokens de GitHub y cualquier secreto de API **NUNCA** se deben escribir, pegar, versionar ni imprimir en código fuente, commits, logs, pull requests ni archivos bajo control de versiones.
    - Las claves residen exclusivamente en el `.env` local del desarrollador/entorno, el cual debe permanecer permanentemente excluido en `.gitignore`.
 
+6. **Validación Estricta de Schemas Pydantic (`extra='forbid'`):**
+   - Para prevenir que desalineaciones de nombres de campo pasen inadvertidas (ya que Pydantic v2 ignora por defecto kwargs desconocidos), los schemas de endpoints nuevos deben incorporar `model_config = ConfigDict(extra="forbid")`.
+   - Las suites de tests deben validar explícitamente todos los campos clave de la respuesta (tanto a nivel raíz como en items individuales de listas).
+
 ---
 
 ## 3. Mapa de Servicios Clave
