@@ -540,17 +540,21 @@ class ReviewExportService:
             y -= 13
 
             if ex.get("not_evaluable_reason_code"):
-                pdf.draw_text(
-                    f"Razón: {ex.get('not_evaluable_reason_code')} - {ex.get('not_evaluable_reason_message')}",
-                    55, y, font_size=8, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5)
-                )
-                y -= 12
+                reason_str = f"Razón: {ex.get('not_evaluable_reason_code')} - {ex.get('not_evaluable_reason_message') or ''}"
+                for r_line in SimplePdfCanvas.wrap_text(reason_str, max_chars_per_line=95):
+                    pdf.draw_text(r_line, 55, y, font_size=8, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5))
+                    y -= 11
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
                 if ex.get("recommended_action"):
-                    pdf.draw_text(
-                        f"Acción recomendada: {ex.get('recommended_action')}",
-                        55, y, font_size=8, font="Helvetica", color=(0.2, 0.4, 0.7)
-                    )
-                    y -= 12
+                    act_str = f"Acción recomendada: {ex.get('recommended_action')}"
+                    for a_line in SimplePdfCanvas.wrap_text(act_str, max_chars_per_line=95):
+                        pdf.draw_text(a_line, 55, y, font_size=8, font="Helvetica", color=(0.2, 0.4, 0.7))
+                        y -= 11
+                        if y < 70:
+                            pdf.new_page()
+                            y = pdf.height - 50
             y -= 4
 
             if y < 70:
@@ -570,13 +574,26 @@ class ReviewExportService:
             for f in findings:
                 sev = f.get("severity", "").upper()
                 s_col = (0.8, 0.1, 0.1) if sev == "CRITICAL" else (0.9, 0.4, 0.0) if sev == "HIGH" else (0.2, 0.4, 0.7)
-                pdf.draw_text(f"[{sev}] {f.get('title')}", 45, y, font_size=8.5, font="Helvetica-Bold", color=s_col)
-                y -= 12
-                pdf.draw_text(f"Descripción: {f.get('description')}", 55, y, font_size=8, color=(0.2, 0.2, 0.2))
-                y -= 12
+                for t_line in SimplePdfCanvas.wrap_text(f"[{sev}] {f.get('title')}", max_chars_per_line=90):
+                    pdf.draw_text(t_line, 45, y, font_size=8.5, font="Helvetica-Bold", color=s_col)
+                    y -= 11
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
+                y -= 2
+                for d_line in SimplePdfCanvas.wrap_text(f"Descripción: {f.get('description')}", max_chars_per_line=95):
+                    pdf.draw_text(d_line, 55, y, font_size=8, color=(0.2, 0.2, 0.2))
+                    y -= 11
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
                 if f.get("recommendation"):
-                    pdf.draw_text(f"Recomendación: {f.get('recommendation')}", 55, y, font_size=8, font="Helvetica-Oblique", color=(0.3, 0.3, 0.4))
-                    y -= 12
+                    for r_line in SimplePdfCanvas.wrap_text(f"Recomendación: {f.get('recommendation')}", max_chars_per_line=95):
+                        pdf.draw_text(r_line, 55, y, font_size=8, font="Helvetica-Oblique", color=(0.3, 0.3, 0.4))
+                        y -= 11
+                        if y < 70:
+                            pdf.new_page()
+                            y = pdf.height - 50
                 if f.get("bbox"):
                     pdf.draw_text(f"BBox: {f.get('bbox')}", 55, y, font_size=7.5, color=(0.5, 0.5, 0.5))
                     y -= 10
@@ -631,17 +648,20 @@ class ReviewExportService:
                 )
                 y -= 12
                 by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
-                pdf.draw_text(
-                    f"Total: {g.get('total_occurrences', 0)} | Por Documento: {by_doc_str or '-'} | Norma: {g.get('standard_reference') or '-'}",
-                    55, y, font_size=7.5, color=(0.3, 0.3, 0.3)
-                )
-                y -= 11
+                info_line = f"Total: {g.get('total_occurrences', 0)} | Por Documento: {by_doc_str or '-'} | Norma: {g.get('standard_reference') or '-'}"
+                for i_line in SimplePdfCanvas.wrap_text(info_line, max_chars_per_line=95):
+                    pdf.draw_text(i_line, 55, y, font_size=7.5, color=(0.3, 0.3, 0.3))
+                    y -= 10
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
                 if g.get("explanation"):
-                    pdf.draw_text(
-                        f"Detalle: {g.get('explanation')}",
-                        55, y, font_size=7.5, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5)
-                    )
-                    y -= 11
+                    for e_line in SimplePdfCanvas.wrap_text(f"Detalle: {g.get('explanation')}", max_chars_per_line=95):
+                        pdf.draw_text(e_line, 55, y, font_size=7.5, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5))
+                        y -= 10
+                        if y < 70:
+                            pdf.new_page()
+                            y = pdf.height - 50
                 y -= 4
 
                 if y < 70:
@@ -659,11 +679,13 @@ class ReviewExportService:
             y -= 15
         else:
             for o in occurrences[:100]:  # Mostrar hasta 100 ocurrencias en PDF para legibilidad
-                pdf.draw_text(
-                    f"• {o.get('group_display_code')} | {o.get('document_name')} | {o.get('sheet_name')} (Pág {o.get('page_number')}) | Tag: {o.get('detected_tag_or_code') or '-'}",
-                    45, y, font_size=8, font="Helvetica-Bold"
-                )
-                y -= 11
+                occ_head = f"• {o.get('group_display_code')} | {o.get('document_name')} | {o.get('sheet_name')} (Pág {o.get('page_number')}) | Tag: {o.get('detected_tag_or_code') or '-'}"
+                for o_line in SimplePdfCanvas.wrap_text(occ_head, max_chars_per_line=95):
+                    pdf.draw_text(o_line, 45, y, font_size=8, font="Helvetica-Bold")
+                    y -= 11
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
                 sym_b = str(o.get('symbol_crop_bbox') or o.get('bbox_normalized') or '-')
                 ctx_b = str(o.get('occurrence_context_crop_bbox') or '-')
                 pdf.draw_text(

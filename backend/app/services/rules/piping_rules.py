@@ -469,6 +469,26 @@ class GenDoc001Rule(BaseRule):
     def evaluate(self, inputs: RuleInput) -> RuleResult:
         tb = inputs.title_block
 
+        # Identificación contextual del documento/lámina para diferenciar hallazgos
+        sheet_label = ""
+        doc_filename = getattr(inputs.document, "filename", None)
+        if inputs.sheet:
+            num = getattr(inputs.sheet, "sheet_number", None)
+            code = getattr(inputs.sheet, "sheet_code", None)
+            sht_title = getattr(inputs.sheet, "title", None)
+            parts = []
+            if doc_filename:
+                parts.append(doc_filename)
+            if num is not None:
+                parts.append(f"Lámina {num}")
+            if code and code != f"SHEET-{num:02d}":
+                parts.append(f"[{code}]")
+            elif sht_title:
+                parts.append(f"({sht_title})")
+            sheet_label = " - ".join(parts) if len(parts) > 1 else (parts[0] if parts else "")
+        elif doc_filename:
+            sheet_label = f"Doc: {doc_filename}"
+
         if not tb:
             # Si no hay viñeta extraída
             return RuleResult(
@@ -476,12 +496,12 @@ class GenDoc001Rule(BaseRule):
                 rule_name=self.name,
                 status="not_evaluable",
                 severity="critical",
-                title="No se encontró la viñeta o carátula del plano",
-                description="El sistema no pudo leer la carátula de datos del plano. / Detalle técnico: No se ha extraído la viñeta técnica (title block) del plano para auditar su trazabilidad documental.",
+                title=f"No se encontró la viñeta o carátula en {sheet_label}" if sheet_label else "No se encontró la viñeta o carátula del plano",
+                description=f"El sistema no pudo leer la carátula de datos en {sheet_label}. / Detalle técnico: No se ha extraído la viñeta técnica (title block) del plano para auditar su trazabilidad documental." if sheet_label else "El sistema no pudo leer la carátula de datos del plano. / Detalle técnico: No se ha extraído la viñeta técnica (title block) del plano para auditar su trazabilidad documental.",
                 confidence=1.0,
                 verdict="no_verificable",
                 not_evaluable_reason_code="DOCUMENT_NOT_PROCESSED",
-                not_evaluable_reason_message="La lámina carece de extracción de viñeta técnica en base de datos.",
+                not_evaluable_reason_message=f"La lámina ({sheet_label or 'desconocida'}) carece de extracción de viñeta técnica en base de datos.",
                 missing_requirements=["title_block"],
                 recommended_action="Verificar que el plano incluya su viñeta técnica estándar en el borde inferior o lateral."
             )
@@ -499,6 +519,8 @@ class GenDoc001Rule(BaseRule):
             missing_fields.append("revision")
 
         evidence = {
+            "sheet_label": sheet_label or None,
+            "document_filename": doc_filename or None,
             "sheet_code": str(sheet_code) if sheet_code else None,
             "title": str(title) if title else None,
             "revision": str(rev) if rev else None,
@@ -511,8 +533,8 @@ class GenDoc001Rule(BaseRule):
                 rule_name=self.name,
                 status="passed",
                 severity="info",
-                title="Los datos principales de la carátula están completos",
-                description=f"La lámina {sheet_code} (Revisión {rev}) tiene código, título y número de revisión completos. / Detalle técnico: Lámina {sheet_code} (Rev {rev}): campos críticos de viñeta completos y consistentes.",
+                title=f"Datos de carátula completos ({sheet_label})" if sheet_label else "Los datos principales de la carátula están completos",
+                description=f"En {sheet_label}: la lámina {sheet_code} (Revisión {rev}) tiene código, título y número de revisión completos. / Detalle técnico: Lámina {sheet_code} (Rev {rev}): campos críticos de viñeta completos y consistentes." if sheet_label else f"La lámina {sheet_code} (Revisión {rev}) tiene código, título y número de revisión completos. / Detalle técnico: Lámina {sheet_code} (Rev {rev}): campos críticos de viñeta completos y consistentes.",
                 evidence_refs=evidence,
                 confidence=0.98,
                 verdict="cumple"
@@ -523,9 +545,9 @@ class GenDoc001Rule(BaseRule):
             rule_name=self.name,
             status="failed",
             severity="critical",
-            title=f"A la carátula del plano le faltan datos obligatorios ({', '.join(missing_fields)})",
-            description=f"La carátula del plano no indica los siguientes datos clave: {', '.join(missing_fields)}. / Detalle técnico: La viñeta técnica del documento no declara los campos normativos: {', '.join(missing_fields)}.",
-            recommendation="Completar los datos que faltan en la carátula del plano (código, título o número de revisión) antes de la entrega formal.",
+            title=f"A la carátula le faltan datos obligatorios ({', '.join(missing_fields)}) - {sheet_label}" if sheet_label else f"A la carátula del plano le faltan datos obligatorios ({', '.join(missing_fields)})",
+            description=f"En {sheet_label}: la carátula del plano no indica los siguientes datos clave: {', '.join(missing_fields)}. / Detalle técnico: La viñeta técnica de {sheet_label} no declara los campos normativos: {', '.join(missing_fields)}." if sheet_label else f"La carátula del plano no indica los siguientes datos clave: {', '.join(missing_fields)}. / Detalle técnico: La viñeta técnica del documento no declara los campos normativos: {', '.join(missing_fields)}.",
+            recommendation=f"Completar los datos que faltan en la carátula ({', '.join(missing_fields)}) de {sheet_label or 'la lámina'} antes de la entrega formal.",
             evidence_refs=evidence,
             confidence=0.95,
             verdict="no_cumple",

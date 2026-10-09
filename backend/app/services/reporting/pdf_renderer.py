@@ -1,4 +1,5 @@
 import os
+import textwrap
 from typing import List, Dict, Any, Optional
 from app.services.reporting.contracts import AuditReportData
 
@@ -63,6 +64,23 @@ class SimplePdfCanvas:
         font_alias = "/F2" if "Bold" in font else "/F1"
         cmd = f"q {r:.2f} {g:.2f} {b:.2f} rg BT {font_alias} {font_size:.1f} Tf 1 0 0 1 {x:.2f} {y:.2f} Tm ({safe_text}) Tj ET Q"
         self.current_page_commands.append(cmd)
+
+    @staticmethod
+    def wrap_text(text: Optional[str], max_chars_per_line: int = 95) -> List[str]:
+        """Divide un texto potencialmente largo en líneas de longitud máxima sin cortar palabras."""
+        if not text:
+            return []
+        lines: List[str] = []
+        for paragraph in str(text).splitlines():
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            wrapped = textwrap.wrap(paragraph, width=max_chars_per_line, break_long_words=True)
+            if wrapped:
+                lines.extend(wrapped)
+            else:
+                lines.append(paragraph)
+        return lines
 
     def draw_line(
         self,
@@ -139,8 +157,8 @@ class SimplePdfCanvas:
                 f"<< /Type /Page /Parent 2 0 R "
                 f"/MediaBox [0 0 {self.width} {self.height}] "
                 f"/Contents {stream_obj_id} 0 R "
-                f"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> "
-                f"/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> >> >> >>\n"
+                f"/Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >> "
+                f"/F2 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >> >> >> >>\n"
                 f"endobj\n"
             )
             body.extend(page_dict.encode("latin-1"))
