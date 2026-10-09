@@ -2990,5 +2990,59 @@ export interface ReviewReportItem {
   created_at: string;
 }
 
+export interface SymbolUnknownResearchCaseItem {
+  id: string;
+  symbol_occurrence_id: string;
+  status:
+    | 'unknown'
+    | 'queued_for_research'
+    | 'sources_found'
+    | 'proposed_identity'
+    | 'human_validated'
+    | 'research_exhausted'
+    | 'unresolved';
+  search_query?: string | null;
+  source_urls?: string[];
+  proposed_name?: string | null;
+  proposed_standard_reference?: string | null;
+  research_notes?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  crop_image_url?: string | null;
+  document_filename?: string | null;
+  sheet_label?: string | null;
+  discipline?: string | null;
+  detected_tag_or_code?: string | null;
+}
+
+export interface PromoteResearchCaseRequest {
+  reviewer_id: string;
+  canonical_code: string;
+  canonical_name: string;
+  category?: string;
+  subcategory?: string;
+  discipline?: string;
+  standard_reference?: string | null;
+  evidence_kind?: string | null;
+  rationale?: string | null;
+  notes?: string | null;
+}
+
+export interface PromoteResearchCaseResponse {
+  research_case: SymbolUnknownResearchCaseItem;
+  template_id: string;
+  template_version_id: string;
+  canonical_code: string;
+  version_number: number;
+  status: string;
+  message: string;
+}
+
+export interface DismissResearchCaseRequest {
+  reviewer_id: string;
+  rationale: string;
+}
+
+
 
 
