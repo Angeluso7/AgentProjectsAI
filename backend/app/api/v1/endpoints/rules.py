@@ -7,7 +7,8 @@ from app.db.models.decision_memory import RuleDefinition, RuleExecution, RuleFin
 from app.schemas.qa_rule import (
     RuleDefinitionRead, RuleFindingRead, RuleEvaluationSummaryResponse,
     UpdateRuleStatusRequest, DeleteRuleResponse,
-    BulkValidateRuleItemsRequest, BulkValidateRuleItemsResponse
+    BulkValidateRuleItemsRequest, BulkValidateRuleItemsResponse,
+    PromoteRuleDocumentRequest, ResyncRuleApplicabilityRequest, ResyncRuleApplicabilityResponse
 )
 from app.schemas.operations import AsyncJobAcceptedResponse
 from app.schemas.intake_extractions import (
@@ -200,14 +201,18 @@ def confirm_rule_document_content(
 @router.post("/documents/{doc_id}/promote-to-baseline", response_model=PromoteToBaselineResponse)
 def promote_rule_document_to_baseline(
     doc_id: str,
+    payload: Optional[PromoteRuleDocumentRequest] = None,
     db: Session = Depends(get_db)
 ):
     """
-    Promueve las reglas confirmadas/validadas del documento normativo hacia el Baseline QA/QC del Sistema (Botón Aceptar del renglón).
+    Promueve las reglas confirmadas/validadas del documento normativo hacia el Baseline QA/QC del Sistema.
+    Permite especificar opcionalmente la disciplina y punto de revisión (tópico), o autodetectarlos determinísticamente.
     """
     repo = IntakeExtractionRepository(db)
     try:
-        res = repo.promote_rule_document_to_baseline(doc_id)
+        disc_code = payload.discipline_code if payload else None
+        top_code = payload.topic_code if payload else None
+        res = repo.promote_rule_document_to_baseline(doc_id, discipline_code=disc_code, topic_code=top_code)
         return PromoteToBaselineResponse(**res)
     except HTTPException:
         raise
@@ -215,6 +220,30 @@ def promote_rule_document_to_baseline(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error promoviendo a baseline: {str(e)}")
+
+
+@router.post("/documents/{doc_id}/resync-applicability", response_model=ResyncRuleApplicabilityResponse)
+def resync_rule_document_applicability(
+    doc_id: str,
+    payload: ResyncRuleApplicabilityRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Re-sincroniza y repara la aplicabilidad (Disciplina y Punto de Revisión / Tópico)
+    de todas las reglas asociadas a un documento normativo hacia el alcance indicado.
+    """
+    repo = IntakeExtractionRepository(db)
+    try:
+        res = repo.resync_rule_document_applicability(
+            doc_id=doc_id,
+            discipline_code=payload.discipline_code,
+            topic_code=payload.topic_code
+        )
+        return ResyncRuleApplicabilityResponse(**res)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error al re-sincronizar aplicabilidad: {str(e)}")
 
 
 @router.post(

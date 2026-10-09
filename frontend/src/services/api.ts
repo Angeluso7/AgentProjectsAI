@@ -20,6 +20,7 @@ import {
   ExtractedTableItem, ExtractedTableCellItem, DetectedSymbolItem,
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
   DeleteRuleResponse, BulkValidateRuleItemsRequest, BulkValidateRuleItemsResponse,
+  PromoteRuleDocumentRequest, ResyncRuleApplicabilityRequest, ResyncRuleApplicabilityResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
   PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem,
   BatchSourceUploadResponse, BatchSourceFileResultItem,
@@ -1343,8 +1344,12 @@ export const apiService = {
     const res = await apiClient.post(`/rules/documents/${docId}/confirm-content`, payload || {});
     return res.data;
   },
-  promoteRuleDocumentToBaseline: async (docId: string): Promise<any> => {
-    const res = await apiClient.post(`/rules/documents/${docId}/promote-to-baseline`);
+  promoteRuleDocumentToBaseline: async (docId: string, payload?: PromoteRuleDocumentRequest): Promise<any> => {
+    const res = await apiClient.post(`/rules/documents/${docId}/promote-to-baseline`, payload || {});
+    return res.data;
+  },
+  resyncRuleDocumentApplicability: async (docId: string, payload: ResyncRuleApplicabilityRequest): Promise<ResyncRuleApplicabilityResponse> => {
+    const res = await apiClient.post(`/rules/documents/${docId}/resync-applicability`, payload);
     return res.data;
   },
   promoteRuleCandidate: async (candidateId: string, payload: any): Promise<any> => {

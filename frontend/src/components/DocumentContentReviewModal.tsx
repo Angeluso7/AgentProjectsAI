@@ -9,6 +9,7 @@ import {
 import { apiService } from '../services/api';
 import { RuleDocument, RuleDocumentItem } from '../types';
 import { SymbolCurationStudioModal } from './SymbolCurationStudioModal';
+import { PromoteDocumentScopeModal } from './PromoteDocumentScopeModal';
 
 interface DocumentContentReviewModalProps {
   isOpen: boolean;
@@ -42,6 +43,10 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
   // Validación Masiva de Reglas
   const [bulkValidating, setBulkValidating] = useState<boolean>(false);
   const [selectedRuleIds, setSelectedRuleIds] = useState<string[]>([]);
+
+  // Control de Selección de Alcance (Disciplina + Tópico) para Promoción / Re-sincronización
+  const [showScopeModal, setShowScopeModal] = useState<boolean>(false);
+  const [scopeModalMode, setScopeModalMode] = useState<'promote' | 'resync'>('promote');
 
   // Estado de Edición de Regla Individual
   const [editingItem, setEditingItem] = useState<RuleDocumentItem | null>(null);
@@ -366,27 +371,27 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
     }
   };
 
-  // Promoción Masiva del Documento Completo a Baseline QA/QC
-  const handlePromoteAllDocumentToBaseline = async () => {
-    if (!ruleDocumentId) return;
-    setSaving(true);
-    setError(null);
-    setSuccessMessage(null);
-    try {
-      const res = await apiService.promoteRuleDocumentToBaseline(ruleDocumentId);
-      setSuccessMessage(res.message);
-      if (doc) {
-        setDoc({ ...doc, status: 'promovido_baseline' });
-      }
-      if (onConfirmed) {
-        onConfirmed();
-      }
-      await loadDocumentDetails(ruleDocumentId);
-    } catch (err: any) {
-      setError(err?.response?.data?.detail || 'Error al promover reglas del documento a Baseline QA/QC.');
-    } finally {
-      setSaving(false);
+  // Promoción Masiva del Documento Completo a Baseline QA/QC (o Re-sincronización) con Alcance Explícito
+  const handleOpenScopeModal = (mode: 'promote' | 'resync') => {
+    setScopeModalMode(mode);
+    setShowScopeModal(true);
+  };
+
+  const handleScopeSuccess = async (res: any) => {
+    setSuccessMessage(res.message);
+    if (doc) {
+      setDoc({ ...doc, status: 'promovido_baseline' });
     }
+    if (onConfirmed) {
+      onConfirmed();
+    }
+    if (ruleDocumentId) {
+      await loadDocumentDetails(ruleDocumentId);
+    }
+  };
+
+  const handlePromoteAllDocumentToBaseline = async () => {
+    handleOpenScopeModal('promote');
   };
 
   const getItemTypeBadge = (type: string) => {
@@ -1483,16 +1488,39 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
             </span>
           </button>
 
-          {/* Acción 2: Promover y Activar Documento Completo a Baseline QA/QC */}
-          <button
-            onClick={handlePromoteAllDocumentToBaseline}
-            disabled={saving || items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length === 0}
-            className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg flex items-center gap-1.5"
-            title="Promover y activar todas las reglas validadas hacia Baseline QA/QC del Sistema"
-          >
-            {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-            <span>Promover Documento a Baseline QA/QC</span>
-          </button>
+          {/* Acción 2: Promover o Re-sincronizar Documento Completo a Baseline QA/QC */}
+          {doc?.status === 'promovido_baseline' ? (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleOpenScopeModal('resync')}
+                disabled={saving}
+                className="px-3.5 py-2 text-xs font-bold text-emerald-200 bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow flex items-center gap-1.5"
+                title="Re-sincronizar y reparar la disciplina y punto de revisión de todas las reglas promovidas en el motor"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Re-sincronizar Alcance</span>
+              </button>
+              <button
+                onClick={() => handleOpenScopeModal('promote')}
+                disabled={saving}
+                className="px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+                title="Sincronizar y actualizar reglas hacia Baseline QA/QC del Sistema"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Sincronizar Baseline</span>
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => handleOpenScopeModal('promote')}
+              disabled={saving || items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length === 0}
+              className="px-4 py-2 text-xs font-bold text-white bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl transition-all shadow-lg flex items-center gap-1.5"
+              title="Promover y activar todas las reglas validadas hacia Baseline QA/QC del Sistema con alcance explícito"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span>Promover Documento a Baseline QA/QC</span>
+            </button>
+          )}
         </div>
 
         {/* Handle Resize */}
@@ -1508,6 +1536,20 @@ export const DocumentContentReviewModal: React.FC<DocumentContentReviewModalProp
         </div>
       </div>
     </div>
+
+    {/* Modal de Selección y Confirmación de Alcance (Disciplina + Tópico) */}
+    {showScopeModal && ruleDocumentId && (
+      <PromoteDocumentScopeModal
+        isOpen={showScopeModal}
+        onClose={() => setShowScopeModal(false)}
+        mode={scopeModalMode}
+        documentId={ruleDocumentId}
+        documentTitle={doc?.title || 'Documento Normativo'}
+        documentDiscipline={doc?.discipline}
+        rulesCount={items.filter((i) => i.status === 'validada' || i.status === 'accepted' || i.status === 'active').length || doc?.rules_count || 0}
+        onSuccess={handleScopeSuccess}
+      />
+    )}
 
     {/* Estudio de Curación HITL para Símbolos */}
     {isStudioOpen && (

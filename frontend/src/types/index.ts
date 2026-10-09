@@ -1759,6 +1759,25 @@ export interface BulkValidateRuleItemsResponse {
   total_validated_rules: number;
 }
 
+export interface PromoteRuleDocumentRequest {
+  discipline_code?: string;
+  topic_code?: string;
+}
+
+export interface ResyncRuleApplicabilityRequest {
+  discipline_code: string;
+  topic_code: string;
+}
+
+export interface ResyncRuleApplicabilityResponse {
+  message: string;
+  document_id: string;
+  discipline_code: string;
+  topic_code: string;
+  updated_rules_count: number;
+  rule_codes: string[];
+}
+
 export interface DocumentOcrPage {
   page_number: number;
   text_content: string;

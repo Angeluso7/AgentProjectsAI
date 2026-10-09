@@ -133,3 +133,27 @@ class BulkValidateRuleItemsResponse(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+
+class PromoteRuleDocumentRequest(BaseModel):
+    discipline_code: Optional[str] = Field(None, description="Código de disciplina explícito (ej. PIPING). Si se omite, se autodetecta determinísticamente.")
+    topic_code: Optional[str] = Field(None, description="Código de tópico / punto de revisión explícito (ej. PID_SYMBOLS). Si se omite, se autodetecta.")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ResyncRuleApplicabilityRequest(BaseModel):
+    discipline_code: str = Field(..., description="Código de disciplina de destino (ej. PIPING)")
+    topic_code: str = Field(..., description="Código del punto de revisión / tópico de destino (ej. PID_SYMBOLS)")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class ResyncRuleApplicabilityResponse(BaseModel):
+    message: str
+    document_id: str
+    updated_rules_count: int
+    discipline_code: str
+    topic_code: str
+
+    model_config = ConfigDict(extra="forbid")
+
