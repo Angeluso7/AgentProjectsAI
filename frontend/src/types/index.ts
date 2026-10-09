@@ -982,6 +982,17 @@ export interface RuleDefinitionItem {
   updated_at: string;
 }
 
+export interface UpdateRuleStatusRequest {
+  enabled: boolean;
+}
+
+export interface DeleteRuleResponse {
+  message: string;
+  code: string;
+  deleted?: boolean;
+  deactivated?: boolean;
+}
+
 export interface RuleEvaluationSummaryResponse {
   document_id?: string;
   sheet_id?: string;

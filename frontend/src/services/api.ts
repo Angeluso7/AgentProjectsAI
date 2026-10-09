@@ -19,6 +19,7 @@ import {
   SourceDocumentPagesResponse, PageCropResponse, RuleSummarizeResponse,
   ExtractedTableItem, ExtractedTableCellItem, DetectedSymbolItem,
   SheetSymbolsSummaryResponse, RuleDefinitionItem, RuleEvaluationSummaryResponse,
+  DeleteRuleResponse,
   RuleFindingItem, AuditReportItem, EvidenceManifestItem, ReviewPipelineRunItem,
   PipelineStageRunItem, BatchUploadResponse, BatchFileResultItem,
   BatchSourceUploadResponse, BatchSourceFileResultItem,
@@ -794,6 +795,14 @@ export const apiService = {
   },
   getRuleDetail: async (ruleCode: string): Promise<RuleDefinitionItem> => {
     const res = await apiClient.get<RuleDefinitionItem>(`/rules/${ruleCode}`);
+    return res.data;
+  },
+  toggleRuleEnabled: async (ruleCode: string, enabled: boolean): Promise<RuleDefinitionItem> => {
+    const res = await apiClient.patch<RuleDefinitionItem>(`/rules/${ruleCode}`, { enabled });
+    return res.data;
+  },
+  deleteRule: async (ruleCode: string): Promise<DeleteRuleResponse> => {
+    const res = await apiClient.delete<DeleteRuleResponse>(`/rules/${ruleCode}`);
     return res.data;
   },
   runSheetRules: async (sheetId: string): Promise<RuleFindingItem[]> => {
