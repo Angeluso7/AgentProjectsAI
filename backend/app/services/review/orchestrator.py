@@ -472,11 +472,33 @@ class ReviewOrchestrator:
                     tbs = []
             total_tables += len(tbs)
 
+        from app.services.symbols.service import SymbolService
+        symbol_svc = SymbolService(db)
+        total_symbols_detected = 0
+        symbol_errors = []
+        for sheet in all_sheets:
+            syms = db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet.id).all()
+            if not syms:
+                try:
+                    syms = symbol_svc.detect_sheet_symbols(
+                        sheet_id=sheet.id,
+                        force_reprocess=False,
+                        discipline=discipline_code
+                    )
+                except Exception as sym_err:
+                    logger.warning(f"Detección de símbolos para lámina {sheet.id} advirtió: {sym_err}")
+                    symbol_errors.append(f"Sheet {sheet.sheet_code or sheet.id}: {str(sym_err)}")
+                    syms = []
+            total_symbols_detected += len(syms)
+
         from app.services.symbols.symbol_inventory_service import SymbolInventoryService
         inv_groups, inv_metrics = SymbolInventoryService.build_run_inventory(db, review_run, force_rebuild=True)
 
+        has_symbols = (inv_metrics.get("valid_symbol_occurrences", 0) > 0) or (len(inv_groups) > 0)
+
         s4.output_summary = {
-            "symbol_extraction_status": "ready",
+            "symbol_extraction_status": "ready" if has_symbols else "sin_candidatos_detectados",
+            "message": f"Fase 4: {inv_metrics.get('valid_symbol_occurrences', 0)} símbolos detectados en {len(inv_groups)} grupos" if has_symbols else "Fase 4: sin candidatos detectados",
             "tables_extracted_count": total_tables,
             "inventory_groups_count": len(inv_groups),
             "valid_symbol_occurrences": inv_metrics.get("valid_symbol_occurrences", 0),
@@ -484,6 +506,9 @@ class ReviewOrchestrator:
             "recognized_production": inv_metrics.get("recognized_production", 0),
             "recognized_sandbox": inv_metrics.get("recognized_sandbox", 0)
         }
+        if symbol_errors:
+            s4.output_summary["symbol_errors"] = symbol_errors
+
         s4.status = "succeeded"
         s4.completed_at = datetime.utcnow()
 

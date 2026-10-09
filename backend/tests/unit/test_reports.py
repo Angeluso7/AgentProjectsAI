@@ -168,3 +168,67 @@ def test_api_report_endpoints_and_download(client, db_session):
     resp_async = client.post(f"/api/v1/reports/sheets/{sheet.id}/async")
     assert resp_async.status_code == 202
     assert "job_id" in resp_async.json()
+
+
+def test_simple_pdf_canvas_encoding_and_wrap_text():
+    from app.services.reporting.pdf_renderer import SimplePdfCanvas
+    import fitz
+
+    # 1. wrap_text logic
+    assert SimplePdfCanvas.wrap_text(None) == []
+    assert SimplePdfCanvas.wrap_text("") == []
+    sample_text = "Esta es una descripción técnica muy extensa sobre el piping y la viñeta del documento que debe partirse limpiamente sin cortar palabras a la mitad."
+    lines = SimplePdfCanvas.wrap_text(sample_text, max_chars_per_line=30)
+    assert len(lines) > 1
+    for l in lines:
+        assert len(l) <= 35  # tolerancia por palabras indivisibles
+
+    # 2. Encoding /WinAnsiEncoding
+    canvas = SimplePdfCanvas()
+    canvas.new_page()
+    spanish_phrase = "Auditoría Técnica: Catálogo de Símbolos en Español -- á é í ó ú ñ Ñ ¿ ¡"
+    canvas.draw_text(spanish_phrase, 50, 700, font_size=12, font="Helvetica-Bold")
+    pdf_bytes = canvas.build_pdf_bytes()
+
+    assert b"/Encoding /WinAnsiEncoding" in pdf_bytes
+
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    extracted_text = doc[0].get_text()
+    assert "Auditoría Técnica" in extracted_text
+    assert "Catálogo de Símbolos" in extracted_text
+    assert "á é í ó ú ñ Ñ ¿ ¡" in extracted_text
+
+
+def test_gen_doc_001_rule_sheet_identification():
+    from app.services.rules.piping_rules import GenDoc001Rule
+    from app.services.rules.contracts import RuleInput
+
+    rule = GenDoc001Rule()
+
+    class MockDoc:
+        filename = "P_ID_001_AREAS.pdf"
+
+    class MockSheet:
+        sheet_number = 2
+        sheet_code = "SHEET-PID-02"
+        title = "Planta de Proceso"
+
+    class MockTitleBlock:
+        sheet_code = None  # Falta
+        sheet_title = "Planta de Proceso"
+        revision = None  # Falta
+
+    inputs = RuleInput(
+        document_id="doc-123",
+        sheet_id="sheet-456",
+        document=MockDoc(),
+        sheet=MockSheet(),
+        title_block=MockTitleBlock()
+    )
+
+    result = rule.evaluate(inputs)
+    assert result.status == "failed"
+    assert "P_ID_001_AREAS.pdf" in result.title or "P_ID_001_AREAS.pdf" in result.description
+    assert "Lámina 2" in result.title or "Lámina 2" in result.description
+    assert "sheet_code" in result.title
+    assert "revision" in result.title
