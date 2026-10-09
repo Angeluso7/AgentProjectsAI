@@ -188,9 +188,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
     }
   };
 
-  if (!isOpen || !run) return null;
-
-  const isSandbox = run.execution_mode === 'sandbox';
+  const isSandbox = run?.execution_mode === 'sandbox';
 
   // Fallback seguro defensivo para inventario
   const rawInventory = inventoryData ?? run?.symbol_inventory;
@@ -220,8 +218,8 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
 
   // Derivación ejecutiva de simbología para el punto de revisión
   const isSymbolRun = Boolean(
-    run.topic_code === 'PID_SYMBOLS' ||
-    run.discipline_code === 'PIPING' ||
+    run?.topic_code === 'PID_SYMBOLS' ||
+    run?.discipline_code === 'PIPING' ||
     (inventory.executive_summary && inventory.executive_summary.length > 0)
   );
 
@@ -256,8 +254,8 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
     executiveRows.forEach((r) => {
       (r.sheet_labels || []).forEach((l) => s.add(l));
     });
-    return s.size > 0 ? s.size : (foundCount > 0 ? 1 : 0);
-  }, [executiveRows, foundCount]);
+    return s.size;
+  }, [executiveRows]);
 
   const symbolChartData = useMemo(() => {
     return [
@@ -288,6 +286,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
   };
 
   const handleCreateAndDownloadExport = async (format: 'json' | 'xlsx' | 'pdf') => {
+    if (!run?.id) return;
     setGeneratingFormat(format);
     setStatusMessage({ text: `Generando y persistiendo reporte ${format.toUpperCase()}...`, type: 'info' });
     try {
@@ -316,6 +315,8 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
     setCopiedHash(text);
     setTimeout(() => setCopiedHash(null), 2000);
   };
+
+  if (!isOpen || !run) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in duration-200">
