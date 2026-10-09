@@ -40,6 +40,10 @@ El sistema integra:
    - Para prevenir que desalineaciones de nombres de campo pasen inadvertidas (ya que Pydantic v2 ignora por defecto kwargs desconocidos), los schemas de endpoints nuevos deben incorporar `model_config = ConfigDict(extra="forbid")`.
    - Las suites de tests deben validar explícitamente todos los campos clave de la respuesta (tanto a nivel raíz como en items individuales de listas).
 
+7. **Sincronización de Dependencias en Entornos Docker Locales:**
+   - Debido a que `docker-compose.yml` monta un volumen anónimo para `node_modules` (`/app/node_modules`) para aislar y optimizar el rendimiento en desarrollo, las dependencias añadidas a `package.json` (o dependencias de backend) no se instalan automáticamente al reiniciar el contenedor.
+   - Tras fusionar un PR o actualizar ramas con nuevas dependencias, se debe ejecutar `docker compose exec frontend npm install` (o `docker compose up -d --build frontend/backend`) antes de probar la aplicación en local para evitar fallos de resolución de módulos en Vite (`Failed to resolve import`).
+
 ---
 
 ## 3. Mapa de Servicios Clave
