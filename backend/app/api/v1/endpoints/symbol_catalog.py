@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
@@ -29,9 +30,16 @@ from app.schemas.symbol_catalog import (
     CandidateCurationViewResponse,
     CurateAndApproveCandidateRequest,
     CurateAndApproveCandidateResponse,
+    SymbolUnknownResearchCaseItem,
+    PromoteResearchCaseRequest,
+    PromoteResearchCaseResponse,
+    DismissResearchCaseRequest,
 )
 from app.services.symbols.canonical_catalog_service import CanonicalPipingCatalogService
+from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+from app.services.symbols.research_service import SymbolResearchService
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -424,31 +432,155 @@ def curate_and_approve_candidate(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/research-cases")
+def _map_research_case(c: SymbolUnknownResearchCase) -> SymbolUnknownResearchCaseItem:
+    occ = c.occurrence
+    crop_url = None
+    doc_filename = None
+    sheet_label = None
+    discipline = None
+    tag_code = None
+
+    if occ:
+        if occ.crop_image_path:
+            crop_url = SymbolInventoryService.resolve_crop_url(occ.crop_image_path)
+        if occ.document:
+            doc_filename = occ.document.filename
+        elif occ.document_id:
+            doc_filename = str(occ.document_id)
+
+        if occ.sheet:
+            sheet_label = SymbolResearchService.format_sheet_label(occ.sheet)
+
+        discipline = occ.discipline
+        tag_code = occ.detected_tag_or_code
+
+    return SymbolUnknownResearchCaseItem(
+        id=str(c.id),
+        symbol_occurrence_id=str(c.symbol_occurrence_id),
+        status=str(c.status),
+        search_query=c.search_query,
+        source_urls=c.source_urls or [],
+        proposed_name=c.proposed_name,
+        proposed_standard_reference=c.proposed_standard_reference,
+        research_notes=c.research_notes,
+        created_at=c.created_at.isoformat() if c.created_at else None,
+        updated_at=c.updated_at.isoformat() if c.updated_at else None,
+        crop_image_url=crop_url,
+        document_filename=doc_filename,
+        sheet_label=sheet_label,
+        discipline=discipline,
+        detected_tag_or_code=tag_code,
+    )
+
+
+@router.get("/research-cases", response_model=List[SymbolUnknownResearchCaseItem])
 def list_research_cases(
-    status: Optional[str] = Query(None, description="unknown, queued_for_research, sources_found, resolved, dismissed"),
+    status: Optional[str] = Query(None, description="unknown, queued_for_research, sources_found, proposed_identity, human_validated, research_exhausted, unresolved"),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
 ):
     """
-    Lista casos de investigación para símbolos desconocidos (geometría real sin coincidencia en catálogo canónico).
+    Lista casos de investigación para símbolos desconocidos (geometría real sin coincidencia en catálogo canónico),
+    enriquecidos con miniatura servible (crop_image_url) y contexto documental.
     """
     query = db.query(SymbolUnknownResearchCase)
     if status:
         query = query.filter(SymbolUnknownResearchCase.status == status)
 
     cases = query.order_by(SymbolUnknownResearchCase.created_at.desc()).limit(limit).all()
-    return [
-        {
-            "id": c.id,
-            "symbol_occurrence_id": c.symbol_occurrence_id,
-            "status": c.status,
-            "search_query": c.search_query,
-            "source_urls": c.source_urls or [],
-            "proposed_name": c.proposed_name,
-            "proposed_standard_reference": c.proposed_standard_reference,
-            "research_notes": c.research_notes,
-            "created_at": c.created_at.isoformat() if c.created_at else None,
-        }
-        for c in cases
-    ]
+    return [_map_research_case(c) for c in cases]
+
+
+@router.get("/research-cases/{case_id}", response_model=SymbolUnknownResearchCaseItem)
+def get_research_case(case_id: str, db: Session = Depends(get_db)):
+    """
+    Obtiene el detalle completo de un caso de investigación de símbolo desconocido.
+    """
+    case = db.query(SymbolUnknownResearchCase).filter(SymbolUnknownResearchCase.id == case_id).first()
+    if not case:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Caso de investigación '{case_id}' no encontrado")
+    return _map_research_case(case)
+
+
+@router.post("/research-cases/{case_id}/ai-research", response_model=SymbolUnknownResearchCaseItem)
+def run_ai_research_endpoint(case_id: str, db: Session = Depends(get_db)):
+    """
+    Ejecuta investigación guiada por IA multimodal sobre el recorte del símbolo desconocido.
+    No falla con 500 si no hay API key; pasa el caso a 'research_exhausted' con nota explicativa.
+    """
+    try:
+        case = SymbolResearchService.run_ai_research(db, case_id)
+        return _map_research_case(case)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error inesperado en run_ai_research para caso {case_id}: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Error en investigación IA: {str(e)}")
+
+
+@router.post("/research-cases/{case_id}/promote", response_model=PromoteResearchCaseResponse)
+def promote_research_case_endpoint(
+    case_id: str,
+    payload: PromoteResearchCaseRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    HITL: Valida y promueve la ocurrencia de un caso de investigación al catálogo canónico activo,
+    dejando el caso en 'human_validated' y creando la plantilla y versión productiva.
+    """
+    try:
+        res = SymbolResearchService.validate_and_promote(
+            db=db,
+            research_case_id=case_id,
+            reviewer_id=payload.reviewer_id,
+            canonical_code=payload.canonical_code,
+            canonical_name=payload.canonical_name,
+            category=payload.category,
+            subcategory=payload.subcategory,
+            discipline=payload.discipline,
+            standard_reference=payload.standard_reference,
+            evidence_kind=payload.evidence_kind,
+            rationale=payload.rationale,
+            notes=payload.notes,
+        )
+        case = db.query(SymbolUnknownResearchCase).filter(SymbolUnknownResearchCase.id == case_id).first()
+        return PromoteResearchCaseResponse(
+            research_case=_map_research_case(case),
+            template_id=res["template_id"],
+            template_version_id=res["template_version_id"],
+            canonical_code=res["canonical_code"],
+            version_number=res["version_number"],
+            status=res["status"],
+            message=res["message"],
+        )
+    except ValueError as e:
+        err_msg = str(e)
+        if "no encontrado" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+
+
+@router.post("/research-cases/{case_id}/dismiss", response_model=SymbolUnknownResearchCaseItem)
+def dismiss_research_case_endpoint(
+    case_id: str,
+    payload: DismissResearchCaseRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    HITL: Descarta formalmente un caso de investigación registrando la justificación
+    y la decisión en el registro de auditoría, pasando el caso a 'unresolved'.
+    """
+    try:
+        case = SymbolResearchService.dismiss_case(
+            db=db,
+            research_case_id=case_id,
+            reviewer_id=payload.reviewer_id,
+            rationale=payload.rationale,
+        )
+        return _map_research_case(case)
+    except ValueError as e:
+        err_msg = str(e)
+        if "no encontrado" in err_msg.lower():
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=err_msg)
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=err_msg)
+

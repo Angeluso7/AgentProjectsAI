@@ -1,6 +1,6 @@
 from typing import Optional, List, Dict, Any
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 
 class SymbolGeometricFeatureDTO(BaseModel):
@@ -306,4 +306,58 @@ class CurateAndApproveCandidateResponse(BaseModel):
     approved_at: datetime
     evidence_snapshot: Dict[str, Any] = Field(default_factory=dict)
     message: str
+
+
+class SymbolUnknownResearchCaseItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    symbol_occurrence_id: str
+    status: str
+    search_query: Optional[str] = None
+    source_urls: List[str] = Field(default_factory=list)
+    proposed_name: Optional[str] = None
+    proposed_standard_reference: Optional[str] = None
+    research_notes: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    crop_image_url: Optional[str] = None
+    document_filename: Optional[str] = None
+    sheet_label: Optional[str] = None
+    discipline: Optional[str] = None
+    detected_tag_or_code: Optional[str] = None
+
+
+class PromoteResearchCaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reviewer_id: str
+    canonical_code: str
+    canonical_name: str
+    category: str = "valve"
+    subcategory: str = "gate_valve"
+    discipline: str = "piping"
+    standard_reference: Optional[str] = None
+    evidence_kind: Optional[str] = "redacted_real"
+    rationale: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PromoteResearchCaseResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    research_case: SymbolUnknownResearchCaseItem
+    template_id: str
+    template_version_id: str
+    canonical_code: str
+    version_number: int
+    status: str
+    message: str
+
+
+class DismissResearchCaseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reviewer_id: str
+    rationale: str
 
