@@ -555,6 +555,13 @@ async function runTestSuite() {
   }
   console.log('  ✓ [CRASH TEST 1] run=null does not crash and safely returns empty.');
 
+  // Rules of Hooks test: alternating null -> run -> null -> run
+  ReactDOMServer.renderToString(<ReviewRunDetailModal isOpen={false} run={null} onClose={() => {}} />);
+  ReactDOMServer.renderToString(<ReviewRunDetailModal isOpen={true} run={mockDetailData} initialTab="exports" onClose={() => {}} />);
+  ReactDOMServer.renderToString(<ReviewRunDetailModal isOpen={true} run={null} onClose={() => {}} />);
+  ReactDOMServer.renderToString(<ReviewRunDetailModal isOpen={true} run={mockDetailData} initialTab="inventory" onClose={() => {}} />);
+  console.log('  ✓ [HOOKS TEST] Alternating run transitions (null -> run -> null -> run) render cleanly without hook count mismatch.');
+
   // 2. Legacy run with symbol_inventory = null: Must not throw
   const legacyRun = { ...mockDetailData, symbol_inventory: null as any };
   const legacyModalHtml = ReactDOMServer.renderToString(

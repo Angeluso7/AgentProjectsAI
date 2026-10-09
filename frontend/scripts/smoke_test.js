@@ -124,8 +124,8 @@ try {
       // Track early return from the component level
       if (
         braceDepth === componentDepth &&
-        (trimmed.startsWith('if (!isOpen)') || trimmed.startsWith('if (!item)') || trimmed.startsWith('if (!profile)') || trimmed.startsWith('if (!document)')) &&
-        trimmed.includes('return null')
+        trimmed.startsWith('if (') &&
+        trimmed.includes('return')
       ) {
         componentEarlyReturnDepth = braceDepth;
         earlyReturnLine = i + 1;
