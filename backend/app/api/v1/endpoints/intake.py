@@ -1,4 +1,5 @@
 import os
+import logging
 from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status, Query
 from fastapi.responses import FileResponse
@@ -11,11 +12,15 @@ from app.schemas.intake import (
     SourceAssetIngestResponse, SourceDependenciesResponse, SourceDeleteResponse,
     ResearchQueryRead, ResearchQueryDetailRead,
     SourceDocumentPagesResponse, PageCropRequest, PageCropResponse,
-    RuleSummarizeRequest, RuleSummarizeResponse
+    RuleSummarizeRequest, RuleSummarizeResponse,
+    BatchSourceUploadResponse, BatchSourceFileResultItem
 )
 from app.services.intake.service import IntakeService
 
+logger = logging.getLogger("plan_review")
+
 router = APIRouter()
+
 
 @router.post("/sources", response_model=SourceAssetRead, status_code=status.HTTP_201_CREATED)
 def register_source_json(
@@ -84,6 +89,135 @@ async def register_source_file(
         return source
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+
+
+@router.post("/sources/batch-upload", response_model=BatchSourceUploadResponse, status_code=status.HTTP_201_CREATED)
+async def register_sources_batch(
+    source_type: str = Form(...),
+    title_prefix: Optional[str] = Form(None),
+    discipline: str = Form("general"),
+    document_type: Optional[str] = Form("standard_doc"),
+    description: Optional[str] = Form(None),
+    authority: Optional[str] = Form(None),
+    project_id: Optional[str] = Form(None),
+    version: str = Form("1.0"),
+    owner: str = Form("system"),
+    files: List[UploadFile] = File(...),
+    db: Session = Depends(get_db)
+):
+    """
+    Carga por lotes de fuentes documentales / entrenamiento para la Base de Conocimiento.
+    Permite subir múltiples archivos o una carpeta completa de fuentes normativas / catálogos.
+    Un fallo en un archivo individual no aborta el lote.
+    """
+    if not files:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No se enviaron archivos para la carga de fuentes por lotes."
+        )
+
+    service = IntakeService(db)
+    sources: List[SourceAssetRead] = []
+    results: List[BatchSourceFileResultItem] = []
+    successful_count = 0
+    duplicated_count = 0
+    failed_count = 0
+
+    base_meta = {}
+    if authority:
+        base_meta["authority"] = authority
+
+    for upload_file in files:
+        raw_name = upload_file.filename or "unnamed_source"
+        clean_basename = raw_name.replace("\\", "/").split("/")[-1]
+        try:
+            content = await upload_file.read()
+            if not content:
+                failed_count += 1
+                results.append(BatchSourceFileResultItem(
+                    filename=clean_basename,
+                    status="failed",
+                    error_message="El archivo está vacío."
+                ))
+                continue
+
+            file_hash = service.calculate_hash(content)
+            existing = service.repo.get_by_sha256(file_hash)
+            if existing:
+                duplicated_count += 1
+                sources.append(existing)
+                results.append(BatchSourceFileResultItem(
+                    filename=clean_basename,
+                    status="already_exists",
+                    source_id=existing.id,
+                    title=existing.title,
+                    file_size_bytes=len(content),
+                    mime_type=existing.mime_type,
+                    error_message=None
+                ))
+                continue
+
+            # Generar título por archivo a partir de title_prefix o del nombre del archivo
+            stem = os.path.splitext(clean_basename)[0]
+            clean_stem = stem.replace("_", " ").replace("-", " ").strip()
+            if title_prefix and title_prefix.strip():
+                item_title = f"{title_prefix.strip()} - {clean_stem}"
+            else:
+                item_title = clean_stem.title() if clean_stem else clean_basename
+
+            file_meta = dict(base_meta)
+            if "/" in raw_name or "\\" in raw_name:
+                file_meta["relative_path"] = raw_name
+
+            source = service.register_source(
+                source_type=source_type,
+                title=item_title,
+                project_id=project_id,
+                source_origin="local_upload",
+                document_type=document_type,
+                discipline=discipline,
+                description=description,
+                file_bytes=content,
+                filename=clean_basename,
+                mime_type=upload_file.content_type or "application/octet-stream",
+                version=version,
+                owner=owner,
+                metadata_payload=file_meta
+            )
+            successful_count += 1
+            sources.append(source)
+            results.append(BatchSourceFileResultItem(
+                filename=clean_basename,
+                status="uploaded",
+                source_id=source.id,
+                title=source.title,
+                file_size_bytes=len(content),
+                mime_type=source.mime_type,
+                error_message=None
+            ))
+        except Exception as err:
+            logger.error(f"Error procesando fuente '{clean_basename}' en batch upload: {err}", exc_info=True)
+            failed_count += 1
+            results.append(BatchSourceFileResultItem(
+                filename=clean_basename,
+                status="failed",
+                error_message=str(err)
+            ))
+        finally:
+            try:
+                await upload_file.close()
+            except Exception:
+                pass
+
+    return BatchSourceUploadResponse(
+        total_files=len(files),
+        successful_count=successful_count,
+        duplicated_count=duplicated_count,
+        failed_count=failed_count,
+        sources=sources,
+        results=results
+    )
+
 
 @router.get("/disciplines", response_model=List[str])
 def list_disciplines(db: Session = Depends(get_db)):

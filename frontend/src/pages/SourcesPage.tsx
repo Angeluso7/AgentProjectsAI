@@ -85,7 +85,8 @@ export const SourcesPage: React.FC = () => {
   const [newAuthority, setNewAuthority] = useState('MINVU');
   const [newUrl, setNewUrl] = useState('');
   const [newDescription, setNewDescription] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const selectedFile = selectedFiles.length > 0 ? selectedFiles[0] : null;
   const [creating, setCreating] = useState(false);
 
   // Flujo para "Otros" (Crear nueva disciplina personalizada)
@@ -198,11 +199,21 @@ export const SourcesPage: React.FC = () => {
     }
   };
 
+  const ALLOWED_SOURCE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.png', '.jpg', '.jpeg', '.txt', '.csv', '.xlsx'];
+
+  const isHiddenOrSystemFile = (filename: string): boolean => {
+    const base = filename.split(/[/\\]/).pop() || filename;
+    if (base.startsWith('.')) return true;
+    const lower = base.toLowerCase();
+    if (['thumbs.db', 'desktop.ini', 'ehthumbs.db'].includes(lower)) return true;
+    return false;
+  };
+
   const handleOpenModal = () => {
     setIsCreatingCustomDiscipline(false);
     setCustomDisciplineInput('');
     setCustomDisciplineError(null);
-    setSelectedFile(null);
+    setSelectedFiles([]);
     setRegistrationMode('file');
     setNewType('normative_document');
     setNewTitle('');
@@ -216,16 +227,29 @@ export const SourcesPage: React.FC = () => {
     setShowModal(true);
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      const file = e.target.files[0];
-      setSelectedFile(file);
-      if (!newTitle.trim()) {
-        // Auto-asignar nombre limpio del archivo como título sugerido
-        const cleanName = file.name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
-        setNewTitle(cleanName);
-      }
+  const handleFilesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const rawFiles = Array.from(e.target.files);
+    const valid = rawFiles.filter((file) => {
+      const relPath = (file as any).webkitRelativePath || '';
+      const checkPath = relPath || file.name;
+      if (isHiddenOrSystemFile(checkPath)) return false;
+      const lower = file.name.toLowerCase();
+      return ALLOWED_SOURCE_EXTENSIONS.some((ext) => lower.endsWith(ext));
+    });
+
+    if (valid.length === 0) {
+      alert('No se encontraron archivos válidos soportados (.pdf, .doc, .docx, .png, .jpg, .jpeg, .txt, .csv, .xlsx) o todos fueron descartados por ser del sistema.');
+      return;
     }
+
+    setSelectedFiles(valid);
+    if (valid.length === 1 && !newTitle.trim()) {
+      // Auto-asignar nombre limpio del archivo como título sugerido
+      const cleanName = valid[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]/g, ' ');
+      setNewTitle(cleanName);
+    }
+    e.target.value = '';
   };
 
   const handleDisciplineChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -332,25 +356,55 @@ export const SourcesPage: React.FC = () => {
       setCreating(true);
 
       if (registrationMode === 'file') {
-        if (!selectedFile) {
-          alert('Por favor seleccione un archivo local desde su equipo antes de guardar, o cambie al modo Manual / Web.');
+        if (selectedFiles.length === 0) {
+          alert('Por favor seleccione al menos un archivo local o carpeta desde su equipo antes de guardar, o cambie al modo Manual / Web.');
           setCreating(false);
           return;
         }
-        // Carga física de archivo local en volumen persistente
-        const formData = new FormData();
-        formData.append('file', selectedFile);
-        formData.append('title', newTitle.trim());
-        formData.append('source_type', newType);
-        formData.append('discipline', finalDiscipline);
-        formData.append('document_type', newType === 'analysis_document' ? 'blueprint_pdf' : 'standard_doc');
-        formData.append('authority', newAuthority.trim() || 'Organismo Técnico');
-        if (newDescription.trim()) {
-          formData.append('description', newDescription.trim());
-        }
 
-        const res = await apiService.uploadSourceFile(formData);
-        showToast(`Documento local '${res.title}' guardado físicamente en volumen persistente.`);
+        const isFolderUpload = selectedFiles.some((f) => (f as any).webkitRelativePath);
+
+        if (selectedFiles.length === 1 && !isFolderUpload) {
+          // Carga física individual
+          const singleFile = selectedFiles[0];
+          const formData = new FormData();
+          formData.append('file', singleFile);
+          formData.append('title', newTitle.trim() || singleFile.name);
+          formData.append('source_type', newType);
+          formData.append('discipline', finalDiscipline);
+          formData.append('document_type', newType === 'analysis_document' ? 'blueprint_pdf' : 'standard_doc');
+          formData.append('authority', newAuthority.trim() || 'Organismo Técnico');
+          if (newDescription.trim()) {
+            formData.append('description', newDescription.trim());
+          }
+
+          const res = await apiService.uploadSourceFile(formData);
+          showToast(`Documento local '${res.title}' guardado físicamente en volumen persistente.`);
+        } else {
+          // Carga por lotes (múltiples archivos o carpeta completa)
+          const formData = new FormData();
+          selectedFiles.forEach((file) => {
+            const relPath = (file as any).webkitRelativePath;
+            if (relPath) {
+              formData.append('files', file, relPath);
+            } else {
+              formData.append('files', file);
+            }
+          });
+          if (newTitle.trim()) {
+            formData.append('title_prefix', newTitle.trim());
+          }
+          formData.append('source_type', newType);
+          formData.append('discipline', finalDiscipline);
+          formData.append('document_type', newType === 'analysis_document' ? 'blueprint_pdf' : 'standard_doc');
+          formData.append('authority', newAuthority.trim() || 'Organismo Técnico');
+          if (newDescription.trim()) {
+            formData.append('description', newDescription.trim());
+          }
+
+          const res = await apiService.batchUploadSources(formData);
+          showToast(`Carga por lotes completada: ${res.successful_count} nuevas fuentes, ${res.duplicated_count} ya existentes, ${res.failed_count} con fallos.`);
+        }
       } else {
         if (registrationMode === 'web' && !newUrl.trim()) {
           alert('Por favor ingrese la URL de la fuente normativa web.');
@@ -373,7 +427,7 @@ export const SourcesPage: React.FC = () => {
       }
 
       setShowModal(false);
-      setSelectedFile(null);
+      setSelectedFiles([]);
       setNewTitle('');
       setNewUrl('');
       setNewDescription('');
@@ -1009,50 +1063,91 @@ export const SourcesPage: React.FC = () => {
                 </button>
               </div>
 
-              {/* Selector de Archivo Físico (File Picker) */}
+              {/* Selector de Archivo Físico o Carpeta (File / Folder Picker) */}
               {registrationMode === 'file' && (
                 <div style={{
                   marginBottom: '16px',
                   padding: '16px',
                   border: '2px dashed rgba(59, 130, 246, 0.4)',
-                  borderRadius: '8px',
+                  borderRadius: '10px',
                   background: 'rgba(59, 130, 246, 0.04)',
                   textAlign: 'center'
                 }}>
                   <input
                     type="file"
                     id="intakeFileInput"
-                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg"
-                    onChange={handleFileChange}
+                    multiple
+                    accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.txt,.csv,.xlsx"
+                    onChange={handleFilesChange}
                     style={{ display: 'none' }}
                   />
-                  <label htmlFor="intakeFileInput" style={{ cursor: 'pointer', display: 'block' }}>
-                    <UploadCloud size={28} style={{ color: '#60a5fa', margin: '0 auto 6px auto' }} />
-                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)' }}>
-                      {selectedFile ? selectedFile.name : 'Haz clic para seleccionar un documento local'}
-                    </div>
-                    <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
-                      {selectedFile ? (
-                        <span style={{ color: '#34d399', fontWeight: 500 }}>
-                          Archivo listo para persistir en volumen ({formatBytes(selectedFile.size)})
-                        </span>
-                      ) : (
-                        'Formatos soportados: PDF, DOC/DOCX, PNG, JPG (Se guardará en /data/intake_sources/)'
-                      )}
-                    </div>
-                  </label>
+                  <input
+                    type="file"
+                    id="intakeFolderInput"
+                    multiple
+                    {...({ webkitdirectory: '', directory: '' } as any)}
+                    onChange={handleFilesChange}
+                    style={{ display: 'none' }}
+                  />
+                  <UploadCloud size={28} style={{ color: '#60a5fa', margin: '0 auto 6px auto' }} />
+                  <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-main)', marginBottom: '8px' }}>
+                    {selectedFiles.length > 0
+                      ? `${selectedFiles.length} archivo(s) seleccionado(s) (${formatBytes(selectedFiles.reduce((acc, f) => acc + f.size, 0))})`
+                      : 'Seleccione archivos o una carpeta completa desde su equipo'}
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <label
+                      htmlFor="intakeFileInput"
+                      style={{
+                        cursor: 'pointer',
+                        padding: '6px 14px',
+                        background: 'rgba(59, 130, 246, 0.2)',
+                        border: '1px solid rgba(59, 130, 246, 0.4)',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#93c5fd'
+                      }}
+                    >
+                      📄 Seleccionar archivos
+                    </label>
+                    <label
+                      htmlFor="intakeFolderInput"
+                      style={{
+                        cursor: 'pointer',
+                        padding: '6px 14px',
+                        background: 'rgba(245, 158, 11, 0.2)',
+                        border: '1px solid rgba(245, 158, 11, 0.4)',
+                        borderRadius: '6px',
+                        fontSize: '12px',
+                        fontWeight: 600,
+                        color: '#fcd34d'
+                      }}
+                    >
+                      📁 Seleccionar carpeta
+                    </label>
+                  </div>
+
+                  <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                    Formatos: PDF, DOC/DOCX, PNG, JPG, TXT, CSV, XLSX. Descarta archivos ocultos/sistema automáticamente.
+                  </div>
                 </div>
               )}
 
               {/* Título de la Fuente */}
               <div style={{ marginBottom: '14px' }}>
                 <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
-                  Título / Nombre de la Fuente
+                  {selectedFiles.length > 1 ? 'Prefijo de Título (Opcional)' : 'Título / Nombre de la Fuente'}
                 </label>
                 <input
                   type="text"
-                  required
-                  placeholder="Ej: OGUC Título 4 - Seguridad Contra Incendios"
+                  required={registrationMode !== 'file' || selectedFiles.length <= 1}
+                  placeholder={
+                    selectedFiles.length > 1
+                      ? 'Opcional: Si se omite, cada fuente usará su nombre de archivo'
+                      : 'Ej: OGUC Título 4 - Seguridad Contra Incendios'
+                  }
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   style={{ width: '100%', background: 'var(--bg-sidebar)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)', padding: '8px', borderRadius: '6px', fontSize: '13px' }}

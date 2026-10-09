@@ -466,6 +466,25 @@ export interface SourceAssetItem {
   updated_at: string;
 }
 
+export interface BatchSourceFileResultItem {
+  filename: string;
+  status: 'uploaded' | 'ready' | 'already_exists' | 'failed' | string;
+  source_id?: string;
+  title?: string;
+  file_size_bytes: number;
+  mime_type?: string;
+  error_message?: string;
+}
+
+export interface BatchSourceUploadResponse {
+  total_files: number;
+  successful_count: number;
+  duplicated_count: number;
+  failed_count: number;
+  sources: SourceAssetItem[];
+  results: BatchSourceFileResultItem[];
+}
+
 export interface SourceDependenciesInfo {
   source_id: string;
   title: string;

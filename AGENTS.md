@@ -36,6 +36,10 @@ El sistema integra:
    - `ANTHROPIC_API_KEY`, tokens de GitHub y cualquier secreto de API **NUNCA** se deben escribir, pegar, versionar ni imprimir en código fuente, commits, logs, pull requests ni archivos bajo control de versiones.
    - Las claves residen exclusivamente en el `.env` local del desarrollador/entorno, el cual debe permanecer permanentemente excluido en `.gitignore`.
 
+6. **Validación Estricta de Schemas Pydantic (`extra='forbid'`):**
+   - Para prevenir que desalineaciones de nombres de campo pasen inadvertidas (ya que Pydantic v2 ignora por defecto kwargs desconocidos), los schemas de endpoints nuevos deben incorporar `model_config = ConfigDict(extra="forbid")`.
+   - Las suites de tests deben validar explícitamente todos los campos clave de la respuesta (tanto a nivel raíz como en items individuales de listas).
+
 ---
 
 ## 3. Mapa de Servicios Clave
@@ -53,6 +57,6 @@ El sistema integra:
 
 ## 4. Pendientes Conocidos y Próximos Pasos
 
-- **Ingestión de Documentos por Carpeta (Batch Intake Recursivo):** Extender el endpoint `batch-upload` para permitir ingesta masiva estructurada desde árboles de directorios locales o almacenamiento de red, preservando relaciones jerárquicas de paquetes de planos.
+- **[RESUELTO] Ingestión de Documentos por Carpeta (Batch Intake):** Implementado con selector dual de archivos sueltos y carpetas completas vía `webkitdirectory` para documentos de proyecto (`/documents/batch-upload`) y fuentes de entrenamiento (`/intake/sources/batch-upload`), con filtrado cliente de archivos de sistema, streaming eficiente en backend y preservación de rutas relativas jerárquicas en metadatos.
 - **Captura Estructurada de Correcciones Humanas para Fine-Tuning / Active Learning:** Implementar el módulo dedicado de *MLOps & Active Learning* (desacoplado de la Base de Conocimiento) para almacenar retroalimentación de triage, correcciones de bboxes de símbolos y falsos positivos como dataset etiquetado para reentrenamiento de modelos YOLO/SAHI.
 - **Ingestión de Fuentes Normativas Web (Deferida):** Diseñar conectores de adquisición normativas externas con validación formal de gobernanza y control de propiedad intelectual antes de ingresar a la memoria normativa.

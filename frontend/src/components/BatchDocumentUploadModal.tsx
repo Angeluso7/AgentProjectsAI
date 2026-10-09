@@ -20,6 +20,7 @@ interface StagedFile {
   id: string;
   file: File;
   name: string;
+  relativePath?: string;
   size: number;
   typeCategory: 'plan_pdf' | 'raster_image' | 'cad_drawing' | 'technical_doc';
   status: 'pending' | 'uploading' | 'ready' | 'already_exists' | 'error';
@@ -29,6 +30,24 @@ interface StagedFile {
 }
 
 const MAX_FILE_SIZE_BYTES = 100 * 1024 * 1024; // 100 MB
+
+const ALLOWED_EXTENSIONS = [
+  '.pdf', '.png', '.jpg', '.jpeg', '.webp', '.bmp', '.tiff',
+  '.dxf', '.dwg', '.docx', '.xlsx', '.txt', '.csv', '.zip'
+];
+
+const isAllowedFile = (filename: string): boolean => {
+  const lower = filename.toLowerCase();
+  return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext));
+};
+
+const isHiddenOrSystemFile = (filename: string): boolean => {
+  const base = filename.split(/[/\\]/).pop() || filename;
+  if (base.startsWith('.')) return true; // .DS_Store, .gitignore, etc.
+  const lower = base.toLowerCase();
+  if (['thumbs.db', 'desktop.ini', 'ehthumbs.db'].includes(lower)) return true;
+  return false;
+};
 
 const formatFileSize = (bytes: number): string => {
   if (bytes < 1024) return `${bytes} B`;
@@ -59,6 +78,7 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
   const [batchResponse, setBatchResponse] = useState<BatchUploadResponse | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   if (!isOpen) return null;
 
@@ -66,20 +86,40 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
     setValidationError(null);
     const added: StagedFile[] = [];
     let oversizedCount = 0;
+    let ignoredSystemCount = 0;
+    let unsupportedExtCount = 0;
 
     Array.from(newFiles).forEach((file) => {
+      const relPath = (file as any).webkitRelativePath || '';
+      const checkPath = relPath || file.name;
+
+      // Descartar archivos ocultos y de sistema
+      if (isHiddenOrSystemFile(checkPath)) {
+        ignoredSystemCount++;
+        return;
+      }
+
+      // Filtrar extensiones no soportadas
+      if (!isAllowedFile(file.name)) {
+        unsupportedExtCount++;
+        return;
+      }
+
       if (file.size > MAX_FILE_SIZE_BYTES) {
         oversizedCount++;
         return;
       }
       
-      // Evitar duplicar en la lista visual previa
-      const alreadyStaged = stagedFiles.some((f) => f.name === file.name && f.size === file.size);
+      // Evitar duplicar en la lista visual previa considerando relativePath o nombre
+      const alreadyStaged = stagedFiles.some((f) =>
+        (f.relativePath && relPath ? f.relativePath === relPath : f.name === file.name) && f.size === file.size
+      );
       if (!alreadyStaged) {
         added.push({
-          id: `${file.name}-${file.size}-${Date.now()}-${Math.random()}`,
+          id: `${relPath || file.name}-${file.size}-${Date.now()}-${Math.random()}`,
           file,
           name: file.name,
+          relativePath: relPath || undefined,
           size: file.size,
           typeCategory: detectCategory(file.name),
           status: 'pending',
@@ -87,8 +127,18 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
       }
     });
 
+    const msgs: string[] = [];
     if (oversizedCount > 0) {
-      setValidationError(`${oversizedCount} archivo(s) superan el límite máximo permitido de 100 MB.`);
+      msgs.push(`${oversizedCount} archivo(s) superan el límite máximo de 100 MB.`);
+    }
+    if (unsupportedExtCount > 0) {
+      msgs.push(`${unsupportedExtCount} archivo(s) con formato no admitido fueron descartados.`);
+    }
+    if (ignoredSystemCount > 0) {
+      msgs.push(`${ignoredSystemCount} archivo(s) de sistema/ocultos descartados.`);
+    }
+    if (msgs.length > 0) {
+      setValidationError(msgs.join(' '));
     }
 
     setStagedFiles((prev) => [...prev, ...added]);
@@ -164,7 +214,9 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
       // Mapear resultados devueltos a la lista de archivos staged
       setStagedFiles((prev) =>
         prev.map((item) => {
-          const result = response.results.find((r) => r.filename === item.name);
+          const result = response.results.find(
+            (r) => r.filename === item.name || (item.relativePath && (r.filename === item.relativePath || item.relativePath.endsWith(r.filename)))
+          );
           if (!result) return item;
 
           return {
@@ -280,11 +332,10 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-              className={`p-6 border-2 border-dashed rounded-2xl text-center cursor-pointer transition-all ${
+              className={`p-6 border-2 border-dashed rounded-2xl text-center transition-all ${
                 isDragging
                   ? 'border-blue-500 bg-blue-950/30 shadow-inner'
-                  : 'border-slate-700 hover:border-slate-600 bg-slate-950/40 hover:bg-slate-950/60'
+                  : 'border-slate-700 bg-slate-950/40 hover:border-slate-600'
               }`}
             >
               <input
@@ -296,15 +347,50 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
                 className="hidden"
                 disabled={isUploading}
               />
+              <input
+                ref={folderInputRef}
+                type="file"
+                multiple
+                {...({ webkitdirectory: '', directory: '' } as any)}
+                onChange={handleFileInputChange}
+                className="hidden"
+                disabled={isUploading}
+              />
               <UploadCloud className="w-10 h-10 text-blue-400 mx-auto mb-2 opacity-80" />
               <p className="text-sm font-bold text-slate-200">
-                Arrastra y suelta aquí tus archivos o <span className="text-blue-400 underline">haz clic para examinar</span>
+                Arrastra y suelta aquí tus archivos o elige una modalidad:
               </p>
-              <p className="text-xs text-slate-400 mt-1">
+              <div className="flex items-center justify-center gap-3 mt-3">
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fileInputRef.current?.click();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Seleccionar archivos</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={isUploading}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    folderInputRef.current?.click();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-amber-600/20 hover:bg-amber-600/30 text-amber-300 border border-amber-500/30 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <FolderKanban className="w-3.5 h-3.5" />
+                  <span>Seleccionar carpeta</span>
+                </button>
+              </div>
+              <p className="text-xs text-slate-400 mt-3">
                 Admite PDFs (planos multipágina), Imágenes (PNG/JPG), CAD (DXF/DWG) y memorias de cálculo (DOCX/XLSX/TXT).
               </p>
-              <p className="text-[11px] text-slate-500 mt-1.5 font-mono">
-                Máx. 100 MB por archivo — Selección múltiple habilitada
+              <p className="text-[11px] text-slate-500 mt-1 font-mono">
+                Máx. 100 MB por archivo — Descarta archivos ocultos/sistema (.DS_Store, Thumbs.db) automáticamente
               </p>
             </div>
           )}
@@ -344,11 +430,19 @@ export const BatchDocumentUploadModal: React.FC<BatchDocumentUploadModalProps> =
                           <IconComp className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-slate-200 truncate">{sf.name}</p>
+                          <p className="font-semibold text-slate-200 truncate" title={sf.relativePath || sf.name}>
+                            {sf.relativePath || sf.name}
+                          </p>
                           <div className="flex items-center gap-2 text-[10px] text-slate-400 font-mono mt-0.5">
                             <span>{formatFileSize(sf.size)}</span>
                             <span>•</span>
                             <span className="capitalize">{sf.typeCategory.replace('_', ' ')}</span>
+                            {sf.relativePath && (
+                              <>
+                                <span>•</span>
+                                <span className="text-amber-400 font-medium">Carpeta</span>
+                              </>
+                            )}
                             {sf.sheetsCount !== undefined && sf.sheetsCount > 0 && (
                               <>
                                 <span>•</span>
