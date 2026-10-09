@@ -14,6 +14,7 @@ from app.services.symbols.geometric_validator import (
     compute_symbol_crop_bbox,
     compute_occurrence_context_crop_bbox
 )
+from app.core.settings import settings
 from app.core.logging import logger
 
 try:
@@ -36,8 +37,66 @@ class SymbolInventoryService:
     4. Símbolos desconocidos nunca se ocultan por falta de catálogo productivo.
     """
 
-    CROPS_BASE_PATH = os.environ.get("SYMBOL_CROPS_STORAGE_PATH", os.path.join(os.getcwd(), "storage", "crops"))
+    CROPS_BASE_PATH = os.environ.get("SYMBOL_CROPS_STORAGE_PATH", os.path.join(settings.STORAGE_LOCAL_ROOT, "crops"))
     ALGORITHM_VERSION = "v1.0"
+
+    @classmethod
+    def resolve_crop_url(cls, crop_path: Optional[str]) -> Optional[str]:
+        """
+        Convierte una ruta de recorte físico a una URL relativa servible '/data/...'.
+        Verifica existencia en disco. Si no existe o es inválida, retorna None.
+        """
+        if not crop_path or not str(crop_path).strip():
+            return None
+
+        raw_path = str(crop_path).strip()
+        storage_root = os.path.abspath(settings.STORAGE_LOCAL_ROOT)
+
+        # 1. Si ya viene con prefijo /data/
+        norm = raw_path.replace("\\", "/")
+        if norm.startswith("/data/"):
+            rel_sub = norm[len("/data/"):].lstrip("/")
+            disk_path = os.path.join(storage_root, rel_sub)
+            if os.path.exists(disk_path):
+                return f"/data/{rel_sub}"
+            if os.path.exists(raw_path):
+                return norm
+
+        # 2. Si la ruta existe físicamente en disco
+        if os.path.exists(raw_path):
+            abs_crop = os.path.abspath(raw_path)
+            try:
+                rel = os.path.relpath(abs_crop, storage_root).replace("\\", "/")
+                if not rel.startswith(".."):
+                    return f"/data/{rel.lstrip('/')}"
+            except ValueError:
+                pass
+
+            # Si está en storage/crops, comprobar espejo o sincronizar a storage_root/crops
+            storage_dir = os.path.abspath(os.path.join(os.getcwd(), "storage"))
+            try:
+                rel_storage = os.path.relpath(abs_crop, storage_dir).replace("\\", "/")
+                if not rel_storage.startswith(".."):
+                    dest_file = os.path.join(storage_root, rel_storage)
+                    if os.path.exists(dest_file):
+                        return f"/data/{rel_storage.lstrip('/')}"
+                    try:
+                        os.makedirs(os.path.dirname(dest_file), exist_ok=True)
+                        import shutil
+                        shutil.copy2(abs_crop, dest_file)
+                        return f"/data/{rel_storage.lstrip('/')}"
+                    except Exception:
+                        pass
+            except ValueError:
+                pass
+
+        # 3. Comprobar si existe relativo a storage_root
+        cand = os.path.join(storage_root, raw_path.replace("\\", "/").lstrip("/"))
+        if os.path.exists(cand):
+            rel = os.path.relpath(cand, storage_root).replace("\\", "/")
+            return f"/data/{rel.lstrip('/')}"
+
+        return None
 
     @classmethod
     def compute_source_snapshot_hash(cls, db: Session, review_run: ReviewRun) -> str:
@@ -889,6 +948,30 @@ class SymbolInventoryService:
             name = g.canonical_name or code
             desc = cls.simplify_symbol_description(name, g.description or g.technical_function, code)
 
+            # Consultar DetectedSymbol del grupo para recolectar tags y resolver crop representativo
+            group_occurrences = db.query(DetectedSymbol).filter(
+                DetectedSymbol.inventory_group_id == g.id
+            ).all()
+
+            tags_list: List[str] = []
+            for occ in group_occurrences:
+                tag_val = getattr(occ, "detected_tag_or_code", None)
+                if tag_val and str(tag_val).strip() and str(tag_val).strip() not in tags_list:
+                    tags_list.append(str(tag_val).strip())
+
+            # Resolver ocurrencia representativa para lámina y miniatura de símbolo (crop)
+            rep_occ = None
+            if g.representative_occurrence_id:
+                rep_occ = next((o for o in group_occurrences if o.id == g.representative_occurrence_id), None)
+                if not rep_occ:
+                    rep_occ = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first()
+            if not rep_occ and group_occurrences:
+                rep_occ = group_occurrences[0]
+
+            crop_url: Optional[str] = None
+            if rep_occ:
+                crop_url = cls.resolve_crop_url(rep_occ.crop_image_path)
+
             sheet_labels: List[str] = []
             if g.occurrences_by_sheet:
                 for s_id, cnt in sorted(g.occurrences_by_sheet.items()):
@@ -909,10 +992,9 @@ class SymbolInventoryService:
                             if label not in sheet_labels:
                                 sheet_labels.append(label)
 
-            if not sheet_labels and g.total_occurrences > 0 and g.representative_occurrence_id:
-                rep = db.query(DetectedSymbol).filter(DetectedSymbol.id == g.representative_occurrence_id).first()
-                if rep and rep.sheet_id:
-                    s_obj = sheet_map.get(str(rep.sheet_id)) or db.query(DocumentSheet).filter(DocumentSheet.id == rep.sheet_id).first()
+            if not sheet_labels and g.total_occurrences > 0 and rep_occ:
+                if rep_occ.sheet_id:
+                    s_obj = sheet_map.get(str(rep_occ.sheet_id)) or db.query(DocumentSheet).filter(DocumentSheet.id == rep_occ.sheet_id).first()
                     if s_obj:
                         s_code = getattr(s_obj, "sheet_code", None)
                         s_num = getattr(s_obj, "sheet_number", None)
@@ -930,7 +1012,9 @@ class SymbolInventoryService:
                 "found": is_found,
                 "quantity": qty,
                 "sheet_labels": sheet_labels,
-                "sheets_display": ", ".join(sheet_labels) if sheet_labels else ("Ubicación no determinada" if is_found else "-")
+                "sheets_display": ", ".join(sheet_labels) if sheet_labels else ("Ubicación no determinada" if is_found else "-"),
+                "tags": tags_list,
+                "crop_image_url": crop_url
             })
 
             represented_codes.add(code.upper())
@@ -952,7 +1036,9 @@ class SymbolInventoryService:
                     "found": False,
                     "quantity": 0,
                     "sheet_labels": [],
-                    "sheets_display": "-"
+                    "sheets_display": "-",
+                    "tags": [],
+                    "crop_image_url": None
                 })
 
         all_summary = sorted(found_items, key=lambda x: (-x["quantity"], x["symbol_code"])) + missing_items
@@ -966,7 +1052,9 @@ class SymbolInventoryService:
                 "found": row["found"],
                 "quantity": row["quantity"],
                 "sheet_labels": row["sheet_labels"],
-                "sheets_display": row["sheets_display"]
+                "sheets_display": row["sheets_display"],
+                "tags": row.get("tags", []),
+                "crop_image_url": row.get("crop_image_url")
             })
 
         return executive_rows

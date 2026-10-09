@@ -181,6 +181,8 @@ class SymbolExecutiveSummaryItem(BaseModel):
     quantity: int = Field(0, description="Cantidad total de apariciones encontradas")
     sheet_labels: List[str] = Field(default_factory=list, description="Lista de láminas donde aparece el símbolo")
     sheets_display: str = Field("-", description="Texto formateado de páginas/láminas separadas por coma")
+    tags: List[str] = Field(default_factory=list, description="Tags o códigos detectados dentro de las ocurrencias de este símbolo")
+    crop_image_url: Optional[str] = Field(None, description="URL servible de la miniatura de recorte del símbolo")
 
 
 class SymbolInventoryResponse(BaseModel):
