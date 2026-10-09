@@ -1166,6 +1166,8 @@ class IntakeExtractionRepository:
     def promote_rule_document_to_baseline(
         self,
         doc_id: str,
+        discipline_code: Optional[str] = None,
+        topic_code: Optional[str] = None,
         user_id: str = "system"
     ) -> Dict[str, Any]:
         """
@@ -1176,6 +1178,8 @@ class IntakeExtractionRepository:
         - Reglas en 'por_confirmar' o 'eliminado' NO se promueven.
         - Excluye estrictamente elementos tipo 'symbol'/'simbolo'.
         - Crea RuleDefinition, RuleApplicability approved y registros de auditoría.
+        - Soporta disciplina y tópico explícitos; si se omiten, resuelve de forma determinística
+          buscando primero coincidencia exacta de la disciplina y solo cayendo a GENERAL si no existe.
         """
         from app.services.rules.promotion_service import RulePromotionService
         from app.schemas.rule_candidates import PromoteRuleCandidateRequest
@@ -1195,28 +1199,56 @@ class IntakeExtractionRepository:
         if not valid_items:
             raise ValueError("El documento no tiene reglas confirmadas/validadas para promover a Baseline (los símbolos se gestionan en Curación de Símbolos).")
 
-        # Determinar especialidad técnica y tópico para aplicabilidad canónica
-        doc_disc_str = (doc.discipline or "general").upper()
-        norm_disc_code = RulePromotionService.DISCIPLINE_ALIASES.get(doc_disc_str, doc_disc_str)
-        matched_disc = self.db.query(ReviewDiscipline).filter(
-            or_(ReviewDiscipline.code == norm_disc_code, ReviewDiscipline.code == "GENERAL"),
-            ReviewDiscipline.is_active.is_(True)
-        ).first()
+        # 1. Resolución determinística de especialidad técnica (disciplina)
+        matched_disc = None
+        if discipline_code and discipline_code.strip():
+            clean_disc = RulePromotionService.DISCIPLINE_ALIASES.get(discipline_code.strip().upper(), discipline_code.strip().upper())
+            matched_disc = self.db.query(ReviewDiscipline).filter(
+                ReviewDiscipline.code == clean_disc,
+                ReviewDiscipline.is_active.is_(True)
+            ).first()
+            if not matched_disc:
+                raise ValueError(f"Disciplina '{discipline_code}' no encontrada o inactiva en el catálogo de revisión.")
+        else:
+            doc_disc_str = (doc.discipline or "general").upper()
+            norm_disc_code = RulePromotionService.DISCIPLINE_ALIASES.get(doc_disc_str, doc_disc_str)
+            # Primero: coincidencia exacta de la disciplina
+            matched_disc = self.db.query(ReviewDiscipline).filter(
+                ReviewDiscipline.code == norm_disc_code,
+                ReviewDiscipline.is_active.is_(True)
+            ).first()
+            # Segundo: solo si no existe coincidencia exacta, caer al fallback GENERAL
+            if not matched_disc:
+                matched_disc = self.db.query(ReviewDiscipline).filter(
+                    ReviewDiscipline.code == "GENERAL",
+                    ReviewDiscipline.is_active.is_(True)
+                ).first()
+
         disc_code = matched_disc.code if matched_disc else "GENERAL"
 
-        # Buscar tópico correspondiente o transversal compatible
+        # 2. Resolución determinística de punto de revisión (tópico)
         topic = None
-        if matched_disc and matched_disc.code != "GENERAL":
+        if topic_code and topic_code.strip():
+            clean_top = topic_code.strip().upper()
             topic = self.db.query(ReviewTopic).filter(
-                ReviewTopic.discipline_id == matched_disc.id,
+                ReviewTopic.code == clean_top,
                 ReviewTopic.is_active.is_(True)
             ).first()
-        if not topic:
-            topic = self.db.query(ReviewTopic).filter(
-                ReviewTopic.is_transversal.is_(True),
-                ReviewTopic.is_active.is_(True)
-            ).first()
-        topic_code = topic.code if topic else "DOCUMENT_COMPLETENESS"
+            if not topic:
+                raise ValueError(f"Punto de revisión / Tópico '{topic_code}' no encontrado o inactivo.")
+        else:
+            if matched_disc and matched_disc.code != "GENERAL":
+                topic = self.db.query(ReviewTopic).filter(
+                    ReviewTopic.discipline_id == matched_disc.id,
+                    ReviewTopic.is_active.is_(True)
+                ).order_by(ReviewTopic.order_index.asc(), ReviewTopic.id.asc()).first()
+            if not topic:
+                topic = self.db.query(ReviewTopic).filter(
+                    ReviewTopic.is_transversal.is_(True),
+                    ReviewTopic.is_active.is_(True)
+                ).order_by(ReviewTopic.order_index.asc(), ReviewTopic.id.asc()).first()
+
+        final_topic_code = topic.code if topic else "DOCUMENT_COMPLETENESS"
 
         promoted_codes: List[str] = []
         for idx, item in enumerate(valid_items, 1):
@@ -1233,7 +1265,7 @@ class IntakeExtractionRepository:
                 title=item.title,
                 severity="high" if any(w in (item.title + " " + (item.description or "")).lower() for w in ["fuego", "incendio", "evacuacion", "seguridad", "peligro"]) else "medium",
                 discipline_ids=[disc_code],
-                topic_ids=[topic_code],
+                topic_ids=[final_topic_code],
                 execution_phase=6,
                 enabled=True
             )
@@ -1256,17 +1288,141 @@ class IntakeExtractionRepository:
             "promoted_to_baseline_at": datetime.utcnow().isoformat(),
             "promoted_by": user_id,
             "promoted_rules_count": len(promoted_codes),
-            "promoted_codes": promoted_codes
+            "promoted_codes": promoted_codes,
+            "discipline_code": disc_code,
+            "topic_code": final_topic_code
         }
         doc.updated_at = datetime.utcnow()
         self.db.commit()
 
         return {
-            "message": f"Se promovieron exitosamente {len(promoted_codes)} reglas al Baseline QA/QC del Sistema.",
+            "message": f"Se promovieron exitosamente {len(promoted_codes)} reglas al Baseline QA/QC del Sistema bajo {disc_code} / {final_topic_code}.",
             "document_id": doc.id,
             "promoted_count": len(promoted_codes),
             "rule_codes": promoted_codes
         }
+
+    def resync_rule_document_applicability(
+        self,
+        doc_id: str,
+        discipline_code: str,
+        topic_code: str,
+        user_id: str = "system"
+    ) -> Dict[str, Any]:
+        """
+        Re-sincroniza y repara la aplicabilidad (Disciplina y Punto de Revisión / Tópico)
+        de todas las reglas RuleDefinition asociadas a un documento normativo.
+        Operación directa e idempotente sobre RuleDefinition y RuleApplicability.
+        """
+        from app.services.rules.promotion_service import RulePromotionService
+        from app.db.models.decision_memory import ReviewDiscipline, ReviewTopic, RuleDefinition, RuleApplicability
+
+        doc = self.get_rule_document_by_id(doc_id)
+        if not doc:
+            raise ValueError(f"Documento normativo '{doc_id}' no encontrado.")
+
+        # 1. Validar disciplina de destino
+        clean_disc = RulePromotionService.DISCIPLINE_ALIASES.get(discipline_code.strip().upper(), discipline_code.strip().upper())
+        matched_disc = self.db.query(ReviewDiscipline).filter(
+            ReviewDiscipline.code == clean_disc,
+            ReviewDiscipline.is_active.is_(True)
+        ).first()
+        if not matched_disc:
+            raise ValueError(f"Disciplina '{discipline_code}' no encontrada o inactiva en el catálogo de revisión.")
+
+        # 2. Validar tópico / punto de revisión de destino
+        clean_top = topic_code.strip().upper()
+        matched_topic = self.db.query(ReviewTopic).filter(
+            ReviewTopic.code == clean_top,
+            ReviewTopic.is_active.is_(True)
+        ).first()
+        if not matched_topic:
+            raise ValueError(f"Punto de revisión / Tópico '{topic_code}' no encontrado o inactivo.")
+
+        # 3. Buscar todas las RuleDefinition asociadas a este documento
+        rule_defs = self.db.query(RuleDefinition).filter(
+            or_(
+                RuleDefinition.source_document_id == doc_id,
+                RuleDefinition.id.in_(
+                    self.db.query(RuleDocumentItem.promoted_rule_definition_id).filter(
+                        RuleDocumentItem.rule_document_id == doc_id,
+                        RuleDocumentItem.promoted_rule_definition_id.isnot(None)
+                    )
+                )
+            )
+        ).all()
+
+        updated_count = 0
+        for rule_def in rule_defs:
+            rule_def.discipline = matched_disc.code
+            rule_def.rule_scope = "specialty" if matched_disc.code != "GENERAL" else "general"
+            rule_def.updated_at = datetime.utcnow()
+
+            existing_apps = self.db.query(RuleApplicability).filter(
+                RuleApplicability.rule_id == rule_def.id
+            ).all()
+
+            exact_app = next(
+                (a for a in existing_apps if a.discipline_id == matched_disc.id and a.topic_id == matched_topic.id),
+                None
+            )
+
+            if exact_app:
+                exact_app.approval_status = "approved"
+                exact_app.role = "primary"
+                exact_app.reviewer = user_id
+                exact_app.rationale = f"Re-sincronización de aplicabilidad hacia {matched_disc.code}/{matched_topic.code}."
+                exact_app.updated_at = datetime.utcnow()
+                for other_app in existing_apps:
+                    if other_app.id != exact_app.id and other_app.role == "primary":
+                        other_app.role = "secondary"
+            else:
+                if existing_apps:
+                    primary_app = next((a for a in existing_apps if a.role == "primary"), existing_apps[0])
+                    primary_app.discipline_id = matched_disc.id
+                    primary_app.topic_id = matched_topic.id
+                    primary_app.approval_status = "approved"
+                    primary_app.role = "primary"
+                    primary_app.reviewer = user_id
+                    primary_app.rationale = f"Re-sincronización de aplicabilidad hacia {matched_disc.code}/{matched_topic.code}."
+                    primary_app.updated_at = datetime.utcnow()
+                else:
+                    new_app = RuleApplicability(
+                        rule_id=rule_def.id,
+                        discipline_id=matched_disc.id,
+                        topic_id=matched_topic.id,
+                        role="primary",
+                        source="human",
+                        approval_status="approved",
+                        reviewer=user_id,
+                        rationale=f"Re-sincronización de aplicabilidad hacia {matched_disc.code}/{matched_topic.code}.",
+                        confidence=1.0,
+                        created_at=datetime.utcnow(),
+                        updated_at=datetime.utcnow()
+                    )
+                    self.db.add(new_app)
+
+            updated_count += 1
+
+        doc.metadata_info = {
+            **(doc.metadata_info or {}),
+            "last_resync_applicability_at": datetime.utcnow().isoformat(),
+            "last_resync_applicability_by": user_id,
+            "discipline_code": matched_disc.code,
+            "topic_code": matched_topic.code,
+            "resynced_rules_count": updated_count
+        }
+        doc.updated_at = datetime.utcnow()
+        self.db.commit()
+
+        return {
+            "message": f"Se re-sincronizó exitosamente la aplicabilidad de {updated_count} regla(s) a {matched_disc.code} / {matched_topic.code}.",
+            "document_id": doc_id,
+            "updated_rules_count": updated_count,
+            "discipline_code": matched_disc.code,
+            "topic_code": matched_topic.code
+        }
+
 
     # =========================================================
     # HISTORIAL DE BÚSQUEDAS WEB & AUDITORÍA DE INGESTA

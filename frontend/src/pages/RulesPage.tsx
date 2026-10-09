@@ -10,6 +10,7 @@ import {
 import { DocumentContentReviewModal } from '../components/DocumentContentReviewModal';
 import { SymbolCurationStudioModal } from '../components/SymbolCurationStudioModal';
 import { ResearchCasesPanel } from '../components/ResearchCasesPanel';
+import { PromoteDocumentScopeModal } from '../components/PromoteDocumentScopeModal';
 
 export const RulesPage: React.FC = () => {
   const [rules, setRules] = useState<RuleDefinitionItem[]>([]);
@@ -24,6 +25,11 @@ export const RulesPage: React.FC = () => {
   const [showContentModal, setShowContentModal] = useState(false);
   const [selectedStudioDoc, setSelectedStudioDoc] = useState<RuleDocument | null>(null);
   const [showResearchCasesModal, setShowResearchCasesModal] = useState(false);
+
+  // Modal de Selección de Alcance (Disciplina + Tópico) para Promoción / Re-sincronización
+  const [showScopeModal, setShowScopeModal] = useState<boolean>(false);
+  const [scopeModalDoc, setScopeModalDoc] = useState<RuleDocument | null>(null);
+  const [scopeModalMode, setScopeModalMode] = useState<'promote' | 'resync'>('promote');
 
   // Modal de Impacto de Eliminación
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -123,23 +129,24 @@ export const RulesPage: React.FC = () => {
     }
   };
 
-  // BOTÓN REQUERIDO: ACEPTAR EN EL RENGLÓN DEL DOCUMENTO (PROMOVER A BASELINE QA/QC)
-  const handlePromoteDocToBaseline = async (doc: RuleDocument) => {
-    setPromotingDocId(doc.id);
-    setPromotionNotification(null);
-    try {
-      const res = await apiService.promoteRuleDocumentToBaseline(doc.id);
-      setPromotionNotification({
-        message: res.message,
-        count: res.promoted_count,
-      });
-      await loadRuleDocuments();
-      await loadRules();
-    } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Error al promover reglas a Baseline QA/QC.');
-    } finally {
-      setPromotingDocId(null);
-    }
+  // Apertura de Modal de Alcance (Promoción o Re-sincronización)
+  const handleOpenScopeModalForDoc = (doc: RuleDocument, mode: 'promote' | 'resync') => {
+    setScopeModalDoc(doc);
+    setScopeModalMode(mode);
+    setShowScopeModal(true);
+  };
+
+  const handleScopeSuccess = async (res: any) => {
+    setPromotionNotification({
+      message: res.message,
+      count: res.promoted_count ?? res.updated_rules_count ?? 0,
+    });
+    await loadRuleDocuments();
+    await loadRules();
+  };
+
+  const handlePromoteDocToBaseline = (doc: RuleDocument) => {
+    handleOpenScopeModalForDoc(doc, 'promote');
   };
 
   const handleOpenDeleteModal = async (doc: RuleDocument) => {
@@ -449,30 +456,67 @@ export const RulesPage: React.FC = () => {
                           <span>Contenido</span>
                         </button>
 
-                        {/* 2. BOTÓN DE PROMOCIÓN A BASELINE QA/QC */}
-                        <button
-                          className="btn btn-primary"
-                          style={{
-                            padding: '5px 12px',
-                            fontSize: '11px',
-                            backgroundColor: doc.status === 'promovido_baseline' ? '#047857' : '#0284c7',
-                            borderColor: doc.status === 'promovido_baseline' ? '#059669' : '#0369a1',
-                            fontWeight: 700,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '4px'
-                          }}
-                          disabled={promotingDocId === doc.id || doc.rules_count === 0}
-                          onClick={() => handlePromoteDocToBaseline(doc)}
-                          title={
-                            doc.status === 'promovido_baseline'
-                              ? 'Volver a sincronizar reglas validadas hacia Baseline QA/QC'
-                              : 'Promover y activar reglas validadas de este documento hacia Baseline QA/QC del Sistema'
-                          }
-                        >
-                          <SquareCheck size={13} />
-                          <span>{promotingDocId === doc.id ? 'Promoviendo...' : doc.status === 'promovido_baseline' ? 'Sincronizar Baseline' : 'Promover a Baseline QA/QC'}</span>
-                        </button>
+                        {/* 2. BOTONES DE PROMOCIÓN Y RE-SINCRONIZACIÓN A BASELINE QA/QC */}
+                        {doc.status === 'promovido_baseline' ? (
+                          <>
+                            <button
+                              className="btn btn-secondary"
+                              style={{
+                                padding: '5px 10px',
+                                fontSize: '11px',
+                                borderColor: '#10b981',
+                                color: '#34d399',
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onClick={() => handleOpenScopeModalForDoc(doc, 'resync')}
+                              title="Re-sincronizar y reparar la especialidad y punto de revisión de todas las reglas promovidas en el motor"
+                            >
+                              <RefreshCw size={13} />
+                              <span>Re-sinc. Alcance</span>
+                            </button>
+                            <button
+                              className="btn btn-primary"
+                              style={{
+                                padding: '5px 12px',
+                                fontSize: '11px',
+                                backgroundColor: '#047857',
+                                borderColor: '#059669',
+                                fontWeight: 700,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}
+                              onClick={() => handleOpenScopeModalForDoc(doc, 'promote')}
+                              title="Volver a sincronizar reglas validadas hacia Baseline QA/QC con alcance explícito"
+                            >
+                              <SquareCheck size={13} />
+                              <span>Sincronizar Baseline</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            className="btn btn-primary"
+                            style={{
+                              padding: '5px 12px',
+                              fontSize: '11px',
+                              backgroundColor: '#0284c7',
+                              borderColor: '#0369a1',
+                              fontWeight: 700,
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}
+                            disabled={doc.rules_count === 0}
+                            onClick={() => handleOpenScopeModalForDoc(doc, 'promote')}
+                            title="Promover y activar reglas validadas de este documento hacia Baseline QA/QC del Sistema con alcance explícito"
+                          >
+                            <SquareCheck size={13} />
+                            <span>Promover a Baseline QA/QC</span>
+                          </button>
+                        )}
 
                         {/* 3. Eliminar Documento */}
                         <button
@@ -1118,6 +1162,23 @@ export const RulesPage: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal de Selección y Confirmación de Alcance (Disciplina + Tópico) */}
+      {showScopeModal && scopeModalDoc && (
+        <PromoteDocumentScopeModal
+          isOpen={showScopeModal}
+          onClose={() => {
+            setShowScopeModal(false);
+            setScopeModalDoc(null);
+          }}
+          mode={scopeModalMode}
+          documentId={scopeModalDoc.id}
+          documentTitle={scopeModalDoc.title}
+          documentDiscipline={scopeModalDoc.discipline}
+          rulesCount={scopeModalDoc.rules_count || 0}
+          onSuccess={handleScopeSuccess}
+        />
       )}
     </div>
   );
