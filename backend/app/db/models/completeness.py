@@ -35,6 +35,7 @@ class DocumentDeliverable(Base):
     project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     document_id = Column(String(36), ForeignKey("documents.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
     
+    discipline_code = Column(String(50), nullable=True, index=True)
     deliverable_type = Column(String(50), default="plano_general", nullable=False, index=True)
     readiness_status = Column(String(50), default="uploaded", nullable=False, index=True)
     # uploaded, classified, validated, eligible_as_evidence, rejected

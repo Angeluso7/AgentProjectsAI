@@ -23,6 +23,7 @@ class DocumentDeliverableRead(BaseModel):
     id: str
     project_id: str
     document_id: str
+    discipline_code: Optional[str] = None
     deliverable_type: DeliverableTypeEnum
     readiness_status: EvidenceReadinessStatusEnum
     validation_notes: Optional[str] = None
@@ -38,6 +39,7 @@ class DocumentDeliverableRead(BaseModel):
 
 class ClassifyDocumentDeliverableRequest(BaseModel):
     deliverable_type: DeliverableTypeEnum
+    discipline_code: Optional[str] = None
     readiness_status: Optional[EvidenceReadinessStatusEnum] = EvidenceReadinessStatusEnum.CLASSIFIED
     validation_notes: Optional[str] = None
 

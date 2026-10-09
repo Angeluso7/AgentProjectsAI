@@ -1378,7 +1378,7 @@ export const apiService = {
   },
   classifyDocumentDeliverable: async (
     documentId: string,
-    payload: { deliverable_type: string; readiness_status?: string; validation_notes?: string }
+    payload: { deliverable_type: string; discipline_code?: string; readiness_status?: string; validation_notes?: string }
   ): Promise<any> => {
     const res = await apiClient.post(`/completeness/documents/${documentId}/classify`, payload);
     return res.data;
@@ -1895,6 +1895,22 @@ export const apiService = {
   listReviewRuns: async (projectId: string): Promise<import('../types').ReviewRunDetailResponse[]> => {
     const res = await apiClient.get<import('../types').ReviewRunDetailResponse[]>('/review/runs', {
       params: { project_id: projectId }
+    });
+    return res.data;
+  },
+
+  deleteReviewRun: async (runId: string): Promise<{ message: string; deleted_run_id: string }> => {
+    const res = await apiClient.delete<{ message: string; deleted_run_id: string }>(`/review/runs/${runId}`);
+    return res.data;
+  },
+
+  clearReviewRuns: async (projectId: string, disciplineCode?: string, topicCode?: string): Promise<{ message: string; deleted_count: number }> => {
+    const res = await apiClient.delete<{ message: string; deleted_count: number }>('/review/runs', {
+      params: {
+        project_id: projectId,
+        discipline_code: disciplineCode,
+        topic_code: topicCode
+      }
     });
     return res.data;
   },
