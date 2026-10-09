@@ -77,12 +77,25 @@ def test_generate_executive_summary(db_session: Session):
         occurrences_by_sheet={"sheet-uuid-1": 1}
     )
 
-    db_session.add_all([g1, g2])
+    # Grupo 3: Símbolo detectado pero sin lámina identificable (total 2)
+    g3 = SymbolInventoryGroup(
+        id="group-3",
+        review_run_id=run.id,
+        grouping_key="unlocated_group",
+        grouping_method="geometric_cluster",
+        display_code="V-002",
+        canonical_name="Ball Valve",
+        catalog_status="recognized_production",
+        total_occurrences=2,
+        occurrences_by_sheet={}
+    )
+
+    db_session.add_all([g1, g2, g3])
     db_session.commit()
 
-    summary_rows = SymbolInventoryService.generate_executive_summary(db_session, run, [g1, g2])
+    summary_rows = SymbolInventoryService.generate_executive_summary(db_session, run, [g1, g2, g3])
 
-    assert len(summary_rows) >= 2
+    assert len(summary_rows) >= 3
     # El primer item debe ser el de mayor frecuencia (V-001, cantidad 3)
     row_v1 = summary_rows[0]
     assert row_v1["item_index"] == 1
@@ -91,6 +104,11 @@ def test_generate_executive_summary(db_session: Session):
     assert row_v1["quantity"] == 3
     assert "Lámina 01" in row_v1["sheets_display"]
     assert "Lámina 02" in row_v1["sheets_display"]
+
+    row_v2 = [r for r in summary_rows if r["symbol_code"] == "V-002"][0]
+    assert row_v2["found"] is True
+    assert row_v2["quantity"] == 2
+    assert row_v2["sheets_display"] == "Ubicación no determinada"
 
     # Debe haber items faltantes/esperados con found=False y quantity=0
     missing = [r for r in summary_rows if r["found"] is False]

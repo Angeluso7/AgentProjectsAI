@@ -824,6 +824,12 @@ class SymbolInventoryService:
         Produce el Resumen Gráfico de Simbología por Punto de Revisión con las columnas:
         ITEM | Símbolo | Descripción | Encontrado (Sí/No) | Cantidad | Página/Lámina
         """
+        # NOTA DE GOBERNANZA TÉCNICA (MVP):
+        # Esta lista estándar de 7 familias de válvulas (compuerta, globo, check, bola, mariposa,
+        # alivio y control) es un supuesto temporal de referencia general para la visualización del MVP,
+        # NO un catálogo de símbolos esperados cerrado o específico del proyecto ni de la norma aplicable.
+        # En etapas posteriores, la lista esperada debe derivarse dinámicamente de la disciplina, el
+        # catálogo canónico del proyecto o las especificaciones técnicas aplicables.
         standard_expected = [
             {
                 "code": "PIP-VALVE-GATE",
@@ -924,7 +930,7 @@ class SymbolInventoryService:
                 "found": is_found,
                 "quantity": qty,
                 "sheet_labels": sheet_labels,
-                "sheets_display": ", ".join(sheet_labels) if sheet_labels else ("Lámina 01" if is_found else "-")
+                "sheets_display": ", ".join(sheet_labels) if sheet_labels else ("Ubicación no determinada" if is_found else "-")
             })
 
             represented_codes.add(code.upper())

@@ -240,7 +240,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
         found: (g.total_occurrences || 0) > 0,
         quantity: g.total_occurrences || 0,
         sheet_labels: labels,
-        sheets_display: labels.length > 0 ? labels.join(', ') : ((g.total_occurrences || 0) > 0 ? 'Lámina 01' : '-')
+        sheets_display: labels.length > 0 ? labels.join(', ') : ((g.total_occurrences || 0) > 0 ? 'Ubicación no determinada' : '-')
       };
     });
   }, [inventory.executive_summary, groups]);
