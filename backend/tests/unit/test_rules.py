@@ -199,15 +199,42 @@ def test_rule_engine_full_sheet_evaluation(db_session):
     db_session.commit()
 
     engine = RuleEngine(db_session)
-    findings = engine.evaluate_sheet(sheet.id)
-    
-    # Debe haber al menos 1 finding (Door count mismatch de 2 vs 3)
-    assert len(findings) >= 1
-    mismatch_finding = next((f for f in findings if f.rule_code == "RULE_DOOR_COUNT_MATCH_V1"), None)
-    assert mismatch_finding is not None
-    assert mismatch_finding.status == "open"
-    assert mismatch_finding.delta == -1
-    assert mismatch_finding.review_task_id is not None
+    # Registrar explícitamente DoorCountMatchRule para esta prueba puntual
+    door_rule = DoorCountMatchRule()
+    RuleRegistry._rules[door_rule.code] = door_rule
+    r_def = db_session.query(RuleDefinition).filter(RuleDefinition.code == door_rule.code).first()
+    if not r_def:
+        r_def = RuleDefinition(
+            id=str(uuid.uuid4()),
+            code=door_rule.code,
+            name=door_rule.name,
+            category=door_rule.category,
+            discipline="architecture",
+            severity_default="high",
+            description=door_rule.description,
+            rule_logic_type=door_rule.rule_logic_type,
+            version=door_rule.version,
+            enabled=True,
+            is_active=True
+        )
+        db_session.add(r_def)
+        db_session.commit()
+    elif not r_def.is_active:
+        r_def.is_active = True
+        r_def.enabled = True
+        db_session.commit()
+
+    try:
+        findings = engine.evaluate_sheet(sheet.id)
+        # Debe haber al menos 1 finding (Door count mismatch de 2 vs 3)
+        assert len(findings) >= 1
+        mismatch_finding = next((f for f in findings if f.rule_code == "RULE_DOOR_COUNT_MATCH_V1"), None)
+        assert mismatch_finding is not None
+        assert mismatch_finding.status == "open"
+        assert mismatch_finding.delta == -1
+        assert mismatch_finding.review_task_id is not None
+    finally:
+        RuleRegistry.register_default_rules()
 
 def test_api_async_rules_and_resolution(client, db_session):
     proj = Project(id=str(uuid.uuid4()), name="Mall Centro", code="MALL-01")

@@ -38,20 +38,13 @@ class RuleRegistry:
     @classmethod
     def register_default_rules(cls) -> None:
         default_instances = [
-            DoorCountMatchRule(),
-            WindowCountMatchRule(),
-            TitleBlockRequiredFieldsRule(),
-            TitleBlockScaleValidRule(),
-            RequiredTablesRule(),
-            NormativeMinDoorWidthRule(),
             SymUnknown001Rule(),
             SymAmbiguous001Rule(),
             SymLegendConsistency001Rule(),
             SymTagMissing001Rule(),
             GenDoc001Rule()
         ]
-        for r in default_instances:
-            cls._rules[r.code] = r
+        cls._rules = {r.code: r for r in default_instances}
 
     @classmethod
     def get_rules(cls) -> List[BaseRule]:

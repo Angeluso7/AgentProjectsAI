@@ -3,9 +3,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models.decision_memory import RuleDefinition
+from app.db.models.decision_memory import RuleDefinition, RuleExecution, RuleFinding
 from app.schemas.qa_rule import (
-    RuleDefinitionRead, RuleFindingRead, RuleEvaluationSummaryResponse
+    RuleDefinitionRead, RuleFindingRead, RuleEvaluationSummaryResponse,
+    UpdateRuleStatusRequest, DeleteRuleResponse
 )
 from app.schemas.operations import AsyncJobAcceptedResponse
 from app.schemas.intake_extractions import (
@@ -320,3 +321,65 @@ def get_rule_detail(rule_code: str, db: Session = Depends(get_db)):
     if not rule:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Regla '{rule_code}' no encontrada.")
     return rule
+
+
+@router.patch("/{rule_code}", response_model=RuleDefinitionRead)
+def update_rule_status(
+    rule_code: str,
+    payload: UpdateRuleStatusRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Actualiza el estado de activación de una regla QA/QC.
+    Sincroniza SIEMPRE 'enabled' e 'is_active' al mismo valor booleano recibido.
+    """
+    rule = db.query(RuleDefinition).filter(RuleDefinition.code == rule_code).first()
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Regla '{rule_code}' no encontrada.")
+    rule.enabled = payload.enabled
+    rule.is_active = payload.enabled
+    db.commit()
+    db.refresh(rule)
+    return rule
+
+
+@router.delete("/{rule_code}", response_model=DeleteRuleResponse, status_code=status.HTTP_200_OK)
+def delete_rule(
+    rule_code: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Elimina una regla determinística del Baseline QA/QC.
+    Si la regla tiene ejecuciones o hallazgos históricos asociados, no se borra físicamente
+    para preservar la integridad y trazabilidad; en su lugar, se desactiva permanentemente
+    (enabled=false, is_active=false) y se responde HTTP 409 Conflict.
+    Si no tiene dependencias históricas, se elimina físicamente de la base de datos (HTTP 200).
+    """
+    rule = db.query(RuleDefinition).filter(RuleDefinition.code == rule_code).first()
+    if not rule:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Regla '{rule_code}' no encontrada.")
+
+    has_executions = db.query(RuleExecution).filter(RuleExecution.rule_id == rule.id).first() is not None
+    has_findings = db.query(RuleFinding).filter(
+        (RuleFinding.rule_id == rule.id) | (RuleFinding.rule_code == rule.code)
+    ).first() is not None
+
+    if has_executions or has_findings:
+        rule.enabled = False
+        rule.is_active = False
+        db.commit()
+        db.refresh(rule)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"La regla '{rule_code}' tiene ejecuciones o hallazgos históricos asociados; no puede borrarse físicamente y ha sido desactivada en su lugar."
+        )
+
+    db.delete(rule)
+    db.commit()
+    return DeleteRuleResponse(
+        message=f"Regla '{rule_code}' eliminada físicamente de la base de datos.",
+        code=rule_code,
+        deleted=True,
+        deactivated=False
+    )
+

@@ -5,7 +5,7 @@ import {
   ShieldAlert, Sparkles, BookOpen, Layers, Check, Trash2,
   FolderOpen, Plus, Tag, RefreshCw, FileText, CheckCircle2,
   AlertCircle, Table as TableIcon, X, ArrowUpRight, ShieldCheck,
-  SquareCheck, ExternalLink, Award, Loader2
+  SquareCheck, ExternalLink, Award, Loader2, Power
 } from 'lucide-react';
 import { DocumentContentReviewModal } from '../components/DocumentContentReviewModal';
 import { SymbolCurationStudioModal } from '../components/SymbolCurationStudioModal';
@@ -33,6 +33,13 @@ export const RulesPage: React.FC = () => {
   const [deletePolicy, setDeletePolicy] = useState<'keep_baseline_source_removed' | 'retire_rules'>('keep_baseline_source_removed');
   const [deletingInProgress, setDeletingInProgress] = useState(false);
 
+  // Gestión y Eliminación de Reglas Baseline
+  const [togglingRuleCode, setTogglingRuleCode] = useState<string | null>(null);
+  const [showDeleteRuleModal, setShowDeleteRuleModal] = useState(false);
+  const [deletingRule, setDeletingRule] = useState<RuleDefinitionItem | null>(null);
+  const [deletingRuleInProgress, setDeletingRuleInProgress] = useState(false);
+  const [ruleActionFeedback, setRuleActionFeedback] = useState<{ message: string; type: 'success' | 'warning' | 'error' } | null>(null);
+
   useEffect(() => {
     loadRules();
     loadRuleDocuments();
@@ -47,6 +54,60 @@ export const RulesPage: React.FC = () => {
       console.error(e);
     } finally {
       setLoadingRules(false);
+    }
+  };
+
+  const handleToggleRule = async (ruleCode: string, currentEnabled: boolean) => {
+    try {
+      setTogglingRuleCode(ruleCode);
+      setRuleActionFeedback(null);
+      await apiService.toggleRuleEnabled(ruleCode, !currentEnabled);
+      setRuleActionFeedback({
+        message: `Regla ${ruleCode} ${!currentEnabled ? 'activada' : 'desactivada'} exitosamente.`,
+        type: 'success'
+      });
+      await loadRules();
+    } catch (err: any) {
+      console.error('Error alternando estado de la regla:', err);
+      setRuleActionFeedback({
+        message: `Error al ${!currentEnabled ? 'activar' : 'desactivar'} la regla ${ruleCode}.`,
+        type: 'error'
+      });
+    } finally {
+      setTogglingRuleCode(null);
+    }
+  };
+
+  const handleConfirmDeleteRule = async () => {
+    if (!deletingRule) return;
+    try {
+      setDeletingRuleInProgress(true);
+      const res = await apiService.deleteRule(deletingRule.code);
+      setRuleActionFeedback({
+        message: res.message || `Regla ${deletingRule.code} eliminada exitosamente.`,
+        type: 'success'
+      });
+      setShowDeleteRuleModal(false);
+      setDeletingRule(null);
+      await loadRules();
+    } catch (err: any) {
+      console.error('Error eliminando regla:', err);
+      if (err.response?.status === 409) {
+        setRuleActionFeedback({
+          message: err.response.data?.detail || `La regla ${deletingRule.code} tiene histórico; fue desactivada en su lugar.`,
+          type: 'warning'
+        });
+        setShowDeleteRuleModal(false);
+        setDeletingRule(null);
+        await loadRules();
+      } else {
+        setRuleActionFeedback({
+          message: err.response?.data?.detail || `Error al eliminar la regla ${deletingRule.code}.`,
+          type: 'error'
+        });
+      }
+    } finally {
+      setDeletingRuleInProgress(false);
     }
   };
 
@@ -464,8 +525,44 @@ export const RulesPage: React.FC = () => {
           </button>
         </div>
 
+        {ruleActionFeedback && (
+          <div style={{
+            padding: '10px 16px',
+            marginBottom: '16px',
+            borderRadius: '8px',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            backgroundColor:
+              ruleActionFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.15)' :
+              ruleActionFeedback.type === 'warning' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+            border: `1px solid ${
+              ruleActionFeedback.type === 'success' ? 'rgba(16, 185, 129, 0.4)' :
+              ruleActionFeedback.type === 'warning' ? 'rgba(245, 158, 11, 0.4)' : 'rgba(239, 68, 68, 0.4)'
+            }`,
+            color:
+              ruleActionFeedback.type === 'success' ? '#6ee7b7' :
+              ruleActionFeedback.type === 'warning' ? '#fcd34d' : '#fca5a5',
+            fontSize: '13px'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {ruleActionFeedback.type === 'success' && <CheckCircle2 size={16} />}
+              {ruleActionFeedback.type === 'warning' && <AlertCircle size={16} />}
+              {ruleActionFeedback.type === 'error' && <AlertCircle size={16} />}
+              <span>{ruleActionFeedback.message}</span>
+            </div>
+            <button
+              onClick={() => setRuleActionFeedback(null)}
+              style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', padding: '2px' }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
           {rules.map((r) => {
+            const isEnabled = r.enabled !== false && r.is_active !== false;
             const isPromoted = Boolean(
               r.source_document_id ||
               r.source_document_title ||
@@ -482,11 +579,12 @@ export const RulesPage: React.FC = () => {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'flex-start',
-                  borderLeft: isPromoted ? '4px solid #10b981' : '4px solid var(--primary)',
+                  borderLeft: !isEnabled ? '4px solid #64748b' : (isPromoted ? '4px solid #10b981' : '4px solid var(--primary)'),
                   backgroundColor: 'var(--bg-card)',
+                  opacity: isEnabled ? 1 : 0.75,
                 }}
               >
-                <div>
+                <div style={{ flex: 1, paddingRight: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                     <span className="font-mono" style={{ fontWeight: 700, color: isPromoted ? '#34d399' : 'var(--primary)', fontSize: '14px' }}>
                       {r.code}
@@ -517,8 +615,66 @@ export const RulesPage: React.FC = () => {
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="badge badge-success">Activa en Motor</span>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px', minWidth: '170px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {isEnabled ? (
+                      <span className="badge badge-success" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <CheckCircle2 size={12} />
+                        Activa en Motor
+                      </span>
+                    ) : (
+                      <span className="badge badge-neutral" style={{ display: 'flex', alignItems: 'center', gap: '4px', opacity: 0.8 }}>
+                        <X size={12} />
+                        Desactivada
+                      </span>
+                    )}
+                  </div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => handleToggleRule(r.code, isEnabled)}
+                      disabled={togglingRuleCode === r.code}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        borderColor: isEnabled ? '#f59e0b' : '#10b981',
+                        color: isEnabled ? '#fbbf24' : '#34d399'
+                      }}
+                      title={isEnabled ? "Desactivar esta regla del Baseline QA/QC" : "Reactivar esta regla en el Baseline QA/QC"}
+                    >
+                      {togglingRuleCode === r.code ? (
+                        <Loader2 size={12} className="animate-spin" />
+                      ) : (
+                        <Power size={12} />
+                      )}
+                      <span>{isEnabled ? 'Desactivar' : 'Reactivar'}</span>
+                    </button>
+
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setDeletingRule(r);
+                        setShowDeleteRuleModal(true);
+                      }}
+                      style={{
+                        padding: '4px 8px',
+                        fontSize: '11px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '4px',
+                        borderColor: '#ef4444',
+                        color: '#f87171'
+                      }}
+                      title="Eliminar regla del Baseline QA/QC"
+                    >
+                      <Trash2 size={12} />
+                      <span>Eliminar</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             );
@@ -817,6 +973,145 @@ export const RulesPage: React.FC = () => {
                   <>
                     <Trash2 size={14} />
                     <span>Eliminar Documento</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE REGLA BASELINE */}
+      {showDeleteRuleModal && deletingRule && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.75)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'var(--surface-color, #1e293b)',
+            border: '1px solid var(--border-color, #334155)',
+            borderRadius: '12px',
+            width: '100%',
+            maxWidth: '520px',
+            overflow: 'hidden',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)'
+          }}>
+            {/* Encabezado */}
+            <div style={{
+              padding: '16px 20px',
+              borderBottom: '1px solid var(--border-color, #334155)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              backgroundColor: 'rgba(239, 68, 68, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <Trash2 size={20} style={{ color: '#ef4444' }} />
+                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: '#f8fafc' }}>
+                  Eliminar Regla del Baseline QA/QC
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowDeleteRuleModal(false);
+                  setDeletingRule(null);
+                }}
+                disabled={deletingRuleInProgress}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted, #94a3b8)',
+                  cursor: 'pointer',
+                  padding: '4px'
+                }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Cuerpo */}
+            <div style={{ padding: '20px' }}>
+              <div style={{ marginBottom: '16px' }}>
+                <span className="font-mono" style={{ fontSize: '13px', color: '#a855f7', fontWeight: 700 }}>
+                  {deletingRule.code}
+                </span>
+                <p style={{ margin: '4px 0 6px 0', fontSize: '15px', color: '#f1f5f9', fontWeight: 600 }}>
+                  {deletingRule.name}
+                </p>
+                <p style={{ margin: 0, fontSize: '12px', color: '#94a3b8' }}>
+                  Disciplina: <span style={{ color: '#38bdf8' }}>{deletingRule.discipline}</span> | Categoría: {deletingRule.category}
+                </p>
+              </div>
+
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                border: '1px solid rgba(239, 68, 68, 0.25)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                fontSize: '13px',
+                color: '#fca5a5',
+                lineHeight: '1.5'
+              }}>
+                <strong>Atención:</strong> Si esta regla no tiene histórico se eliminará físicamente de la base de datos. Si cuenta con ejecuciones o hallazgos previos, el sistema la desactivará permanentemente de forma segura para preservar la trazabilidad de auditoría.
+              </div>
+            </div>
+
+            {/* Acciones */}
+            <div style={{
+              padding: '14px 20px',
+              borderTop: '1px solid var(--border-color, #334155)',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '10px',
+              backgroundColor: 'rgba(15, 23, 42, 0.4)'
+            }}>
+              <button
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowDeleteRuleModal(false);
+                  setDeletingRule(null);
+                }}
+                disabled={deletingRuleInProgress}
+                style={{ padding: '6px 14px', fontSize: '13px' }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDeleteRule}
+                disabled={deletingRuleInProgress}
+                style={{
+                  backgroundColor: '#dc2626',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '6px',
+                  padding: '6px 16px',
+                  fontSize: '13px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                  cursor: deletingRuleInProgress ? 'not-allowed' : 'pointer',
+                  opacity: deletingRuleInProgress ? 0.7 : 1
+                }}
+              >
+                {deletingRuleInProgress ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={14} />
+                    <span>Confirmar Eliminación</span>
                   </>
                 )}
               </button>

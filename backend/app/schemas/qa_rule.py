@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 
 class RuleDefinitionRead(BaseModel):
     id: str
@@ -102,3 +102,19 @@ class RuleEvaluationSummaryResponse(BaseModel):
     insufficient_evidence_count: int
     findings_generated: int
     by_severity: Dict[str, int]
+
+
+class UpdateRuleStatusRequest(BaseModel):
+    enabled: bool = Field(..., description="Estado de activación de la regla (sincroniza enabled e is_active)")
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class DeleteRuleResponse(BaseModel):
+    message: str
+    code: str
+    deleted: bool = False
+    deactivated: bool = False
+
+    model_config = ConfigDict(extra="forbid")
+
