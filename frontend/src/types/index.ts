@@ -2957,6 +2957,8 @@ export interface SymbolExecutiveSummaryItem {
   quantity: number;
   sheet_labels: string[];
   sheets_display: string;
+  tags?: string[];
+  crop_image_url?: string | null;
 }
 
 export interface SymbolInventoryResponse {

@@ -40,6 +40,10 @@ app.add_middleware(
 if os.path.exists(settings.STORAGE_LOCAL_ROOT):
     app.mount("/data", StaticFiles(directory=settings.STORAGE_LOCAL_ROOT), name="data")
 
+storage_root = os.path.join(os.getcwd(), "storage")
+if os.path.exists(storage_root):
+    app.mount("/storage", StaticFiles(directory=storage_root), name="storage")
+
 # Incluir Rutas de API v1
 app.include_router(api_router, prefix=settings.API_V1_PREFIX)
 

@@ -238,7 +238,9 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
         found: (g.total_occurrences || 0) > 0,
         quantity: g.total_occurrences || 0,
         sheet_labels: labels,
-        sheets_display: labels.length > 0 ? labels.join(', ') : ((g.total_occurrences || 0) > 0 ? 'Ubicación no determinada' : '-')
+        sheets_display: labels.length > 0 ? labels.join(', ') : ((g.total_occurrences || 0) > 0 ? 'Ubicación no determinada' : '-'),
+        tags: (g as any).tags || [],
+        crop_image_url: (g as any).representative_crop_path || null
       };
     });
   }, [inventory.executive_summary, groups]);
@@ -1185,7 +1187,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                                 Tabla Resumen Gráfico de Simbología ({executiveRows.length} ítems)
                               </h4>
                               <span className="text-[11px] text-slate-500">
-                                ITEM | Símbolo | Descripción | Encontrado | Cantidad | Lámina
+                                ITEM | Símbolo | Descripción | Tags / Datos | Encontrado | Cantidad | Lámina
                               </span>
                             </div>
 
@@ -1197,6 +1199,7 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                                       <th className="px-3.5 py-2.5 text-center w-12">ITEM</th>
                                       <th className="px-3.5 py-2.5">Símbolo</th>
                                       <th className="px-3.5 py-2.5">Descripción</th>
+                                      <th className="px-3.5 py-2.5">Tags / Datos Asociados</th>
                                       <th className="px-3.5 py-2.5 text-center">Encontrado (Sí/No)</th>
                                       <th className="px-3.5 py-2.5 text-right">Cantidad</th>
                                       <th className="px-3.5 py-2.5">Página/Lámina</th>
@@ -1213,13 +1216,53 @@ export const ReviewRunDetailModal: React.FC<ReviewRunDetailModalProps> = ({
                                         <td className="px-3.5 py-2.5 text-center font-mono font-bold text-slate-500">
                                           {row.item_index}
                                         </td>
-                                        <td className="px-3.5 py-2.5 font-mono font-bold text-slate-900 dark:text-white">
-                                          <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300">
-                                            {row.symbol_code}
-                                          </span>
+                                        <td className="px-3.5 py-2.5 font-mono text-slate-900 dark:text-white">
+                                          <div className="flex items-center gap-2.5">
+                                            {row.crop_image_url ? (
+                                              <div className="w-9 h-9 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 p-0.5 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+                                                <img
+                                                  src={row.crop_image_url}
+                                                  alt={row.symbol_code}
+                                                  className="w-full h-full object-contain"
+                                                  onError={(e) => {
+                                                    const img = e.currentTarget;
+                                                    img.style.display = 'none';
+                                                    const fallback = img.nextElementSibling as HTMLElement;
+                                                    if (fallback) fallback.style.display = 'flex';
+                                                  }}
+                                                />
+                                                <div style={{ display: 'none' }} className="fallback-placeholder w-full h-full items-center justify-center text-slate-400">
+                                                  <Shapes className="w-4 h-4" />
+                                                </div>
+                                              </div>
+                                            ) : (
+                                              <div className="w-9 h-9 rounded-md border border-dashed border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900/60 flex items-center justify-center text-slate-400 shrink-0">
+                                                <Shapes className="w-4 h-4" />
+                                              </div>
+                                            )}
+                                            <span className="px-2 py-0.5 rounded font-bold bg-slate-100 dark:bg-slate-800 text-blue-700 dark:text-blue-300">
+                                              {row.symbol_code}
+                                            </span>
+                                          </div>
                                         </td>
                                         <td className="px-3.5 py-2.5 text-slate-700 dark:text-slate-200 max-w-md">
                                           {row.description}
+                                        </td>
+                                        <td className="px-3.5 py-2.5">
+                                          {row.tags && row.tags.length > 0 ? (
+                                            <div className="flex flex-wrap gap-1 max-w-xs">
+                                              {row.tags.map((tag, tIdx) => (
+                                                <span
+                                                  key={tIdx}
+                                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-mono font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700"
+                                                >
+                                                  {tag}
+                                                </span>
+                                              ))}
+                                            </div>
+                                          ) : (
+                                            <span className="text-slate-400 font-mono">-</span>
+                                          )}
                                         </td>
                                         <td className="px-3.5 py-2.5 text-center">
                                           {row.found ? (

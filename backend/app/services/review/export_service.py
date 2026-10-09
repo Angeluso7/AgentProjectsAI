@@ -168,6 +168,12 @@ class ReviewExportService:
                 o["catalog_status"] = g.catalog_status
             all_occurrences.extend(occ_list)
 
+            group_tags: List[str] = []
+            for o in occ_list:
+                t_val = o.get("detected_tag_or_code")
+                if t_val and str(t_val).strip() and str(t_val).strip() not in group_tags:
+                    group_tags.append(str(t_val).strip())
+
             groups_summary.append({
                 "id": g.id,
                 "display_code": g.display_code,
@@ -181,7 +187,8 @@ class ReviewExportService:
                 "occurrences_by_document": g.occurrences_by_document or {},
                 "occurrences_by_sheet": g.occurrences_by_sheet or {},
                 "requires_human_review": g.requires_human_review,
-                "explanation": g.explanation
+                "explanation": g.explanation,
+                "tags": group_tags
             })
 
         run_data["symbol_inventory"] = {
@@ -651,6 +658,15 @@ class ReviewExportService:
                 info_line = f"Total: {g.get('total_occurrences', 0)} | Por Documento: {by_doc_str or '-'} | Norma: {g.get('standard_reference') or '-'}"
                 for i_line in SimplePdfCanvas.wrap_text(info_line, max_chars_per_line=95):
                     pdf.draw_text(i_line, 55, y, font_size=7.5, color=(0.3, 0.3, 0.3))
+                    y -= 10
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
+
+                tags = g.get("tags", [])
+                tags_str = f"Tags detectados: {', '.join(tags) if tags else '-'}"
+                for t_line in SimplePdfCanvas.wrap_text(tags_str, max_chars_per_line=95):
+                    pdf.draw_text(t_line, 55, y, font_size=7.5, color=(0.2, 0.35, 0.5))
                     y -= 10
                     if y < 70:
                         pdf.new_page()
