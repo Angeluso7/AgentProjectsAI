@@ -149,13 +149,8 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
       await apiService.deleteReviewRun(runToDelete.id);
       setHistoryRuns(prev => prev.filter(r => r.id !== runToDelete.id));
       if (activeRun?.id === runToDelete.id) {
-        const remaining = historyRuns.filter(r => r.id !== runToDelete.id);
-        if (remaining.length > 0) {
-          selectActiveRun(remaining[0]);
-        } else {
-          setActiveRun(null);
-          localStorage.removeItem('last_active_review_run_id');
-        }
+        setActiveRun(null);
+        localStorage.removeItem('last_active_review_run_id');
       }
       setHistoryFeedbackMessage(`Corrida "${runToDelete.run_name}" eliminada.`);
       setTimeout(() => setHistoryFeedbackMessage(null), 4000);
@@ -984,10 +979,21 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
 
               {/* Evaluación de Reglas y Not Evaluable Estructurado */}
               <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm space-y-4">
-                <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                  <ShieldCheck className="w-5 h-5 text-blue-600" />
-                  Evaluaciones Individuales de Reglas ({activeRun.executions.length})
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-blue-600" />
+                    Evaluaciones Individuales de Reglas ({activeRun.executions.length})
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setRunToDelete(activeRun)}
+                    className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition-colors flex items-center gap-1.5 text-xs font-semibold"
+                    title="Eliminar esta corrida del historial"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span className="hidden sm:inline">Eliminar corrida</span>
+                  </button>
+                </div>
 
                 <div className="divide-y divide-slate-100 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden">
                   {activeRun.executions.map((ex) => {
