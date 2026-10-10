@@ -32,7 +32,7 @@ class Translation(Base):
     translated_fields = Column(JSON, default=dict, nullable=False)
     
     provider = Column(String(50), default="gemini", nullable=False)
-    model = Column(String(50), default="gemini-1.5-pro", nullable=False)
+    model = Column(String(50), default="gemini-3.8-flash", nullable=False)
     prompt_version = Column(String(20), default="v1.0", nullable=False)
     
     # Estados: pending | processing | completed | failed | stale

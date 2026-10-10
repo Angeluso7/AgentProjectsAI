@@ -59,11 +59,28 @@ def test_claude_client_mock_successful_completion():
     assert result == "Respuesta técnica estructurada de prueba."
     mock_sdk.messages.create.assert_called_once()
     call_kwargs = mock_sdk.messages.create.call_args.kwargs
-    assert call_kwargs["model"] == "claude-3-5-sonnet-20241022"  # Resuelto desde alias
+    assert call_kwargs["model"] == "claude-sonnet-5-5"  # Resuelto directamente sin degradar a snapshot deprecado
     assert call_kwargs["max_tokens"] == 1000
     assert call_kwargs["system"] == "Eres un auditor."
     assert call_kwargs["messages"] == [{"role": "user", "content": "¿Cuál es el ancho de pasillo?"}]
     assert call_kwargs["extra_body"] == {"temperature": 0.2}
+
+
+def test_claude_client_model_resolution_and_legacy_aliases():
+    """Confirma que claude-sonnet-5-5 se envía tal cual y los alias legacy se redirigen a claude-sonnet-5-5."""
+    # 1. claude-sonnet-5-5 se preserva directamente
+    client_current = ClaudeClient(api_key="sk-ant-test", model="claude-sonnet-5-5")
+    assert client_current._resolve_model() == "claude-sonnet-5-5"
+    assert client_current._resolve_model() != "claude-3-5-sonnet-20241022"
+
+    # 2. Alias deprecados se redirigen a claude-sonnet-5-5
+    for legacy_alias in ["claude-3-5-sonnet", "claude-3.5-sonnet", "claude-3-7-sonnet"]:
+        client_legacy = ClaudeClient(api_key="sk-ant-test", model=legacy_alias)
+        assert client_legacy._resolve_model() == "claude-sonnet-5-5"
+
+    # 3. Modelo no listado en aliases se pasa tal cual
+    client_custom = ClaudeClient(api_key="sk-ant-test", model="claude-opus-5-5")
+    assert client_custom._resolve_model() == "claude-opus-5-5"
 
 
 def test_claude_client_handles_sdk_errors():

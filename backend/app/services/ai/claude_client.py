@@ -8,10 +8,9 @@ logger = logging.getLogger(__name__)
 
 # Normalización de alias comunes para modelos de Anthropic Claude
 MODEL_ALIASES = {
-    "claude-sonnet-5-5": "claude-3-5-sonnet-20241022",
-    "claude-3-5-sonnet": "claude-3-5-sonnet-20241022",
-    "claude-3.5-sonnet": "claude-3-5-sonnet-20241022",
-    "claude-3-7-sonnet": "claude-3-7-sonnet-20250219",
+    "claude-3-5-sonnet": "claude-sonnet-5-5",
+    "claude-3.5-sonnet": "claude-sonnet-5-5",
+    "claude-3-7-sonnet": "claude-sonnet-5-5",
 }
 
 
