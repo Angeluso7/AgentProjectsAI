@@ -25,7 +25,14 @@ export type DeliverableType =
   | 'mecanica_suelos'
   | 'cuadro_cargas'
   | 'plan_seguridad'
-  | 'otro_entregable';
+  | 'otro_entregable'
+  | 'plano_planta'
+  | 'plano_corte'
+  | 'plano_elevacion'
+  | 'pid_diagrama'
+  | 'diagrama_unilineal'
+  | 'isometrico_tuberias'
+  | 'hoja_de_datos';
 
 export type EvidenceReadinessStatus =
   | 'uploaded'
@@ -57,6 +64,7 @@ export interface DocumentDeliverableItem {
   id: string;
   project_id: string;
   document_id: string;
+  discipline_code?: string;
   deliverable_type: DeliverableType;
   readiness_status: EvidenceReadinessStatus;
   validation_notes?: string;

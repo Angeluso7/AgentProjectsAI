@@ -175,6 +175,7 @@ class CompletenessService:
         self,
         document_id: str,
         deliverable_type: str,
+        discipline_code: Optional[str] = None,
         readiness_status: str = "classified",
         validation_notes: Optional[str] = None,
         classified_by: str = "auditor_qa"
@@ -190,6 +191,7 @@ class CompletenessService:
             deliv = DocumentDeliverable(
                 project_id=doc.project_id,
                 document_id=document_id,
+                discipline_code=discipline_code,
                 deliverable_type=deliverable_type,
                 readiness_status=readiness_status,
                 validation_notes=validation_notes,
@@ -199,6 +201,8 @@ class CompletenessService:
             self.db.add(deliv)
         else:
             deliv.deliverable_type = deliverable_type
+            if discipline_code is not None:
+                deliv.discipline_code = discipline_code
             deliv.readiness_status = readiness_status
             deliv.validation_notes = validation_notes
             deliv.classified_by = classified_by

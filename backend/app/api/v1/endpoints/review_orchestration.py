@@ -2,11 +2,12 @@ import os
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from fastapi.responses import FileResponse
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
 from app.db.models.core import Project
-from app.db.models.decision_memory import ReviewRun, ReviewReport, ReviewRunDocument
+from app.db.models.decision_memory import ReviewRun, ReviewReport, ReviewRunDocument, ReviewDiscipline, ReviewTopic
 from app.services.review.taxonomy_service import TaxonomyService
 from app.services.review.orchestrator import ReviewOrchestrator
 from app.services.review.export_service import ReviewExportService
@@ -25,9 +26,11 @@ from app.schemas.review_orchestration import (
     SymbolOccurrenceSummary,
     SymbolInventoryGroupResponse,
     SymbolInventoryMetricsResponse,
-    SymbolInventoryResponse
+    SymbolInventoryResponse,
+    DeleteReviewRunResponse,
+    ClearReviewRunsResponse
 )
-from app.core.deps import get_current_tenant, TenantContext
+from app.core.deps import get_current_tenant, require_role, TenantContext
 from app.core.logging import logger
 
 router = APIRouter()
@@ -240,11 +243,13 @@ def get_run_symbol_group_occurrences(
 @router.get("/runs", response_model=List[ReviewRunDetailsResponse])
 def list_review_runs(
     project_id: str = Query(..., description="ID del proyecto"),
+    discipline_code: Optional[str] = Query(None, description="Filtrar por especialidad"),
+    topic_code: Optional[str] = Query(None, description="Filtrar por punto de revisión"),
     limit: int = Query(20, description="Límite de corridas a listar"),
     db: Session = Depends(get_db),
     tenant: TenantContext = Depends(get_current_tenant)
 ):
-    """Lista las últimas corridas de auditoría ejecutadas para un proyecto."""
+    """Lista las últimas corridas de auditoría ejecutadas para un proyecto, ordenadas descendentemente por fecha/hora solicitada exacta."""
     # Validar acceso al proyecto
     if tenant and tenant.organization:
         proj = db.query(Project).filter(Project.id == project_id).first()
@@ -254,9 +259,20 @@ def list_review_runs(
                 detail="No autorizado para acceder a proyectos de otra organización."
             )
 
-    runs = db.query(ReviewRun).filter(
-        ReviewRun.project_id == project_id
-    ).order_by(ReviewRun.created_at.desc()).limit(limit).all()
+    q = db.query(ReviewRun).filter(ReviewRun.project_id == project_id)
+    if discipline_code:
+        disc = db.query(ReviewDiscipline).filter(ReviewDiscipline.code == discipline_code).first()
+        if disc:
+            q = q.filter(ReviewRun.discipline_id == disc.id)
+    if topic_code:
+        top = db.query(ReviewTopic).filter(ReviewTopic.code == topic_code).first()
+        if top:
+            q = q.filter(ReviewRun.topic_id == top.id)
+
+    runs = q.order_by(
+        func.coalesce(ReviewRun.requested_at, ReviewRun.created_at).desc(),
+        ReviewRun.created_at.desc()
+    ).limit(limit).all()
 
     results = []
     for r in runs:
@@ -264,6 +280,65 @@ def list_review_runs(
         if det:
             results.append(det)
     return results
+
+
+@router.delete("/runs/{run_id}", response_model=DeleteReviewRunResponse)
+def delete_review_run(
+    run_id: str,
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "reviewer"]))
+):
+    """Elimina una corrida de auditoría individual y todas sus entidades hijas asociadas."""
+    run = db.query(ReviewRun).filter(ReviewRun.id == run_id).first()
+    if not run:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Corrida de auditoría '{run_id}' no encontrada."
+        )
+
+    if tenant and tenant.organization:
+        proj = db.query(Project).filter(Project.id == run.project_id).first()
+        if proj and proj.organization_id != tenant.organization.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para eliminar corridas de otra organización."
+            )
+
+    ReviewOrchestrator.delete_review_run(db, run_id)
+    return DeleteReviewRunResponse(
+        message="Corrida de revisión eliminada exitosamente.",
+        deleted_run_id=run_id
+    )
+
+
+@router.delete("/runs", response_model=ClearReviewRunsResponse)
+def clear_review_runs(
+    project_id: str = Query(..., description="ID del proyecto"),
+    discipline_code: Optional[str] = Query(None, description="Filtrar por especialidad"),
+    topic_code: Optional[str] = Query(None, description="Filtrar por punto de revisión"),
+    db: Session = Depends(get_db),
+    tenant: TenantContext = Depends(require_role(["admin", "audit_lead", "reviewer"]))
+):
+    """Limpia en bloque el historial de auditorías para un proyecto o alcance específico."""
+    if tenant and tenant.organization:
+        proj = db.query(Project).filter(Project.id == project_id).first()
+        if proj and proj.organization_id != tenant.organization.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="No autorizado para modificar proyectos de otra organización."
+            )
+
+    deleted_count = ReviewOrchestrator.clear_review_runs(
+        db=db,
+        project_id=project_id,
+        discipline_code=discipline_code,
+        topic_code=topic_code
+    )
+
+    return ClearReviewRunsResponse(
+        message=f"Se eliminaron {deleted_count} corridas de revisión exitosamente.",
+        deleted_count=deleted_count
+    )
 
 
 @router.post("/runs/{run_id}/exports", response_model=ReviewReportResponse, status_code=status.HTTP_201_CREATED)

@@ -48,6 +48,14 @@ class DeliverableTypeEnum(str, Enum):
     CUADRO_CARGAS = "cuadro_cargas"
     PLAN_SEGURIDAD = "plan_seguridad"
     OTRO_ENTREGABLE = "otro_entregable"
+    # Nuevos tipos de entregable para Piping, Procesos, Instrumentación y Eléctrica
+    PLANO_PLANTA = "plano_planta"
+    PLANO_CORTE = "plano_corte"
+    PLANO_ELEVACION = "plano_elevacion"
+    PID_DIAGRAMA = "pid_diagrama"
+    DIAGRAMA_UNILINEAL = "diagrama_unilineal"
+    ISOMETRICO_TUBERIAS = "isometrico_tuberias"
+    HOJA_DE_DATOS = "hoja_de_datos"
 
 class EvidenceReadinessStatusEnum(str, Enum):
     UPLOADED = "uploaded"

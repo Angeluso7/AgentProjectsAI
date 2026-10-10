@@ -67,6 +67,7 @@ def classify_document(
         deliv = service.classify_document_deliverable(
             document_id=document_id,
             deliverable_type=payload.deliverable_type.value if hasattr(payload.deliverable_type, "value") else str(payload.deliverable_type),
+            discipline_code=payload.discipline_code,
             readiness_status=payload.readiness_status.value if payload.readiness_status and hasattr(payload.readiness_status, "value") else (str(payload.readiness_status) if payload.readiness_status else "classified"),
             validation_notes=payload.validation_notes,
             classified_by=tenant.user.display_name or tenant.user.email
@@ -76,6 +77,7 @@ def classify_document(
             id=deliv.id,
             project_id=deliv.project_id,
             document_id=deliv.document_id,
+            discipline_code=deliv.discipline_code,
             deliverable_type=deliv.deliverable_type,
             readiness_status=deliv.readiness_status,
             validation_notes=deliv.validation_notes,
@@ -100,11 +102,13 @@ def update_document_readiness(
     service = CompletenessService(db)
     deliv = db.query(DocumentDeliverable).filter(DocumentDeliverable.document_id == document_id).first()
     deliv_type = deliv.deliverable_type if deliv else "plano_general"
+    deliv_disc = deliv.discipline_code if deliv else None
     
     try:
         updated = service.classify_document_deliverable(
             document_id=document_id,
             deliverable_type=deliv_type,
+            discipline_code=deliv_disc,
             readiness_status=payload.readiness_status.value if hasattr(payload.readiness_status, "value") else str(payload.readiness_status),
             validation_notes=payload.validation_notes,
             classified_by=tenant.user.display_name or tenant.user.email
@@ -114,6 +118,7 @@ def update_document_readiness(
             id=updated.id,
             project_id=updated.project_id,
             document_id=updated.document_id,
+            discipline_code=updated.discipline_code,
             deliverable_type=updated.deliverable_type,
             readiness_status=updated.readiness_status,
             validation_notes=updated.validation_notes,

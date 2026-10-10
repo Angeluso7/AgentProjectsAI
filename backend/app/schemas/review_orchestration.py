@@ -248,3 +248,15 @@ class ReviewReportResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class DeleteReviewRunResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str
+    deleted_run_id: str
+
+
+class ClearReviewRunsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    message: str
+    deleted_count: int

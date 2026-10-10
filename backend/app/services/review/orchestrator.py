@@ -974,3 +974,44 @@ class ReviewOrchestrator:
             "baseline_catalog_version": (reports[0].baseline_catalog_version if reports and reports[0].baseline_catalog_version else None) or ("PIP PNC00001 (Sandbox Candidate Baseline v0.1)" if run.execution_mode == "sandbox" else "PIP PNC00001 (Production Formal Baseline)"),
             "symbol_inventory": formatted_inventory
         }
+
+    @classmethod
+    def delete_review_run(cls, db: Session, review_run_id: str) -> bool:
+        """Elimina una corrida de auditoría y todas sus entidades hijas en cascada."""
+        run = db.query(ReviewRun).filter(ReviewRun.id == review_run_id).first()
+        if not run:
+            return False
+        db.delete(run)
+        db.commit()
+        return True
+
+    @classmethod
+    def clear_review_runs(
+        cls,
+        db: Session,
+        project_id: str,
+        discipline_code: Optional[str] = None,
+        topic_code: Optional[str] = None
+    ) -> int:
+        """Limpia en bloque el historial de auditorías de un proyecto (opcionalmente filtrado por especialidad/tópico)."""
+        q = db.query(ReviewRun).filter(ReviewRun.project_id == project_id)
+        if discipline_code:
+            disc = db.query(ReviewDiscipline).filter(ReviewDiscipline.code == discipline_code).first()
+            if disc:
+                q = q.filter(ReviewRun.discipline_id == disc.id)
+            else:
+                return 0
+        if topic_code:
+            top = db.query(ReviewTopic).filter(ReviewTopic.code == topic_code).first()
+            if top:
+                q = q.filter(ReviewRun.topic_id == top.id)
+            else:
+                return 0
+
+        runs_to_delete = q.all()
+        count = len(runs_to_delete)
+        for r in runs_to_delete:
+            db.delete(r)
+        db.commit()
+        return count
+
