@@ -356,7 +356,7 @@ class TranslationService:
         Aplica traducción campo por campo respetando términos técnicos, referencias, tags y unidades.
         """
         provider_name = "ai_hybrid_translator"
-        model_name = "gemini-1.5-pro"
+        model_name = "gemini-3.8-flash"
         prompt_ver = "v1.2-tech-pres"
 
         translated_fields: Dict[str, str] = {}

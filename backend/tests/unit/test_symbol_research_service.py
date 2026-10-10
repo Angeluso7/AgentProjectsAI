@@ -239,7 +239,10 @@ def test_symbol_research_service_dismiss_case(db_session: Session):
     assert decision.reviewer_id == "reviewer_lead_01"
 
 
-def test_research_cases_api_endpoints(db_session: Session, tmp_path):
+def test_research_cases_api_endpoints(db_session: Session, tmp_path, monkeypatch):
+    # Asegurar que el test de endpoint sin API key use la rama de fallback determinístico
+    monkeypatch.setattr("app.services.ai.claude_client.ClaudeClient.is_available", lambda self: False)
+
     # Crear documento, lámina y ocurrencia con recorte en disco
     crop_dir = os.path.join(settings.STORAGE_LOCAL_ROOT, "crops", "api_test")
     os.makedirs(crop_dir, exist_ok=True)
