@@ -1,7 +1,7 @@
 import os
 import json
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
@@ -308,11 +308,12 @@ def test_research_cases_api_endpoints(db_session: Session, tmp_path, monkeypatch
     assert detail["crop_image_url"] == "/data/crops/api_test/sym_api.png"
 
     # 3. POST /api/v1/symbol-catalog/research-cases/{case_id}/ai-research (sin API key -> research_exhausted, no 500)
-    resp_ai = client.post(f"/api/v1/symbol-catalog/research-cases/{case.id}/ai-research")
-    assert resp_ai.status_code == 200
-    ai_data = resp_ai.json()
-    assert ai_data["status"] == "research_exhausted"
-    assert "IA no configurada" in ai_data["research_notes"]
+    with patch.object(ClaudeClient, "is_available", return_value=False):
+        resp_ai = client.post(f"/api/v1/symbol-catalog/research-cases/{case.id}/ai-research")
+        assert resp_ai.status_code == 200
+        ai_data = resp_ai.json()
+        assert ai_data["status"] == "research_exhausted"
+        assert "IA no configurada" in ai_data["research_notes"]
 
     # 4. POST /api/v1/symbol-catalog/research-cases/{case_id}/dismiss
     resp_dismiss = client.post(

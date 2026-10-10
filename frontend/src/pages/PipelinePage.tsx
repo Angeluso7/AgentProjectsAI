@@ -12,7 +12,8 @@ import {
 import {
   Play, RefreshCw, CheckCircle2, XCircle, AlertTriangle, HelpCircle,
   FileText, ShieldCheck, Download, ExternalLink, Clock, Folder,
-  FileSpreadsheet, FileCode, CheckSquare, Square, Eye, Sparkles
+  FileSpreadsheet, FileCode, CheckSquare, Square, Eye, Sparkles,
+  Trash2, X, Loader2
 } from 'lucide-react';
 import { ReviewRunDetailModal } from '../components/ReviewRunDetailModal';
 
@@ -65,6 +66,12 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
 
   // Estado general de carga inicial
   const [initialLoading, setInitialLoading] = useState<boolean>(true);
+
+  // Gestión y Limpieza de Historial
+  const [runToDelete, setRunToDelete] = useState<ReviewRunDetailResponse | null>(null);
+  const [showClearHistoryModal, setShowClearHistoryModal] = useState<boolean>(false);
+  const [deletingRunInProgress, setDeletingRunInProgress] = useState<boolean>(false);
+  const [historyFeedbackMessage, setHistoryFeedbackMessage] = useState<string | null>(null);
 
   // 1. Cargar disciplinas al inicio
   useEffect(() => {
@@ -132,6 +139,51 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
     } catch (e) {
       console.error('Error cargando historial de revisiones:', e);
       setHistoryRuns([]);
+    }
+  };
+
+  const handleConfirmDeleteRun = async () => {
+    if (!runToDelete) return;
+    setDeletingRunInProgress(true);
+    try {
+      await apiService.deleteReviewRun(runToDelete.id);
+      setHistoryRuns(prev => prev.filter(r => r.id !== runToDelete.id));
+      if (activeRun?.id === runToDelete.id) {
+        const remaining = historyRuns.filter(r => r.id !== runToDelete.id);
+        if (remaining.length > 0) {
+          selectActiveRun(remaining[0]);
+        } else {
+          setActiveRun(null);
+          localStorage.removeItem('last_active_review_run_id');
+        }
+      }
+      setHistoryFeedbackMessage(`Corrida "${runToDelete.run_name}" eliminada.`);
+      setTimeout(() => setHistoryFeedbackMessage(null), 4000);
+      setRunToDelete(null);
+    } catch (err: any) {
+      console.error('Error al eliminar corrida:', err);
+      alert(err?.response?.data?.detail || 'Error al eliminar la corrida de auditoría.');
+    } finally {
+      setDeletingRunInProgress(false);
+    }
+  };
+
+  const handleConfirmClearHistory = async () => {
+    if (!activeProjectId) return;
+    setDeletingRunInProgress(true);
+    try {
+      await apiService.clearReviewRuns(activeProjectId);
+      setHistoryRuns([]);
+      setActiveRun(null);
+      localStorage.removeItem('last_active_review_run_id');
+      setShowClearHistoryModal(false);
+      setHistoryFeedbackMessage('Historial de revisiones vaciado exitosamente.');
+      setTimeout(() => setHistoryFeedbackMessage(null), 4000);
+    } catch (err: any) {
+      console.error('Error al limpiar historial:', err);
+      alert(err?.response?.data?.detail || 'Error al limpiar el historial de revisiones.');
+    } finally {
+      setDeletingRunInProgress(false);
     }
   };
 
@@ -598,6 +650,17 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                             <Eye className="w-3 h-3 text-blue-600" />
                             Ver resultados
                           </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRunToDelete(r);
+                            }}
+                            className="p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition-colors"
+                            title="Eliminar esta corrida del historial"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -605,6 +668,25 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                 })
               )}
             </div>
+
+            {historyRuns.length > 0 && (
+              <div className="pt-2.5 mt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
+                <button
+                  type="button"
+                  onClick={() => setShowClearHistoryModal(true)}
+                  className="text-[11px] font-semibold text-rose-600 hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300 flex items-center gap-1.5 transition-colors px-2 py-1 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30"
+                  title="Borrar todo el historial de revisiones de este proyecto"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Limpiar historial
+                </button>
+                {historyFeedbackMessage && (
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                    {historyFeedbackMessage}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1074,6 +1156,120 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
           }
         }}
       />
+
+      {/* Modal de Confirmación para Eliminar Corrida Individual */}
+      {runToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-rose-500" />
+                Eliminar Corrida de Auditoría
+              </h3>
+              <button
+                onClick={() => setRunToDelete(null)}
+                disabled={deletingRunInProgress}
+                className="text-slate-400 hover:text-slate-200 p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>
+                ¿Confirma que desea eliminar la corrida <strong>{runToDelete.run_name}</strong>?
+              </p>
+              <div className="p-3 bg-rose-950/30 border border-rose-800/40 rounded-lg text-rose-300 text-[11px] leading-relaxed">
+                <strong>Atención:</strong> Esta acción borrará permanentemente sus etapas, ejecuciones de reglas, inventario de símbolos y hallazgos asociados a esta sesión.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setRunToDelete(null)}
+                disabled={deletingRunInProgress}
+                className="px-3 py-1.5 rounded text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRun}
+                disabled={deletingRunInProgress}
+                className="px-3.5 py-1.5 rounded text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-rose-600/30 transition disabled:opacity-50"
+              >
+                {deletingRunInProgress ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Eliminando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Confirmar Eliminación</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Confirmación para Limpiar Todo el Historial */}
+      {showClearHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in duration-150">
+          <div className="bg-slate-900 border border-slate-700 rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-slate-100 flex items-center gap-2">
+                <Trash2 className="w-4 h-4 text-rose-500" />
+                Limpiar Historial de Revisiones
+              </h3>
+              <button
+                onClick={() => setShowClearHistoryModal(false)}
+                disabled={deletingRunInProgress}
+                className="text-slate-400 hover:text-slate-200 p-1 rounded"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="text-xs text-slate-300 space-y-2">
+              <p>
+                ¿Confirma que desea eliminar <strong>todas las ({historyRuns.length}) corridas</strong> de revisión registradas en este proyecto?
+              </p>
+              <div className="p-3 bg-rose-950/30 border border-rose-800/40 rounded-lg text-rose-300 text-[11px] leading-relaxed">
+                <strong>Atención:</strong> Se vaciará todo el historial técnico de auditorías del proyecto activo. Los documentos y reglas del sistema no se verán afectados.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowClearHistoryModal(false)}
+                disabled={deletingRunInProgress}
+                className="px-3 py-1.5 rounded text-xs bg-slate-800 text-slate-300 hover:bg-slate-700 transition"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmClearHistory}
+                disabled={deletingRunInProgress}
+                className="px-3.5 py-1.5 rounded text-xs bg-rose-600 hover:bg-rose-500 text-white font-semibold flex items-center gap-1.5 shadow-md shadow-rose-600/30 transition disabled:opacity-50"
+              >
+                {deletingRunInProgress ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Limpiando...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Vaciar Todo el Historial</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

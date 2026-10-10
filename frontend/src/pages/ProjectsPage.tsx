@@ -1063,6 +1063,7 @@ export const ProjectsPage: React.FC = () => {
         <DocumentDeliverableModal
           document={docToClassify}
           isOpen={isClassifyModalOpen}
+          currentDisciplineCode={docToClassify.discipline}
           onClose={() => {
             setIsClassifyModalOpen(false);
             setDocToClassify(null);
