@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import {
   Eye, Layers, ZoomIn, ZoomOut, RotateCcw, CheckCircle, AlertTriangle,
   Crosshair, Tag, Type, Play, LayoutGrid, CheckCircle2, XCircle,
@@ -45,6 +45,38 @@ export const TAXONOMY_COLORS: Record<string, { color: string; label: string }> =
 
 export const getAnnotationColor = (type: string): string => {
   return TAXONOMY_COLORS[type]?.color || '#94a3b8';
+};
+
+export const getSymbolColor = (discipline: string): string => {
+  switch ((discipline || '').toLowerCase()) {
+    case 'piping':
+    case 'plumbing': return '#06b6d4'; // Cyan
+    case 'process':
+    case 'processes': return '#10b981'; // Emerald
+    case 'instrumentation': return '#8b5cf6'; // Violet
+    case 'electrical': return '#eab308'; // Amber
+    case 'hvac': return '#a855f7'; // Purple
+    case 'architecture': return '#3b82f6'; // Blue
+    case 'unknown':
+    case 'unknown_symbol_candidate':
+    default: return '#f97316'; // Orange
+  }
+};
+
+export const getDisciplineLabel = (discipline: string): string => {
+  switch ((discipline || '').toLowerCase()) {
+    case 'piping': return 'Piping / Cañerías';
+    case 'plumbing': return 'Plumbing / Plomería';
+    case 'process':
+    case 'processes': return 'Procesos';
+    case 'instrumentation': return 'Instrumentación';
+    case 'electrical': return 'Electricidad';
+    case 'hvac': return 'HVAC / Climatización';
+    case 'architecture': return 'Arquitectura';
+    case 'unknown':
+    case 'unknown_symbol_candidate': return 'Desconocido';
+    default: return discipline ? discipline.charAt(0).toUpperCase() + discipline.slice(1) : 'Desconocido';
+  }
 };
 
 export const PlanViewerPage: React.FC = () => {
@@ -121,6 +153,22 @@ export const PlanViewerPage: React.FC = () => {
 
   // Notificaciones flotantes en esquina superior derecha
   const [viewerToast, setViewerToast] = useState<{ message: string; type: 'info' | 'success' | 'warning' | 'error' } | null>(null);
+
+  // Disciplinas activas presentes en la lámina para la leyenda dinámica
+  const activeOverlayDisciplines = useMemo(() => {
+    if (!showSymbols || !symbols.length) return [];
+    const counts: Record<string, number> = {};
+    for (const sym of symbols) {
+      const disc = (sym.discipline || 'unknown').toLowerCase();
+      counts[disc] = (counts[disc] || 0) + 1;
+    }
+    return Object.entries(counts).map(([discipline, count]) => ({
+      discipline,
+      count,
+      color: getSymbolColor(discipline),
+      label: getDisciplineLabel(discipline),
+    }));
+  }, [showSymbols, symbols]);
   
   const viewportRef = useRef<HTMLDivElement>(null);
   const sheetContainerRef = useRef<HTMLDivElement>(null);
@@ -656,16 +704,6 @@ export const PlanViewerPage: React.FC = () => {
       case 'legend': return '#a855f7';
       case 'revision_table': return '#f97316';
       default: return '#64748b';
-    }
-  };
-
-  const getSymbolColor = (discipline: string) => {
-    switch (discipline) {
-      case 'electrical': return '#eab308';
-      case 'plumbing': return '#06b6d4';
-      case 'hvac': return '#a855f7';
-      case 'architecture': return '#3b82f6';
-      default: return '#f97316';
     }
   };
 
@@ -1399,22 +1437,17 @@ export const PlanViewerPage: React.FC = () => {
                         top: `${y0 * 100}%`,
                         width: `${Math.max((x1 - x0) * 100, 2)}%`,
                         height: `${Math.max((y1 - y0) * 100, 2)}%`,
-                        border: `1.5px solid ${isSelected ? '#ffffff' : color}`,
-                        background: isSelected ? 'rgba(249, 115, 22, 0.4)' : 'rgba(249, 115, 22, 0.18)',
+                        border: `${isSelected ? '1.5px' : '0.75px'} solid ${isSelected ? '#ffffff' : color}`,
+                        background: isSelected ? 'rgba(249, 115, 22, 0.4)' : `${color}20`,
                         boxShadow: isSelected ? `0 0 12px ${color}` : 'none',
                         cursor: 'pointer',
                         zIndex: isSelected ? 35 : 15,
-                        borderRadius: '3px',
+                        borderRadius: '2px',
                         display: 'flex',
                         alignItems: 'flex-start',
-                        padding: '1px',
                       }}
-                      title={`[${sym.discipline.toUpperCase()}] ${sym.symbol_type} (${(sym.confidence * 100).toFixed(0)}%)`}
-                    >
-                      <span style={{ fontSize: '7px', background: color, color: '#000', fontWeight: 800, padding: '0 2px', borderRadius: '2px' }}>
-                        {sym.symbol_type.slice(0, 8)}
-                      </span>
-                    </div>
+                      title={`[${(sym.discipline || 'unknown').toUpperCase()}] ${sym.symbol_type} (${(sym.confidence * 100).toFixed(0)}%)`}
+                    />
                   );
                 })}
 
@@ -1434,22 +1467,17 @@ export const PlanViewerPage: React.FC = () => {
                         top: `${y0 * 100}%`,
                         width: `${Math.max((x1 - x0) * 100, 3)}%`,
                         height: `${Math.max((y1 - y0) * 100, 3)}%`,
-                        border: `1.5px solid ${isSelected ? '#ffffff' : '#ef4444'}`,
+                        border: `${isSelected ? '1.5px' : '0.75px'} solid ${isSelected ? '#ffffff' : '#ef4444'}`,
                         background: isSelected ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.2)',
                         boxShadow: isSelected ? '0 0 14px #ef4444' : 'none',
                         cursor: 'pointer',
                         zIndex: isSelected ? 35 : 20,
-                        borderRadius: '4px',
+                        borderRadius: '3px',
                         display: 'flex',
                         alignItems: 'flex-start',
-                        padding: '2px',
                       }}
-                      title={`[${f.severity.toUpperCase()}] ${f.title}`}
-                    >
-                      <span style={{ fontSize: '8px', background: '#ef4444', color: '#fff', fontWeight: 800, padding: '1px 4px', borderRadius: '2px' }}>
-                        ⚠️ {f.rule_code}
-                      </span>
-                    </div>
+                      title={`[${f.severity.toUpperCase()}] ${f.title} (${f.rule_code})`}
+                    />
                   );
                 })}
 
@@ -1551,7 +1579,6 @@ export const PlanViewerPage: React.FC = () => {
                   })()
                 )}
               </div>
-
             ) : (
               <div style={{ textAlign: 'center', color: 'var(--text-dim)', padding: '40px 20px' }}>
                 <LayoutGrid size={56} style={{ margin: '0 auto 16px', opacity: 0.3 }} />
@@ -1567,6 +1594,54 @@ export const PlanViewerPage: React.FC = () => {
                 >
                   <Upload size={14} /> Ir a Ingesta de Planos
                 </button>
+              </div>
+            )}
+
+            {/* Leyenda Flotante Dinámica de Overlays (Solo disciplinas y hallazgos presentes) */}
+            {selectedSheet && ((showSymbols && activeOverlayDisciplines.length > 0) || (showFindings && findings.length > 0)) && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: '16px',
+                  left: '16px',
+                  zIndex: 45,
+                  background: 'rgba(15, 23, 42, 0.88)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  gap: '6px',
+                  fontSize: '11px',
+                  maxWidth: '280px',
+                  pointerEvents: 'auto',
+                }}
+              >
+                <div style={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: '#94a3b8', borderBottom: '1px solid rgba(255,255,255,0.08)', paddingBottom: '4px' }}>
+                  Leyenda Activa
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  {showSymbols && activeOverlayDisciplines.map((item) => (
+                    <div key={item.discipline} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: item.color, display: 'inline-block', boxShadow: `0 0 6px ${item.color}` }} />
+                        <span style={{ color: '#f1f5f9', fontWeight: 500 }}>{item.label}</span>
+                      </div>
+                      <span style={{ color: '#94a3b8', fontSize: '10px', fontWeight: 600 }}>{item.count}</span>
+                    </div>
+                  ))}
+                  {showFindings && findings.length > 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', borderTop: activeOverlayDisciplines.length > 0 ? '1px dashed rgba(255,255,255,0.08)' : 'none', paddingTop: activeOverlayDisciplines.length > 0 ? '4px' : '0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ef4444', display: 'inline-block', boxShadow: '0 0 6px #ef4444' }} />
+                        <span style={{ color: '#f1f5f9', fontWeight: 500 }}>Hallazgos QA/QC</span>
+                      </div>
+                      <span style={{ color: '#ef4444', fontSize: '10px', fontWeight: 600 }}>{findings.length}</span>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>

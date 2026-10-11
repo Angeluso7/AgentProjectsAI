@@ -232,3 +232,119 @@ def test_gen_doc_001_rule_sheet_identification():
     assert "Lámina 2" in result.title or "Lámina 2" in result.description
     assert "sheet_code" in result.title
     assert "revision" in result.title
+
+
+def test_export_service_pdf_generation_tabular(tmp_path):
+    """Verifica que _generate_pdf genere un PDF estructurado con tablas para simbología y resumen compacto de NOT_EVALUABLE."""
+    import fitz
+    from app.services.review.export_service import ReviewExportService
+
+    pdf_output = str(tmp_path / "test_tabular_audit.pdf")
+
+    run_data = {
+        "review_run_id": "run-test-tabular-001",
+        "project_code": "PRJ-TEST",
+        "project_name": "Planta Minera Concentradora",
+        "discipline_code": "PIPING",
+        "discipline_name": "Piping & Procesos",
+        "topic_code": "TOPIC_PIPING_SPECS",
+        "execution_mode": "production",
+        "requested_at": "2026-10-10T12:00:00Z",
+        "baseline_catalog_version": "V2.0",
+        "stats_summary": {
+            "passed": 2,
+            "failed": 0,
+            "warning": 1,
+            "not_evaluable": 35
+        },
+        "steps": [
+            {"phase": 1, "phase_name": "Ingesta", "step_type": "intake", "status": "succeeded"},
+            {"phase": 2, "phase_name": "Detección Símbolos", "step_type": "symbols", "status": "succeeded"},
+            {"phase": 3, "phase_name": "Evaluación Reglas", "step_type": "rules", "status": "succeeded"},
+        ],
+        "findings": [],
+        "symbol_inventory": {
+            "metrics": {
+                "valid_symbol_occurrences": 8,
+                "inventory_groups": 2,
+                "figures_excluded": 0,
+                "production_coverage": 1.0,
+                "sandbox_coverage": 0.0,
+                "unknown_rate": 0.0,
+                "recognized_production": 8,
+                "recognized_sandbox": 0,
+                "unknown": 0
+            },
+            "groups": [
+                {
+                    "display_code": "PIP-VALVE-GATE",
+                    "canonical_name": "Válvula de Compuerta",
+                    "catalog_status": "production",
+                    "standard_reference": "ASME B16.10 / ASME B31.3",
+                    "total_occurrences": 5,
+                    "occurrences_by_document": {"PID-001.pdf": 5},
+                    "confidence_summary": {"avg": 0.94},
+                    "requires_human_review": False,
+                    "explanation": "Válvula de compuerta manual bridadada estándar."
+                },
+                {
+                    "display_code": "PIP-VALVE-CHECK",
+                    "canonical_name": "Válvula de Retención (Check)",
+                    "catalog_status": "production",
+                    "standard_reference": "API 594",
+                    "total_occurrences": 3,
+                    "occurrences_by_document": {"PID-001.pdf": 3},
+                    "confidence_summary": {"avg": 0.89},
+                    "requires_human_review": False,
+                    "explanation": "Válvula check oscilante."
+                }
+            ],
+            "occurrences": [
+                {
+                    "group_display_code": "PIP-VALVE-GATE",
+                    "document_name": "PID-001.pdf",
+                    "sheet_name": "Lámina 1",
+                    "page_number": 1,
+                    "symbol_crop_bbox": [0.12, 0.34, 0.16, 0.38],
+                    "detected_tag_or_code": "V-101",
+                    "geometric_confidence": 0.96
+                }
+            ]
+        },
+        "executions": [
+            {
+                "rule_code": "RULE_PIP_01",
+                "rule_name": "Verificación de Tags de Válvulas",
+                "status": "PASSED"
+            }
+        ] + [
+            {
+                "rule_code": f"RULE_LEGACY_{i:03d}",
+                "rule_name": f"Regla Inactiva {i}",
+                "status": "NOT_EVALUABLE",
+                "not_evaluable_reason_code": "NO_APPROVED_RULES",
+                "recommended_action": "Activar ejecutor en catálogo"
+            }
+            for i in range(1, 36)
+        ]
+    }
+
+    ReviewExportService._generate_pdf(run_data, pdf_output)
+
+    assert os.path.exists(pdf_output)
+    assert os.path.getsize(pdf_output) > 2000
+
+    doc = fitz.open(pdf_output)
+    assert doc.page_count >= 2
+    full_text = "".join([p.get_text() for p in doc])
+
+    # Verificar que el PDF incluye la tabla de simbología con sus códigos
+    assert "Inventario Consolidado de Simbología" in full_text
+    assert "PIP-VALVE-GATE" in full_text
+    assert "PIP-VALVE-CHECK" in full_text
+    assert "Válvula de Compuerta" in full_text
+    # Verificar que las reglas NOT_EVALUABLE fueron resumidas y no causaron 10 páginas
+    assert "Resumen de Reglas Sin Ejecutor Activo (35 reglas)" in full_text
+    assert "NO_APPROVED_RULES: 35" in full_text
+    assert doc.page_count <= 5  # No 15 páginas como antes
+

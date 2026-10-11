@@ -1,4 +1,5 @@
 import pytest
+import fitz
 from app.db.models.document_memory import Document, DocumentSheet, SheetRegion, DetectedSymbol
 from app.db.models.template_memory import SymbolLibrary, SymbolTemplate
 from app.db.models.operations import ReviewTask, DecisionTrace
@@ -272,4 +273,152 @@ def test_hitl_approval_promotes_symbol_to_canonical(db_session, tmp_path):
     created_tpl = db_session.query(SymbolTemplate).filter(SymbolTemplate.id == sym.matched_template_id).first()
     assert created_tpl is not None
     assert "PIP-VALVE-BALL" in created_tpl.display_name or "PIP-VALVE-BALL" in created_tpl.symbol_class or created_tpl.is_active_for_detection
+
+
+def test_ocr_text_exclusion_and_3mm_margin():
+    """Valida que los extractores descarten candidatos que se solapan con texto OCR y apliquen margen de 3mm."""
+    from app.services.symbols.vector_extractor import VectorSymbolExtractor, PT_TO_MM
+    from app.services.symbols.raster_extractor import RasterSymbolExtractor
+    import numpy as np
+
+    vec_extractor = VectorSymbolExtractor()
+    rast_extractor = RasterSymbolExtractor()
+
+    # 1. Validación de _overlaps_with_text en vector y raster
+    candidate_box = [0.10, 0.10, 0.15, 0.15]
+    overlapping_text = [[0.09, 0.09, 0.16, 0.16]]
+    non_overlapping_text = [[0.50, 0.50, 0.60, 0.60]]
+
+    assert vec_extractor._overlaps_with_text(candidate_box, overlapping_text) is True
+    assert vec_extractor._overlaps_with_text(candidate_box, non_overlapping_text) is False
+
+    assert rast_extractor._overlaps_with_text(candidate_box, overlapping_text) is True
+    assert rast_extractor._overlaps_with_text(candidate_box, non_overlapping_text) is False
+
+    # 2. Extracción raster sobre imagen sintética con y sin exclusión de texto OCR
+    # Crear imagen blanca de 400x400 con un símbolo técnico hueco de 30x30 (100 a 130)
+    img = np.ones((400, 400, 3), dtype=np.uint8) * 255
+    img[100:130, 100:102] = 0
+    img[100:130, 128:130] = 0
+    img[100:102, 100:130] = 0
+    img[128:130, 100:130] = 0
+
+    # Sin texto conocido: debe extraer el candidato con margen de 3mm
+    cands_no_text = rast_extractor.extract_candidates_from_image(
+        image_input=img,
+        dpi=150,
+        page_number=1,
+        known_text_bboxes_norm=None
+    )
+    assert len(cands_no_text) == 1
+    cand = cands_no_text[0]
+
+    # Verificar que el bbox expandido incluye el margen de 3mm (3mm * (150/25.4) ~ 17.7 -> 18px)
+    margin_px = int(round(3.0 * (150 / 25.4)))
+    assert cand.bbox_pixel[0] == max(0, 100 - margin_px)
+    assert cand.bbox_pixel[1] == max(0, 100 - margin_px)
+    assert cand.bbox_pixel[2] == min(400, 130 + margin_px)
+    assert cand.bbox_pixel[3] == min(400, 130 + margin_px)
+
+    # Con texto OCR que cubre el candidato: debe ser descartado
+    text_covering_cand = [[0.24, 0.24, 0.33, 0.33]] # ~100/400=0.25 a 130/400=0.325
+    cands_with_text = rast_extractor.extract_candidates_from_image(
+        image_input=img,
+        dpi=150,
+        page_number=1,
+        known_text_bboxes_norm=text_covering_cand
+    )
+    assert len(cands_with_text) == 0
+
+
+def test_piping_line_extraction_and_symbol_association(db_session, client):
+    """
+    Fase 4: Verifica la extracción de líneas de piping desde trazos vectoriales,
+    la persistencia en PipingLineSegment y la asociación espacial en-línea vs callout.
+    """
+    from app.services.symbols.vector_extractor import VectorSymbolExtractor
+    from app.db.models.document_memory import PipingLineSegment
+
+    vec_extractor = VectorSymbolExtractor()
+
+    # 1. Verificación de lógica geométrica pura
+    line_polyline = [[0.1, 0.5], [0.9, 0.5]]
+    inline_symbol_bbox = [0.45, 0.48, 0.55, 0.52]      # Cruza la línea en y=0.5
+    callout_symbol_bbox = [0.45, 0.10, 0.55, 0.15]     # Lejos de la línea (y=0.10-0.15)
+
+    assert vec_extractor.check_symbol_intersects_line(inline_symbol_bbox, line_polyline) is True
+    assert vec_extractor.check_symbol_intersects_line(callout_symbol_bbox, line_polyline) is False
+
+    # 2. Verificación de extracción vectorial con PyMuPDF
+    doc = fitz.open()
+    page = doc.new_page(width=600, height=400) # ~211mm x 141mm
+
+    # Trazar línea de proceso principal (400 pt ~ 141 mm > umbral de 40mm)
+    page.draw_line(fitz.Point(100, 200), fitz.Point(500, 200), color=(0, 0, 0), width=2.0)
+
+    # Trazar línea discontinua de instrumentación secundaria (300 pt ~ 105 mm)
+    page.draw_line(fitz.Point(100, 300), fitz.Point(400, 300), color=(0, 0, 1), width=1.0, dashes="[3 3] 0")
+
+    lines = vec_extractor.extract_piping_lines_from_page(page, page_number=1, min_length_mm=40.0)
+    assert len(lines) >= 2
+
+    solid_lines = [l for l in lines if l.line_style == "solid"]
+    dashed_lines = [l for l in lines if l.line_style == "dashed"]
+
+    assert len(solid_lines) >= 1
+    assert len(dashed_lines) >= 1
+    assert solid_lines[0].is_main_process_line is True
+    assert solid_lines[0].length_mm > 100.0
+
+    # 3. Verificación de persistencia en base de datos con modelo PipingLineSegment
+    proj_res = client.post("/api/v1/projects/", json={
+        "code": "PRJ-PIPING-LINES",
+        "name": "Proyecto Piping Lines Prototype",
+        "discipline": "piping"
+    })
+    project_id = proj_res.json()["id"]
+
+    db_doc = Document(
+        project_id=project_id,
+        filename="piping_drawing.pdf",
+        file_path="dummy_piping.pdf",
+        file_hash_sha256="hash_piping_001",
+        file_size_bytes=2048,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(db_doc)
+    db_session.commit()
+
+    db_sheet = DocumentSheet(
+        document_id=db_doc.id,
+        sheet_number=1,
+        width_px=6000,
+        height_px=4000,
+        dpi=150
+    )
+    db_session.add(db_sheet)
+    db_session.commit()
+
+    # Persistir un segmento de línea
+    segment = PipingLineSegment(
+        sheet_id=db_sheet.id,
+        polyline_points=solid_lines[0].polyline_points,
+        bbox_normalized=solid_lines[0].bbox_normalized,
+        line_style=solid_lines[0].line_style,
+        length_mm=solid_lines[0].length_mm,
+        stroke_width_pt=solid_lines[0].stroke_width_pt,
+        connected_symbol_ids=["sym_001"],
+        is_main_process_line=solid_lines[0].is_main_process_line,
+        attributes={"test": True}
+    )
+    db_session.add(segment)
+    db_session.commit()
+    db_session.refresh(segment)
+
+    persisted = db_session.query(PipingLineSegment).filter(PipingLineSegment.sheet_id == db_sheet.id).first()
+    assert persisted is not None
+    assert persisted.length_mm > 100.0
+    assert persisted.connected_symbol_ids == ["sym_001"]
+    assert persisted.is_main_process_line is True
 

@@ -27,6 +27,18 @@ class VectorSymbolCandidateDTO:
     canonical_family_hint: str = "valves"
     drawing_count: int = 1
 
+@dataclass
+class PipingLineCandidateDTO:
+    """Candidato a segmento de línea de tubería (piping) extraído de la geometría vectorial."""
+    polyline_points: List[List[float]]      # [[x0, y0], [x1, y1], ...] coordenadas normalizadas 0.0 - 1.0
+    bbox_normalized: List[float]            # [x0, y0, x1, y1] normalizado 0.0 - 1.0
+    line_style: str                         # "solid", "dashed", "dotted"
+    length_mm: float
+    stroke_width_pt: float
+    color: Optional[Tuple] = None
+    is_main_process_line: bool = True
+    attributes: Dict[str, Any] = field(default_factory=dict)
+
 
 class VectorSymbolExtractor:
     """
@@ -51,7 +63,8 @@ class VectorSymbolExtractor:
         region_rect: Optional[fitz.Rect] = None,
         min_size_mm: float = 3.0,
         max_size_mm: float = 35.0,
-        cluster_distance_mm: float = 2.0
+        cluster_distance_mm: float = 2.0,
+        known_text_bboxes_norm: Optional[List[List[float]]] = None
     ) -> List[VectorSymbolCandidateDTO]:
         """
         Extrae candidatos a símbolo agrupando trazos vectoriales dentro de la página o región.
@@ -125,29 +138,41 @@ class VectorSymbolExtractor:
             if aspect_ratio > 4.0 or aspect_ratio < 0.25:
                 continue
 
-            # Calcular Score Ponderado Blando (S_sym)
-            confidence = self._compute_soft_confidence(w_mm, h_mm, cluster["stroke_count"], cluster["paths_count"])
-
-            norm_box = [
+            tight_norm_box = [
                 round(c_rect.x0 / pw, 4),
                 round(c_rect.y0 / ph, 4),
                 round(c_rect.x1 / pw, 4),
                 round(c_rect.y1 / ph, 4)
             ]
 
+            # Descarte contra cajas de texto conocidas (>=50% solapamiento)
+            if known_text_bboxes_norm and self._overlaps_with_text(tight_norm_box, known_text_bboxes_norm):
+                continue
+
+            # Calcular Score Ponderado Blando (S_sym)
+            confidence = self._compute_soft_confidence(w_mm, h_mm, cluster["stroke_count"], cluster["paths_count"])
+
             # Inferencia de familia orientativa según forma
             family_hint = self._infer_family_hint(w_mm, h_mm, aspect_ratio, cluster["stroke_count"])
 
-            # Renderizar Crop en alta resolución (300 DPI)
+            # Margen fijo de 3mm convertido a puntos según la geometría del PDF
+            margin_pt = 3.0 / PT_TO_MM
+            mx0 = max(0.0, c_rect.x0 - margin_pt)
+            my0 = max(0.0, c_rect.y0 - margin_pt)
+            mx1 = min(pw, c_rect.x1 + margin_pt)
+            my1 = min(ph, c_rect.y1 + margin_pt)
+
+            norm_box = [
+                round(mx0 / pw, 4),
+                round(my0 / ph, 4),
+                round(mx1 / pw, 4),
+                round(my1 / ph, 4)
+            ]
+
+            # Renderizar Crop en alta resolución (300 DPI) con margen de 3mm
             crop_path = None
             try:
-                pad = 4 # 4 pt de padding
-                clip_r = fitz.Rect(
-                    max(0, c_rect.x0 - pad),
-                    max(0, c_rect.y0 - pad),
-                    min(pw, c_rect.x1 + pad),
-                    min(ph, c_rect.y1 + pad)
-                )
+                clip_r = fitz.Rect(mx0, my0, mx1, my1)
                 pix = page.get_pixmap(clip=clip_r, dpi=300)
                 crop_name = f"sym_vec_{doc_uid}_p{page_number}_{idx + 1}.png"
                 full_crop_path = os.path.join(self.crops_dir, crop_name)
@@ -158,7 +183,7 @@ class VectorSymbolExtractor:
 
             candidate = VectorSymbolCandidateDTO(
                 id=str(uuid.uuid4()),
-                bbox_pt=[round(c_rect.x0, 1), round(c_rect.y0, 1), round(c_rect.x1, 1), round(c_rect.y1, 1)],
+                bbox_pt=[round(mx0, 1), round(my0, 1), round(mx1, 1), round(my1, 1)],
                 bbox_normalized=norm_box,
                 estimated_physical_size_mm={
                     "width_mm": w_mm,
@@ -270,3 +295,212 @@ class VectorSymbolExtractor:
             return "pumps"
         else:
             return "fittings"
+
+    def _overlaps_with_text(self, box: List[float], text_boxes: List[List[float]]) -> bool:
+        """Determina si la caja del candidato tiene solapamiento significativo (>=50%) con texto OCR."""
+        bx0, by0, bx1, by1 = box
+        b_area = max(1e-6, (bx1 - bx0) * (by1 - by0))
+
+        for tb in text_boxes:
+            tx0, ty0, tx1, ty1 = tb
+            ix0 = max(bx0, tx0)
+            iy0 = max(by0, ty0)
+            ix1 = min(bx1, tx1)
+            iy1 = min(by1, ty1)
+
+            if ix1 > ix0 and iy1 > iy0:
+                inter_area = (ix1 - ix0) * (iy1 - iy0)
+                # Si el 50% o más de la caja del símbolo está dentro de una caja de texto, es texto
+                if (inter_area / b_area) >= 0.50:
+                    return True
+        return False
+
+    def extract_piping_lines_from_page(
+        self,
+        page: fitz.Page,
+        page_number: int = 1,
+        region_rect: Optional[fitz.Rect] = None,
+        min_length_mm: float = 40.0
+    ) -> List[PipingLineCandidateDTO]:
+        """
+        Extrae trazos vectoriales largos correspondientes a líneas de tubería / proceso.
+        Filtra marcos de lámina perimetrales y cajas rectangulares cerradas (viñetas/tablas).
+        """
+        rect = page.rect
+        pw, ph = rect.width, rect.height
+        if pw <= 0 or ph <= 0:
+            return []
+
+        drawings = page.get_drawings()
+        if not drawings:
+            return []
+
+        line_candidates: List[PipingLineCandidateDTO] = []
+
+        for d in drawings:
+            r = d.get("rect")
+            if not r:
+                continue
+
+            if region_rect and not r.intersects(region_rect):
+                continue
+
+            # 1. Descartar marco perimetral general de lámina
+            if r.width > 0.90 * pw and r.height > 0.90 * ph:
+                continue
+            if r.x0 < 0.02 * pw and r.y0 < 0.02 * ph and r.x1 > 0.98 * pw and r.y1 > 0.98 * ph:
+                continue
+
+            w_mm = r.width * PT_TO_MM
+            h_mm = r.height * PT_TO_MM
+
+            # 2. Descartar cajas cerradas anchas (cuadros de viñeta, tablas o leyendas)
+            if d.get("closePath") and min(w_mm, h_mm) > 25.0:
+                continue
+
+            # 3. Extraer puntos y calcular longitud acumulada
+            items = d.get("items", [])
+            polyline_pts: List[List[float]] = []
+            total_len_pt = 0.0
+
+            for itm in items:
+                cmd = itm[0]
+                if cmd == "l":
+                    p1, p2 = itm[1], itm[2]
+                    seg_len = math.hypot(p2.x - p1.x, p2.y - p1.y)
+                    total_len_pt += seg_len
+                    if not polyline_pts:
+                        polyline_pts.append([round(p1.x / pw, 5), round(p1.y / ph, 5)])
+                    polyline_pts.append([round(p2.x / pw, 5), round(p2.y / ph, 5)])
+                elif cmd == "c":
+                    p1, p4 = itm[1], itm[4]
+                    seg_len = math.hypot(p4.x - p1.x, p4.y - p1.y)
+                    total_len_pt += seg_len
+                    if not polyline_pts:
+                        polyline_pts.append([round(p1.x / pw, 5), round(p1.y / ph, 5)])
+                    polyline_pts.append([round(p4.x / pw, 5), round(p4.y / ph, 5)])
+                elif cmd == "re":
+                    rbox = itm[1]
+                    rw_mm = rbox.width * PT_TO_MM
+                    rh_mm = rbox.height * PT_TO_MM
+                    if min(rw_mm, rh_mm) <= 3.0 and max(rw_mm, rh_mm) >= min_length_mm:
+                        if rbox.width >= rbox.height:
+                            ym = (rbox.y0 + rbox.y1) / (2.0 * ph)
+                            polyline_pts = [
+                                [round(rbox.x0 / pw, 5), round(ym, 5)],
+                                [round(rbox.x1 / pw, 5), round(ym, 5)]
+                            ]
+                            total_len_pt = rbox.width
+                        else:
+                            xm = (rbox.x0 + rbox.x1) / (2.0 * pw)
+                            polyline_pts = [
+                                [round(xm, 5), round(rbox.y0 / ph, 5)],
+                                [round(xm, 5), round(rbox.y1 / ph, 5)]
+                            ]
+                            total_len_pt = rbox.height
+
+            length_mm = round(total_len_pt * PT_TO_MM, 2)
+            if length_mm < min_length_mm:
+                # Si los items individuales no sumaron pero el rect es una línea alargada recta
+                if max(w_mm, h_mm) >= min_length_mm and min(w_mm, h_mm) <= 3.0:
+                    length_mm = round(max(w_mm, h_mm), 2)
+                    if w_mm >= h_mm:
+                        ym = (r.y0 + r.y1) / (2.0 * ph)
+                        polyline_pts = [
+                            [round(r.x0 / pw, 5), round(ym, 5)],
+                            [round(r.x1 / pw, 5), round(ym, 5)]
+                        ]
+                    else:
+                        xm = (r.x0 + r.x1) / (2.0 * pw)
+                        polyline_pts = [
+                            [round(xm, 5), round(r.y0 / ph, 5)],
+                            [round(xm, 5), round(r.y1 / ph, 5)]
+                        ]
+                else:
+                    continue
+
+            if not polyline_pts or len(polyline_pts) < 2:
+                continue
+
+            dashes = d.get("dashes")
+            is_dashed = False
+            if dashes:
+                if isinstance(dashes, str):
+                    inner = dashes.split("]")[0].replace("[", "").strip()
+                    is_dashed = bool(inner)
+                elif isinstance(dashes, (list, tuple)):
+                    is_dashed = len(dashes) > 0 and any(x > 0 for x in dashes)
+
+            line_style = "dashed" if is_dashed else "solid"
+            stroke_width = round(float(d.get("width", 1.0)), 2)
+            is_main = bool(line_style == "solid" and stroke_width >= 1.0)
+
+            norm_box = [
+                round(r.x0 / pw, 5),
+                round(r.y0 / ph, 5),
+                round(r.x1 / pw, 5),
+                round(r.y1 / ph, 5)
+            ]
+
+            line_candidates.append(PipingLineCandidateDTO(
+                polyline_points=polyline_pts,
+                bbox_normalized=norm_box,
+                line_style=line_style,
+                length_mm=length_mm,
+                stroke_width_pt=stroke_width,
+                color=d.get("color"),
+                is_main_process_line=is_main,
+                attributes={
+                    "page_number": page_number,
+                    "items_count": len(items),
+                    "is_closed": bool(d.get("closePath"))
+                }
+            ))
+
+        return line_candidates
+
+    def check_symbol_intersects_line(
+        self,
+        symbol_bbox_norm: List[float],
+        polyline_points: List[List[float]],
+        tolerance_norm: float = 0.005
+    ) -> bool:
+        """
+        Determina si el bounding box normalizado de un símbolo intersecta o toca
+        una polilínea de tubería dada.
+        """
+        if not symbol_bbox_norm or len(symbol_bbox_norm) != 4 or not polyline_points or len(polyline_points) < 2:
+            return False
+
+        bx0 = symbol_bbox_norm[0] - tolerance_norm
+        by0 = symbol_bbox_norm[1] - tolerance_norm
+        bx1 = symbol_bbox_norm[2] + tolerance_norm
+        by1 = symbol_bbox_norm[3] + tolerance_norm
+
+        def ccw(A, B, C):
+            return (C[1] - A[1]) * (B[0] - A[0]) > (B[1] - A[1]) * (C[0] - A[0])
+
+        def segments_intersect(A, B, C, D):
+            return ccw(A, C, D) != ccw(B, C, D) and ccw(A, B, C) != ccw(A, B, D)
+
+        box_edges = [
+            ([bx0, by0], [bx1, by0]),
+            ([bx1, by0], [bx1, by1]),
+            ([bx1, by1], [bx0, by1]),
+            ([bx0, by1], [bx0, by0]),
+        ]
+
+        for i in range(len(polyline_points) - 1):
+            pa = polyline_points[i]
+            pb = polyline_points[i + 1]
+
+            # 1. Alguno de los vértices dentro de la caja
+            if (bx0 <= pa[0] <= bx1 and by0 <= pa[1] <= by1) or (bx0 <= pb[0] <= bx1 and by0 <= pb[1] <= by1):
+                return True
+
+            # 2. El segmento cruza alguna de las 4 aristas de la caja
+            for edge_a, edge_b in box_edges:
+                if segments_intersect(pa, pb, edge_a, edge_b):
+                    return True
+
+        return False

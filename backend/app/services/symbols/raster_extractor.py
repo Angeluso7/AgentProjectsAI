@@ -146,7 +146,7 @@ class RasterSymbolExtractor:
             if stroke_density < 0.02 or stroke_density > 0.70:
                 continue
 
-            norm_box = [
+            tight_norm_box = [
                 round(x / w_px, 4),
                 round(y / h_px, 4),
                 round((x + w) / w_px, 4),
@@ -155,7 +155,7 @@ class RasterSymbolExtractor:
 
             # 3. Descarte contra cajas de texto OCR conocidas
             if known_text_bboxes_norm:
-                if self._overlaps_with_text(norm_box, known_text_bboxes_norm):
+                if self._overlaps_with_text(tight_norm_box, known_text_bboxes_norm):
                     continue
 
             # 4. Cálculo de confianza suave
@@ -163,19 +163,26 @@ class RasterSymbolExtractor:
             if conf < 0.45:
                 continue
 
-
             # Inferencia de familia
             family_hint = "instruments" if (0.8 <= aspect_ratio <= 1.25 and 6.0 <= max_dim <= 14.0) else "valves"
 
-            # 5. Generar y guardar Recorte PNG
+            # Margen fijo de 3mm convertido a píxeles según DPI
+            margin_px = int(round(3.0 * px_per_mm))
+            rx0 = max(0, x - margin_px)
+            ry0 = max(0, y - margin_px)
+            rx1 = min(w_px, x + w + margin_px)
+            ry1 = min(h_px, y + h + margin_px)
+
+            norm_box = [
+                round(rx0 / w_px, 4),
+                round(ry0 / h_px, 4),
+                round(rx1 / w_px, 4),
+                round(ry1 / h_px, 4)
+            ]
+
+            # 5. Generar y guardar Recorte PNG con margen de 3mm
             crop_path = None
             try:
-                pad = int(4 * (dpi / 150))
-                rx0 = max(0, x - pad)
-                ry0 = max(0, y - pad)
-                rx1 = min(w_px, x + w + pad)
-                ry1 = min(h_px, y + h + pad)
-
                 crop_np = img_rgb[ry0:ry1, rx0:rx1]
                 crop_pil = Image.fromarray(crop_np)
                 crop_name = f"sym_ras_{doc_uid}_p{page_number}_{len(candidates)+1}.png"
@@ -187,7 +194,7 @@ class RasterSymbolExtractor:
 
             candidate = RasterSymbolCandidateDTO(
                 id=str(uuid.uuid4()),
-                bbox_pixel=[x, y, x + w, y + h],
+                bbox_pixel=[rx0, ry0, rx1, ry1],
                 bbox_normalized=norm_box,
                 estimated_physical_size_mm={
                     "width_mm": w_mm,
