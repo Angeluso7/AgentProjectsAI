@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 from sqlalchemy.orm import Session
@@ -381,7 +382,6 @@ class OperationsService:
             reason_code=reason_code,
             notes=notes
         )
-
         task = self.repo.get_review_task(task_id)
 
         # Registrar traza de auditoría de la decisión humana
@@ -400,6 +400,52 @@ class OperationsService:
             sheet_id=task.sheet_id,
             job_id=task.job_id
         )
+
+        # Conexión del aprendizaje HITL para tareas de revisión de símbolos (FASE 3)
+        if task.task_type == "symbol_detection_review" and decision in ("approved", "corrected"):
+            from app.db.models.document_memory import DetectedSymbol
+            from app.services.symbols.canonical_catalog_service import CanonicalPipingCatalogService
+
+            symbol_id = (task.evidence_refs or {}).get("symbol_id") or (task.payload or {}).get("symbol_id")
+            if symbol_id:
+                sym = self.db.query(DetectedSymbol).filter(DetectedSymbol.id == symbol_id).first()
+                if sym:
+                    c_val = corrected_value or {}
+                    user_sym_type = c_val.get("symbol_type") or c_val.get("user_correction") or sym.symbol_type
+                    user_disc = c_val.get("discipline") or sym.discipline or "piping"
+
+                    sym.review_status = "accepted"
+                    sym.detection_status = "verified"
+                    if user_sym_type and user_sym_type != "unknown_symbol_candidate":
+                        sym.symbol_type = user_sym_type
+
+                    if sym.crop_image_path and os.path.exists(sym.crop_image_path):
+                        canonical_svc = CanonicalPipingCatalogService(self.db)
+                        try:
+                            code_clean = (user_sym_type or "SYM").upper().replace(" ", "_")
+                            canonical_code = f"CANONICAL_{code_clean}_{sym.id[:6].upper()}"
+                            promo_res = canonical_svc.promote_candidate_to_canonical(
+                                sym.id,
+                                canonical_code=canonical_code,
+                                canonical_name=user_sym_type.replace("_", " ").title(),
+                                category="piping" if user_disc == "piping" else "instrumentation",
+                                subcategory=user_sym_type,
+                                discipline=user_disc,
+                                evidence_kind="redacted_real" if sym.environment == "production" else "synthetic",
+                                reviewer_id=reviewer,
+                                rationale=notes or f"Aprobado por auditor en HITL Triage ({decision})",
+                                notes=notes
+                            )
+                            if promo_res and promo_res.template_id:
+                                sym.matched_template_id = promo_res.template_id
+                                sym.matched_library_entry_id = promo_res.template_id
+                                sym.matching_status = "matched"
+                                sym.match_score = 1.0
+                        except Exception as promo_err:
+                            logger.warning(f"Error promoviendo DetectedSymbol {sym.id} a catálogo: {promo_err}")
+
+                    self.db.add(sym)
+                    self.db.commit()
 
         return decision_record
 

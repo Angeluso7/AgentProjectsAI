@@ -43,7 +43,8 @@ class SymbolDetector:
         library_templates: Optional[List[Any]] = None,
         engine: str = "yolo_sahi_hybrid",
         confidence_threshold: float = 0.50,
-        discipline_filter: Optional[str] = None
+        discipline_filter: Optional[str] = None,
+        environment: str = "production"
     ) -> List[DetectedSymbolDTO]:
         """Ejecuta detección visual de símbolos en la región de dibujo."""
         dx0, dy0, dx1, dy1 = drawing_area_bbox_norm
@@ -94,11 +95,23 @@ class SymbolDetector:
 
         # 2. Fallback / Motor Baseline Heurístico & Template Matching
         if not yolo_success:
+            norm_env = (environment or "production").lower().strip()
+            if norm_env == "production":
+                # En modo producción, ESTÁ ESTRICTAMENTE PROHIBIDO retornar símbolos sintéticos inventados
+                import logging
+                logging.getLogger(__name__).warning(
+                    "[SymbolDetector] Modo PRODUCCIÓN: motor YOLO/SAHI no disponible. "
+                    "Por regla arquitectónica no se generarán símbolos sintéticos/placeholder. Retornando 0 detecciones."
+                )
+                return []
+
+            # Solo permitido para modo sandbox / exploratorio de demostración
             detections = self._run_baseline_heuristic_detector(
                 drawing_area_bbox_norm=drawing_area_bbox_norm,
                 library_templates=library_templates or [],
                 confidence_threshold=confidence_threshold,
-                discipline_filter=discipline_filter
+                discipline_filter=discipline_filter,
+                environment=norm_env
             )
 
         # Aplicar Non-Maximum Suppression (NMS) para eliminar solapamientos
@@ -110,16 +123,16 @@ class SymbolDetector:
         drawing_area_bbox_norm: List[float],
         library_templates: List[Any],
         confidence_threshold: float,
-        discipline_filter: Optional[str]
+        discipline_filter: Optional[str],
+        environment: str = "sandbox"
     ) -> List[DetectedSymbolDTO]:
-        """Motor baseline auditable basado en plantillas canónicas de template_memory y geometría."""
+        """Motor baseline auditable basado en plantillas sintéticas SOLO para demostración en sandbox."""
         dx0, dy0, dx1, dy1 = drawing_area_bbox_norm
         dw = dx1 - dx0
         dh = dy1 - dy0
         results: List[DetectedSymbolDTO] = []
 
-        # Generación de candidatos sintéticos/canónicos estrictamente en drawing_area
-        # Esto asegura que el cómputo y detección no invadan la viñeta técnica ni notas
+        # Generación de candidatos sintéticos/canónicos estrictamente para demostración sandbox
         sample_symbols = [
             ("door_symbol", "architecture", [dx0 + 0.10 * dw, dy0 + 0.15 * dh, dx0 + 0.13 * dw, dy0 + 0.19 * dh], 0.92, {"width_m": 0.90, "swing": "single_90"}),
             ("door_symbol", "architecture", [dx0 + 0.35 * dw, dy0 + 0.15 * dh, dx0 + 0.38 * dw, dy0 + 0.19 * dh], 0.88, {"width_m": 0.80, "swing": "single_90"}),
@@ -157,6 +170,10 @@ class SymbolDetector:
                         matched_entry_id = tmpl.id
                         break
 
+            demo_attrs = dict(attrs)
+            demo_attrs["synthetic_demo"] = True
+            demo_attrs["environment"] = environment
+
             results.append(
                 DetectedSymbolDTO(
                     symbol_type=sym_type,
@@ -164,10 +181,10 @@ class SymbolDetector:
                     bbox=pixel_box,
                     bbox_normalized=[round(bx0, 4), round(by0, 4), round(bx1, 4), round(by1, 4)],
                     confidence=round(conf, 3),
-                    detection_status="detected" if conf >= 0.70 else "low_confidence",
-                    source_engine="geometric_template_matcher",
+                    detection_status="synthetic_demo",
+                    source_engine="synthetic_demo_fallback",
                     source_version="v1.0",
-                    attributes=attrs,
+                    attributes=demo_attrs,
                     matched_library_entry_id=matched_entry_id
                 )
             )

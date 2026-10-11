@@ -9,6 +9,8 @@ class DisciplineEnum(str, Enum):
     PLUMBING = "plumbing"
     HVAC = "hvac"
     MECHANICAL = "mechanical"
+    PIPING = "piping"
+    PROCESSES = "processes"
     FIRE_SAFETY = "fire_safety"
     FIRE_PROTECTION = "fire_protection"
     TELECOM = "telecom"

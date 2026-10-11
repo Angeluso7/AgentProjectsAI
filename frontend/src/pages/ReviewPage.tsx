@@ -58,11 +58,19 @@ export const ReviewPage: React.FC = () => {
     if (!selectedTask) return;
     try {
       setSubmitting(true);
-      let correctedVal = undefined;
+      let correctedVal: any = undefined;
+      const isSymbolTask = selectedTask.task_type === 'symbol_detection_review';
+
       if (decision === 'corrected') {
         correctedVal = {
           user_correction: correctedText || 'Valor ajustado por auditor',
-          original_payload: selectedTask.payload
+          original_payload: selectedTask.payload,
+          ...(isSymbolTask ? { symbol_type: correctedText || selectedTask.payload?.symbol_type, discipline: selectedTask.payload?.discipline } : {})
+        };
+      } else if (decision === 'approved' && isSymbolTask) {
+        correctedVal = {
+          symbol_type: correctedText || selectedTask.payload?.symbol_type,
+          discipline: selectedTask.payload?.discipline
         };
       }
 
@@ -74,7 +82,7 @@ export const ReviewPage: React.FC = () => {
         reason_code: selectedTask.reason_code
       });
 
-      alert(`Decisión registrada: ${decision.toUpperCase()}. Valor original preservado.`);
+      alert(`Decisión registrada: ${decision.toUpperCase()}. Símbolo validado y conectado al catálogo.`);
       setCorrectedText('');
       setReviewNotes('');
       loadData();
@@ -217,6 +225,22 @@ export const ReviewPage: React.FC = () => {
                 {selectedTask.confidence !== null && selectedTask.confidence !== undefined && (
                   <div><strong>Confianza Detectada:</strong> <span style={{ color: 'var(--primary)', fontWeight: 600 }}>{(selectedTask.confidence * 100).toFixed(1)}%</span></div>
                 )}
+                {selectedTask.task_type === 'symbol_detection_review' && (selectedTask.payload?.crop_url || selectedTask.payload?.crop_image_path) && (
+                  <div style={{ marginTop: '12px', display: 'flex', alignItems: 'center', gap: '12px', background: 'var(--bg-card)', padding: '10px', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+                    <div style={{ width: '64px', height: '64px', background: '#ffffff', borderRadius: '4px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+                      <img
+                        src={selectedTask.payload.crop_url || `/data/${selectedTask.payload.crop_image_path.replace(/\\/g, '/').replace(/^\.?\/?data\/?/, '')}`}
+                        alt="Crop Símbolo"
+                        style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+                        onError={(e) => { (e.currentTarget as HTMLElement).style.display = 'none'; }}
+                      />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: '12px', fontWeight: 700, color: 'var(--text-main)' }}>Recorte Geométrico Real</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Disciplina: {selectedTask.payload.discipline || 'piping'} | Clase detectada: <code style={{ color: 'var(--primary)' }}>{selectedTask.payload.symbol_type}</code></div>
+                    </div>
+                  </div>
+                )}
                 <div style={{ marginTop: '8px' }}>
                   <strong>Valor Original / Payload:</strong>
                   <pre style={{ fontSize: '11px', background: 'var(--bg-card)', padding: '8px', borderRadius: '6px', marginTop: '4px', overflowX: 'auto' }}>
@@ -229,10 +253,12 @@ export const ReviewPage: React.FC = () => {
               {selectedTask.status === 'open' ? (
                 <div>
                   <div style={{ marginBottom: '12px' }}>
-                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>Valor Corregido (si aplica):</label>
+                    <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                      {selectedTask.task_type === 'symbol_detection_review' ? 'Tipo / Nombre Canónico para Catálogo (ej: PIP-VALVE-GATE, valvula_de_retencion):' : 'Valor Corregido (si aplica):'}
+                    </label>
                     <input
                       type="text"
-                      placeholder="ej: Escala corregida: 1:50"
+                      placeholder={selectedTask.task_type === 'symbol_detection_review' ? (selectedTask.payload?.symbol_type || 'Nombre canónico...') : 'ej: Escala corregida: 1:50'}
                       value={correctedText}
                       onChange={(e) => setCorrectedText(e.target.value)}
                       style={{ width: '100%', background: 'var(--bg-sidebar)', color: 'var(--text-main)', border: '1px solid var(--border-subtle)', padding: '8px', borderRadius: '6px', fontSize: '13px' }}

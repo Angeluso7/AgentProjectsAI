@@ -54,8 +54,8 @@ def test_detect_symbols_on_sheet(client, db_session):
     db_session.commit()
     db_session.refresh(drawing_reg)
 
-    # 3. Invocar detección síncrona
-    res = client.post(f"/api/v1/symbols/sheets/{sheet.id}", json={"force_reprocess": True})
+    # 3. Invocar detección síncrona en modo sandbox
+    res = client.post(f"/api/v1/symbols/sheets/{sheet.id}", json={"force_reprocess": True, "environment": "sandbox"})
     assert res.status_code == 200
     symbols = res.json()
     assert len(symbols) > 0
@@ -83,10 +83,49 @@ def test_detect_symbols_on_sheet(client, db_session):
     assert len(summary["by_category"]) >= 4
 
     # 5. Endpoint Asíncrono (HTTP 202)
-    async_res = client.post(f"/api/v1/symbols/sheets/{sheet.id}/async")
+    async_res = client.post(f"/api/v1/symbols/sheets/{sheet.id}/async", json={"environment": "sandbox"})
     assert async_res.status_code == 202
     assert "job_id" in async_res.json()
     assert async_res.json()["status"] == "queued"
+
+def test_production_mode_does_not_generate_synthetic_symbols(client, db_session):
+    """Garantiza que en modo 'production' NUNCA se generen símbolos sintéticos placeholder."""
+    proj_res = client.post("/api/v1/projects/", json={
+        "code": "PRJ-PROD-GUARD",
+        "name": "Proyecto Prod Sin Placeholders",
+        "discipline": "piping"
+    })
+    project_id = proj_res.json()["id"]
+
+    doc = Document(
+        project_id=project_id,
+        filename="dummy_prod.pdf",
+        file_path="no_file_exists.pdf",
+        file_hash_sha256="hash_prod_001",
+        file_size_bytes=1024,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    sheet = DocumentSheet(
+        document_id=doc.id,
+        sheet_number=1,
+        width_px=8000,
+        height_px=6000,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+    db_session.refresh(sheet)
+
+    service = SymbolService(db_session)
+    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True, environment="production")
+    # En producción sin modelo ni archivo real, debe ser estrictamente lista vacía
+    assert symbols == []
+    assert len(symbols) == 0
 
 def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     """Verifica que símbolos inciertos o unknown_symbol_candidate generen ReviewTask y DecisionTrace."""
@@ -122,7 +161,7 @@ def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     db_session.refresh(sheet)
 
     service = SymbolService(db_session)
-    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True)
+    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True, environment="sandbox")
     assert len(symbols) > 0
 
     # Verificar que unknown_symbol_candidate generó ReviewTask
@@ -134,3 +173,103 @@ def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     traces = db_session.query(DecisionTrace).filter(DecisionTrace.sheet_id == sheet.id).all()
     assert len(traces) >= 1
     assert any(tr.trace_type == "symbol_detection" for tr in traces)
+
+
+def test_hitl_approval_promotes_symbol_to_canonical(db_session, tmp_path):
+    """Verifica Fase 3: la aprobación/corrección en HITL promueve el símbolo a SymbolTemplate canónico."""
+    import numpy as np
+    import cv2
+    from app.services.operations.service import OperationsService
+    from app.db.models.template_memory import SymbolTemplate
+    from app.db.models.core import Project
+
+    # Generar un crop físico válido para la prueba
+    crop_file = tmp_path / "valve_ball_crop.png"
+    crop_img = np.ones((64, 64, 3), dtype=np.uint8) * 255
+    cv2.circle(crop_img, (32, 32), 16, (0, 0, 0), 2)
+    cv2.imwrite(str(crop_file), crop_img)
+
+    proj = Project(
+        code="PRJ-HITL-001",
+        name="Proyecto HITL",
+        discipline="piping"
+    )
+    db_session.add(proj)
+    db_session.commit()
+
+    doc = Document(
+        project_id=proj.id,
+        filename="hitl_test.pdf",
+        file_path="dummy.pdf",
+        file_hash_sha256="hitl_hash_1",
+        file_size_bytes=1024,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    sheet = DocumentSheet(
+        document_id=doc.id,
+        sheet_number=1,
+        width_px=1000,
+        height_px=1000,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+
+    sym = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="unknown_symbol_candidate",
+        discipline="piping",
+        bbox=[100, 100, 200, 200],
+        bbox_normalized=[0.1, 0.1, 0.2, 0.2],
+        crop_image_path=str(crop_file),
+        confidence=0.62,
+        matching_status="unknown_symbol",
+        source_engine="vector_symbol_extractor",
+        environment="production"
+    )
+    db_session.add(sym)
+    db_session.commit()
+
+    task = ReviewTask(
+        task_type="symbol_detection_review",
+        reason_code="UNKNOWN_SYMBOL_CANDIDATE",
+        reason_message="Símbolo desconocido para revisión humana",
+        confidence=0.62,
+        priority="high",
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        evidence_refs={"symbol_id": sym.id},
+        payload={"symbol_id": sym.id, "symbol_type": "unknown_symbol_candidate", "discipline": "piping"}
+    )
+    db_session.add(task)
+    db_session.commit()
+
+    ops_svc = OperationsService(db_session)
+    decision = ops_svc.resolve_review_task(
+        task_id=task.id,
+        decision="corrected",
+        reviewer="lead_engineer",
+        corrected_value={"symbol_type": "PIP-VALVE-BALL", "discipline": "piping"},
+        notes="Confirmado como válvula de bola en línea 01"
+    )
+
+    assert decision is not None
+    assert decision.decision == "corrected"
+    assert task.status in ["corrected", "resolved"]
+
+    db_session.refresh(sym)
+    assert sym.symbol_type == "PIP-VALVE-BALL"
+    assert sym.matching_status == "matched"
+    assert sym.matched_template_id is not None
+    assert sym.match_score == 1.0
+
+    # Verificar que existe la plantilla creada en BD
+    created_tpl = db_session.query(SymbolTemplate).filter(SymbolTemplate.id == sym.matched_template_id).first()
+    assert created_tpl is not None
+    assert "PIP-VALVE-BALL" in created_tpl.display_name or "PIP-VALVE-BALL" in created_tpl.symbol_class or created_tpl.is_active_for_detection
+
