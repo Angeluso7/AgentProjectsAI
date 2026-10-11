@@ -775,6 +775,20 @@ export const apiService = {
     return res.data;
   },
 
+  // Piping Lines & Trazado Manual
+  getPipingLines: async (sheetId: string): Promise<any[]> => {
+    const res = await apiClient.get<any[]>(`/symbols/sheets/${sheetId}/piping-lines`);
+    return res.data;
+  },
+  createManualPipingLine: async (sheetId: string, payload: any): Promise<any> => {
+    const res = await apiClient.post<any>(`/symbols/sheets/${sheetId}/piping-lines`, payload);
+    return res.data;
+  },
+  deletePipingLine: async (lineId: string): Promise<any> => {
+    const res = await apiClient.delete<any>(`/symbols/piping-lines/${lineId}`);
+    return res.data;
+  },
+
   // Memorias y Estadísticas
   getMemoriesStats: async (): Promise<MemoriesStats> => {
     const res = await apiClient.get<MemoriesStats>('/memories/stats');

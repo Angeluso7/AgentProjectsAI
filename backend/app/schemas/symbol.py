@@ -253,3 +253,64 @@ class MatchCandidateResponse(BaseModel):
     total_templates_evaluated: int
     best_match: Optional[MatchedTemplateItem] = None
     matches: List[MatchedTemplateItem] = []
+
+
+# ============================================================================
+# FASE 1 & 3: MODELO Y TRAZADO MANUAL DE LÍNEAS DE PIPING
+# ============================================================================
+
+class PipingLineSegmentRead(BaseModel):
+    id: str
+    sheet_id: str
+    piping_line_id: Optional[str] = None
+    polyline_points: List[List[float]]
+    bbox_normalized: Optional[List[float]] = None
+    line_style: str = "solid"
+    length_mm: float = 0.0
+    stroke_width_pt: float = 1.0
+    connected_symbol_ids: List[str] = Field(default_factory=list)
+    is_main_process_line: bool = True
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PipingLineRead(BaseModel):
+    id: str
+    project_id: str
+    line_number: Optional[str] = None
+    nominal_size: Optional[str] = None
+    service_fluid: Optional[str] = None
+    spec_class: Optional[str] = None
+    insulation: Optional[str] = None
+    design_pressure: Optional[float] = None
+    design_temperature: Optional[float] = None
+    from_equipment_tag: Optional[str] = None
+    to_equipment_tag: Optional[str] = None
+    flow_direction: str = "unconfirmed"
+    source: str = "auto_vector_extraction"
+    confidence_status: str = "auto_high"
+    attributes: Dict[str, Any] = Field(default_factory=dict)
+    segments: List[PipingLineSegmentRead] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ManualPipingLineCreateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+    polyline_points: List[List[float]] = Field(..., description="Puntos de la polilínea normalizados (0 a 1)")
+    line_number: Optional[str] = None
+    nominal_size: Optional[str] = None
+    service_fluid: Optional[str] = None
+    spec_class: Optional[str] = None
+    insulation: Optional[str] = None
+    from_equipment_tag: Optional[str] = None
+    to_equipment_tag: Optional[str] = None
+    flow_direction: Optional[str] = "unconfirmed"
+

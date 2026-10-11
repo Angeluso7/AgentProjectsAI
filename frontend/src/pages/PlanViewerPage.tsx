@@ -5,20 +5,22 @@ import {
   Table as TableIcon, Shapes, Sparkles, Filter, ShieldAlert, SquareCheck, AlertOctagon,
   FileText, Folder, Upload, Hand, MousePointer, Crop, Maximize2,
   BookmarkPlus, Database, Trash2, Edit3, Check, Info, ArrowUpRight,
-  ScanText, X, ArrowLeft
+  ScanText, X, ArrowLeft, GitCommitHorizontal, Undo2, Waypoints
 } from 'lucide-react';
 import { apiService } from '../services/api';
 import {
   Project, DocumentItem, DocumentSheet, ExtractedTextItem, SheetRegionItem,
   TitleBlockExtractionItem, ExtractedTableItem, ExtractedTableCellItem,
   DetectedSymbolItem, SheetSymbolsSummaryResponse, RuleFindingItem,
-  ManualAnnotation
+  ManualAnnotation, PipingLineItem
 } from '../types';
 import { AnnotationClassifyModal } from '../components/AnnotationClassifyModal';
 import { AnnotationConfirmModal } from '../components/AnnotationConfirmModal';
 import { PlanSelectionsModal } from '../components/PlanSelectionsModal';
+import { PipingLineDataModal } from '../components/PipingLineDataModal';
+import { DeletePipingLineModal } from '../components/DeletePipingLineModal';
 
-export type ViewerToolMode = 'select' | 'pan' | 'crop';
+export type ViewerToolMode = 'select' | 'pan' | 'crop' | 'trace_line';
 
 // =========================================================
 // CURSORES PERSONALIZADOS SVG (MANO NEGRA Y CRUZ ROJA)
@@ -86,6 +88,13 @@ export const PlanViewerPage: React.FC = () => {
   const [showSymbols, setShowSymbols] = useState(true);
   const [showFindings, setShowFindings] = useState(true);
   const [showManualAnnotations, setShowManualAnnotations] = useState(true);
+  const [showPipingLines, setShowPipingLines] = useState(true);
+  const [pipingLines, setPipingLines] = useState<PipingLineItem[]>([]);
+  const [currentTracePoints, setCurrentTracePoints] = useState<[number, number][]>([]);
+  const [showLineDataModal, setShowLineDataModal] = useState<boolean>(false);
+  const [selectedPipingLine, setSelectedPipingLine] = useState<PipingLineItem | null>(null);
+  const [deletingPipingLine, setDeletingPipingLine] = useState<PipingLineItem | null>(null);
+  const [showDeleteLineModal, setShowDeleteLineModal] = useState<boolean>(false);
   
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -312,13 +321,16 @@ export const PlanViewerPage: React.FC = () => {
     setFindings([]);
     setSelectedFinding(null);
     setManualAnnotations([]);
+    setPipingLines([]);
+    setCurrentTracePoints([]);
+    setSelectedPipingLine(null);
     setSelectedEntity(null);
     setContextMenu(null);
   };
 
   const loadSheetData = async (sheetId: string) => {
     try {
-      const [texts, sheetRegions, tb, sheetTables, sheetSymbols, symSummary, sheetFindings, anns] = await Promise.all([
+      const [texts, sheetRegions, tb, sheetTables, sheetSymbols, symSummary, sheetFindings, anns, pLines] = await Promise.all([
         apiService.getSheetTexts(sheetId).catch(() => []),
         apiService.getSheetRegions(sheetId).catch(() => []),
         apiService.getSheetTitleBlock(sheetId).catch(() => null),
@@ -327,6 +339,7 @@ export const PlanViewerPage: React.FC = () => {
         apiService.getSheetSymbolsSummary(sheetId).catch(() => null),
         apiService.getFindings(undefined, sheetId).catch(() => []),
         apiService.getManualAnnotations(sheetId).catch(() => []),
+        apiService.getPipingLines(sheetId).catch(() => []),
       ]);
       setOcrTexts(texts);
       setRegions(sheetRegions);
@@ -336,6 +349,7 @@ export const PlanViewerPage: React.FC = () => {
       setSymbolsSummary(symSummary);
       setFindings(sheetFindings);
       setManualAnnotations(anns);
+      setPipingLines(pLines);
 
       const targetLayer = localStorage.getItem('viewer_target_layer');
       if (targetLayer === 'symbols') {
@@ -571,6 +585,91 @@ export const PlanViewerPage: React.FC = () => {
   const handleResetView = () => {
     setZoom(1);
     setPan({ x: 0, y: 0 });
+  };
+
+  // =========================================================
+  // TRAZADO MANUAL DE PIPING LINES (SNAP MAGNÉTICO PUNTO A PUNTO)
+  // =========================================================
+  const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (activeTool !== 'trace_line') return;
+    const rect = sheetContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    let ptX = (e.clientX - rect.left) / rect.width;
+    let ptY = (e.clientY - rect.top) / rect.height;
+    ptX = Math.max(0, Math.min(1, ptX));
+    ptY = Math.max(0, Math.min(1, ptY));
+
+    // Snap magnético (umbral 14px en pantalla)
+    const snapThresholdX = 14 / rect.width;
+    const snapThresholdY = 14 / rect.height;
+    let snapped = false;
+
+    // 1. Probar contra vértices de pipingLines existentes
+    for (const pline of pipingLines) {
+      for (const seg of pline.segments || []) {
+        for (const ep of seg.polyline_points || []) {
+          const dx = Math.abs(ep[0] - ptX);
+          const dy = Math.abs(ep[1] - ptY);
+          if (dx <= snapThresholdX && dy <= snapThresholdY) {
+            ptX = ep[0];
+            ptY = ep[1];
+            snapped = true;
+            break;
+          }
+        }
+        if (snapped) break;
+      }
+      if (snapped) break;
+    }
+
+    // 2. Probar contra puntos previos del mismo trazo activo
+    if (!snapped && currentTracePoints.length >= 1) {
+      for (const prevPt of currentTracePoints) {
+        const dx = Math.abs(prevPt[0] - ptX);
+        const dy = Math.abs(prevPt[1] - ptY);
+        if (dx <= snapThresholdX && dy <= snapThresholdY) {
+          ptX = prevPt[0];
+          ptY = prevPt[1];
+          snapped = true;
+          break;
+        }
+      }
+    }
+
+    setCurrentTracePoints((prev) => [...prev, [ptX, ptY]]);
+  };
+
+  const handleSavePipingLine = async (data: any) => {
+    if (!selectedSheet) return;
+    try {
+      const created = await apiService.createManualPipingLine(selectedSheet.id, {
+        polyline_points: currentTracePoints,
+        ...data,
+      });
+      setPipingLines((prev) => [...prev, created]);
+      setCurrentTracePoints([]);
+      setActiveTool('select');
+      setSelectedPipingLine(created);
+      showToast(`Línea de piping ${created.line_number || 'manual'} registrada correctamente.`, 'success', 3500);
+    } catch (err: any) {
+      console.error('Error guardando línea de piping:', err);
+      showToast(err.response?.data?.detail || 'Error al guardar línea de piping.', 'error', 3500);
+    }
+  };
+
+  const handleDeletePipingLine = async (lineId: string) => {
+    try {
+      await apiService.deletePipingLine(lineId);
+      setPipingLines((prev) => prev.filter((l) => l.id !== lineId));
+      if (selectedPipingLine?.id === lineId) {
+        setSelectedPipingLine(null);
+      }
+      showToast('Línea de piping eliminada exitosamente.', 'success', 3500);
+    } catch (err: any) {
+      console.error('Error eliminando línea de piping:', err);
+      showToast(err.response?.data?.detail || 'Error al eliminar línea de piping.', 'error', 3500);
+    }
   };
 
   // =========================================================
@@ -949,6 +1048,15 @@ export const PlanViewerPage: React.FC = () => {
               <BookmarkPlus size={11} /> Anotaciones ({manualAnnotations.length})
             </button>
 
+            <button
+              className={`btn ${showPipingLines ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ padding: '3px 8px', fontSize: '11px', background: showPipingLines ? '#06b6d4' : undefined }}
+              onClick={() => setShowPipingLines(!showPipingLines)}
+              title="Muestra u oculta líneas de piping vectoriales"
+            >
+              <GitCommitHorizontal size={11} /> Piping ({pipingLines.length})
+            </button>
+
             {/* NUEVO BOTÓN REQUERIDO: SELECCIONES */}
             <button
               className={`btn ${showSelectionsModal ? 'btn-primary' : 'btn-secondary'}`}
@@ -1062,6 +1170,28 @@ export const PlanViewerPage: React.FC = () => {
                 >
                   <Crop size={12} />
                   <span>Selección</span>
+                </button>
+
+                <button
+                  className={`btn ${activeTool === 'trace_line' ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: '11px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    background: activeTool === 'trace_line' ? '#06b6d4' : undefined,
+                    color: activeTool === 'trace_line' ? '#000000' : undefined,
+                    fontWeight: activeTool === 'trace_line' ? 700 : undefined,
+                  }}
+                  onClick={() => {
+                    setActiveTool(activeTool === 'trace_line' ? 'select' : 'trace_line');
+                    setCurrentTracePoints([]);
+                  }}
+                  title="Trazar Línea de Piping: Click punto a punto con snap magnético sobre el plano"
+                >
+                  <GitCommitHorizontal size={12} />
+                  <span>Trazar Piping</span>
                 </button>
               </div>
 
@@ -1235,6 +1365,100 @@ export const PlanViewerPage: React.FC = () => {
                 <Crosshair size={13} className="text-rose-400" />
                 <span>{reselectingAnnotationId ? 'Modo Reselección: Arrastra un nuevo recuadro sobre el plano' : 'Modo Selección: Arrastra un marco sobre el plano para recortar'}</span>
               </div>
+            ) : activeTool === 'trace_line' ? (
+              <div
+                style={{
+                  background: '#020617',
+                  border: '1px solid #06b6d4',
+                  color: '#e0f2fe',
+                  padding: '6px 12px',
+                  borderRadius: '10px',
+                  fontSize: '11px',
+                  fontWeight: 600,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.8), 0 0 0 1px #0891b2',
+                  pointerEvents: 'auto',
+                }}
+                className="animate-in fade-in duration-150"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <GitCommitHorizontal size={14} className="text-cyan-400 animate-pulse" />
+                  <span>
+                    Trazado de Piping: {currentTracePoints.length} {currentTracePoints.length === 1 ? 'punto' : 'puntos'}
+                    <span style={{ color: '#94a3b8', fontSize: '10px', marginLeft: '4px' }}>(Snap magnético activo)</span>
+                  </span>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <button
+                    type="button"
+                    disabled={currentTracePoints.length === 0}
+                    onClick={() => setCurrentTracePoints((pts) => pts.slice(0, -1))}
+                    style={{
+                      background: '#1e293b',
+                      border: '1px solid #475569',
+                      color: currentTracePoints.length === 0 ? '#64748b' : '#f8fafc',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      cursor: currentTracePoints.length === 0 ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Deshacer último punto"
+                  >
+                    <Undo2 size={12} /> Deshacer
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTool('select');
+                      setCurrentTracePoints([]);
+                    }}
+                    style={{
+                      background: '#1e293b',
+                      border: '1px solid #475569',
+                      color: '#f8fafc',
+                      padding: '3px 8px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Cancelar trazado"
+                  >
+                    <X size={12} /> Cancelar
+                  </button>
+
+                  <button
+                    type="button"
+                    disabled={currentTracePoints.length < 2}
+                    onClick={() => setShowLineDataModal(true)}
+                    style={{
+                      background: currentTracePoints.length < 2 ? '#1e293b' : '#06b6d4',
+                      border: '1px solid #0891b2',
+                      color: currentTracePoints.length < 2 ? '#64748b' : '#000000',
+                      fontWeight: 700,
+                      padding: '3px 10px',
+                      borderRadius: '6px',
+                      fontSize: '11px',
+                      cursor: currentTracePoints.length < 2 ? 'not-allowed' : 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '4px',
+                    }}
+                    title="Asignar datos y guardar línea de piping"
+                  >
+                    <Check size={12} /> Finalizar Línea
+                  </button>
+                </div>
+              </div>
             ) : null}
 
             {/* Toast de acción o estado del visor */}
@@ -1278,13 +1502,14 @@ export const PlanViewerPage: React.FC = () => {
               justifyContent: 'center',
               overflow: 'hidden',
               padding: '16px',
-              cursor: activeTool === 'pan' ? (isPanning ? BLACK_GRABBING_CURSOR : BLACK_GRAB_CURSOR) : activeTool === 'crop' ? RED_CROSSHAIR_CURSOR : 'default',
+              cursor: activeTool === 'pan' ? (isPanning ? BLACK_GRABBING_CURSOR : BLACK_GRAB_CURSOR) : activeTool === 'crop' ? RED_CROSSHAIR_CURSOR : activeTool === 'trace_line' ? 'crosshair' : 'default',
               userSelect: 'none',
             }}
           >
             {selectedSheet ? (
               <div
                 ref={sheetContainerRef}
+                onClick={handleContainerClick}
                 onMouseDown={handleCropMouseDown}
                 onMouseMove={handleCropMouseMove}
                 onMouseUp={handleCropMouseUp}
@@ -1577,6 +1802,89 @@ export const PlanViewerPage: React.FC = () => {
                       />
                     );
                   })()
+                )}
+
+                {/* Capa SVG de Líneas de Piping (Persistidas y Trazo Activo en Curso) */}
+                {(showPipingLines || activeTool === 'trace_line') && (
+                  <svg
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '100%',
+                      height: '100%',
+                      pointerEvents: activeTool === 'trace_line' ? 'none' : 'auto',
+                      zIndex: 38,
+                    }}
+                    viewBox="0 0 1000 1000"
+                    preserveAspectRatio="none"
+                  >
+                    {/* Líneas Persistidas */}
+                    {showPipingLines && pipingLines.map((line) => {
+                      const isSelected = selectedPipingLine?.id === line.id;
+                      const strokeColor = isSelected ? '#ffffff' : line.source === 'manual_trace' ? '#38bdf8' : '#06b6d4';
+                      const strokeDash = line.flow_direction === 'reverse' ? '6,3' : undefined;
+
+                      return (
+                        <g
+                          key={line.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedPipingLine(line);
+                            setSelectedEntity(null);
+                          }}
+                        >
+                          {line.segments?.map((seg) => {
+                            if (!seg.polyline_points || seg.polyline_points.length < 2) return null;
+                            const pts = seg.polyline_points.map(([px, py]) => `${px * 1000},${py * 1000}`).join(' ');
+                            return (
+                              <polyline
+                                key={seg.id}
+                                points={pts}
+                                fill="none"
+                                stroke={strokeColor}
+                                strokeWidth={isSelected ? '3.5' : '2'}
+                                strokeDasharray={strokeDash}
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <title>{`Línea ${line.line_number || 'S/N'} (${line.nominal_size || '-'}) - ${line.service_fluid || 'Proceso'}`}</title>
+                              </polyline>
+                            );
+                          })}
+                        </g>
+                      );
+                    })}
+
+                    {/* Polilínea de Trazo Manual Activo */}
+                    {activeTool === 'trace_line' && currentTracePoints.length > 0 && (
+                      <g>
+                        {currentTracePoints.length >= 2 && (
+                          <polyline
+                            points={currentTracePoints.map(([px, py]) => `${px * 1000},${py * 1000}`).join(' ')}
+                            fill="none"
+                            stroke="#f59e0b"
+                            strokeWidth="2.5"
+                            strokeDasharray="5,3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        )}
+                        {currentTracePoints.map(([px, py], idx) => (
+                          <circle
+                            key={idx}
+                            cx={px * 1000}
+                            cy={py * 1000}
+                            r="4.5"
+                            fill={idx === currentTracePoints.length - 1 ? '#ef4444' : '#f59e0b'}
+                            stroke="#ffffff"
+                            strokeWidth="1.5"
+                          />
+                        ))}
+                      </g>
+                    )}
+                  </svg>
                 )}
               </div>
             ) : (
@@ -1875,6 +2183,97 @@ export const PlanViewerPage: React.FC = () => {
               </div>
             ) : (
               <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>Sin viñeta procesada.</div>
+            )}
+          </div>
+
+          {/* Sección: Líneas de Piping */}
+          <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '10px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+              <h2 style={{ fontSize: '14px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <GitCommitHorizontal size={15} style={{ color: '#06b6d4' }} />
+                Líneas de Piping ({pipingLines.length})
+              </h2>
+              {selectedPipingLine && (
+                <button
+                  className="btn btn-secondary"
+                  style={{ fontSize: '10px', padding: '2px 6px' }}
+                  onClick={() => setSelectedPipingLine(null)}
+                >
+                  Limpiar
+                </button>
+              )}
+            </div>
+
+            {selectedPipingLine ? (
+              <div style={{ background: 'var(--bg-sidebar)', padding: '8px 10px', borderRadius: '6px', border: '1px solid #0891b2', fontSize: '11px', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <strong style={{ color: '#38bdf8', fontSize: '12px' }}>
+                    {selectedPipingLine.line_number || 'Línea Sin Código'}
+                  </strong>
+                  <span className="badge" style={{ fontSize: '9px', background: selectedPipingLine.source === 'manual_trace' ? '#0369a1' : '#047857', color: '#ffffff' }}>
+                    {selectedPipingLine.source === 'manual_trace' ? 'MANUAL' : 'AUTO'}
+                  </span>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '4px', marginTop: '2px', color: 'var(--text-dim)' }}>
+                  <div><strong>DN:</strong> {selectedPipingLine.nominal_size || '-'}</div>
+                  <div><strong>Fluido:</strong> {selectedPipingLine.service_fluid || '-'}</div>
+                  <div><strong>Spec:</strong> {selectedPipingLine.spec_class || '-'}</div>
+                  <div><strong>Aislación:</strong> {selectedPipingLine.insulation || 'No'}</div>
+                  <div><strong>Desde:</strong> {selectedPipingLine.from_equipment_tag || '-'}</div>
+                  <div><strong>Hasta:</strong> {selectedPipingLine.to_equipment_tag || '-'}</div>
+                </div>
+
+                <div style={{ fontSize: '10px', color: '#94a3b8', borderTop: '1px solid var(--border-subtle)', paddingTop: '4px', marginTop: '2px', display: 'flex', justifyContent: 'space-between' }}>
+                  <span>Flujo: <strong>{selectedPipingLine.flow_direction || 'unconfirmed'}</strong></span>
+                  <span>Confianza: <strong>{selectedPipingLine.confidence_status || '-'}</strong></span>
+                </div>
+
+                {selectedPipingLine.source === 'manual_trace' && (
+                  <button
+                    className="btn btn-secondary"
+                    style={{ marginTop: '6px', padding: '4px 8px', fontSize: '11px', color: '#ef4444', borderColor: '#b91c1c', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }}
+                    onClick={() => {
+                      setDeletingPipingLine(selectedPipingLine);
+                      setShowDeleteLineModal(true);
+                    }}
+                  >
+                    <Trash2 size={12} />
+                    <span>Eliminar Línea Manual</span>
+                  </button>
+                )}
+              </div>
+            ) : pipingLines.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', maxHeight: '120px', overflowY: 'auto' }}>
+                {pipingLines.map((pl) => (
+                  <div
+                    key={pl.id}
+                    onClick={() => setSelectedPipingLine(pl)}
+                    style={{
+                      background: 'var(--bg-sidebar)',
+                      padding: '5px 8px',
+                      borderRadius: '4px',
+                      border: '1px solid var(--border-subtle)',
+                      cursor: 'pointer',
+                      fontSize: '11px',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: pl.source === 'manual_trace' ? '#38bdf8' : '#06b6d4' }} />
+                      <strong style={{ color: 'var(--text-main)' }}>{pl.line_number || 'S/N'}</strong>
+                      <span style={{ color: 'var(--text-dim)', fontSize: '10px' }}>({pl.nominal_size || '-'})</span>
+                    </div>
+                    <span style={{ fontSize: '10px', color: 'var(--text-dim)' }}>{pl.service_fluid || ''}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-dim)', fontSize: '11px' }}>
+                No hay líneas detectadas ni trazadas. Usa "Trazar Piping" arriba.
+              </div>
             )}
           </div>
 
@@ -2264,6 +2663,31 @@ export const PlanViewerPage: React.FC = () => {
             loadSheetData(selectedSheet.id);
           }
           showToast(res.message, 'success', 5000);
+        }}
+      />
+
+      {/* Modal 4: Datos de Línea de Piping Trazada Manualmente */}
+      <PipingLineDataModal
+        isOpen={showLineDataModal}
+        pointsCount={currentTracePoints.length}
+        onClose={() => setShowLineDataModal(false)}
+        onSave={handleSavePipingLine}
+      />
+
+      {/* Modal 5: Confirmación de Eliminación de Línea de Piping Manual */}
+      <DeletePipingLineModal
+        isOpen={showDeleteLineModal}
+        line={deletingPipingLine}
+        onClose={() => {
+          setShowDeleteLineModal(false);
+          setDeletingPipingLine(null);
+        }}
+        onConfirm={() => {
+          if (deletingPipingLine) {
+            handleDeletePipingLine(deletingPipingLine.id);
+          }
+          setShowDeleteLineModal(false);
+          setDeletingPipingLine(null);
         }}
       />
     </div>

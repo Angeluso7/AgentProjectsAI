@@ -487,3 +487,47 @@ def test_operations_service_resolves_line_trace_review(db_session, test_setup_pr
     assert pline.flow_direction == "forward"
     db_session.refresh(seg)
     assert seg.attributes.get("review_decision") == "corrected"
+
+
+def test_manual_piping_line_crud_api(client, db_session, test_setup_project_and_sheet):
+    """Verifica endpoints GET, POST y DELETE para trazado manual de PipingLine."""
+    proj, doc, sheet = test_setup_project_and_sheet
+
+    # 1. POST crear línea trazada manualmente
+    create_payload = {
+        "polyline_points": [[0.1, 0.2], [0.4, 0.2], [0.4, 0.6]],
+        "line_number": "03-4\"-SS304-001",
+        "nominal_size": "4\"",
+        "service_fluid": "P",
+        "spec_class": "SS304",
+        "insulation": "N",
+        "from_equipment_tag": "TK-101",
+        "to_equipment_tag": "P-102",
+        "flow_direction": "forward"
+    }
+    res_post = client.post(f"/api/v1/symbols/sheets/{sheet.id}/piping-lines", json=create_payload)
+    assert res_post.status_code == 201
+    created_line = res_post.json()
+    line_id = created_line["id"]
+    assert created_line["line_number"] == "03-4\"-SS304-001"
+    assert created_line["source"] == "manual_trace"
+    assert created_line["confidence_status"] == "manual_confirmed"
+    assert len(created_line["segments"]) == 1
+    assert created_line["segments"][0]["polyline_points"] == [[0.1, 0.2], [0.4, 0.2], [0.4, 0.6]]
+
+    # 2. GET listar líneas de la lámina
+    res_get = client.post(f"/api/v1/symbols/sheets/{sheet.id}/piping-lines", json=create_payload) if False else client.get(f"/api/v1/symbols/sheets/{sheet.id}/piping-lines")
+    assert res_get.status_code == 200
+    lines_list = res_get.json()
+    assert len(lines_list) >= 1
+    assert any(l["id"] == line_id for l in lines_list)
+
+    # 3. DELETE eliminar línea de piping
+    res_del = client.delete(f"/api/v1/symbols/piping-lines/{line_id}")
+    assert res_del.status_code == 200
+    assert res_del.json()["id"] == line_id
+
+    # Verificar que ya no exista
+    res_after = client.get(f"/api/v1/symbols/sheets/{sheet.id}/piping-lines")
+    assert not any(l["id"] == line_id for l in res_after.json())
+
