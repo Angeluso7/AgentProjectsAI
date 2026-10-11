@@ -12,6 +12,16 @@ from app.core.logging import logger
 PT_TO_MM = 25.4 / 72.0
 
 
+from app.services.symbols.shape_classifier import (
+    classify_primitive_shape as _classify_primitive_shape,
+    is_text_like_cluster as _is_text_like_cluster
+)
+
+# Exportar al nivel de módulo para conveniencia y pruebas
+classify_primitive_shape = _classify_primitive_shape
+is_text_like_cluster = _is_text_like_cluster
+
+
 @dataclass
 class VectorSymbolCandidateDTO:
     """Candidato a símbolo extraído desde geometría vectorial nativa."""
@@ -26,6 +36,7 @@ class VectorSymbolCandidateDTO:
     svg_data: Optional[str] = None
     canonical_family_hint: str = "valves"
     drawing_count: int = 1
+    attributes: Dict[str, Any] = field(default_factory=dict)
 
 @dataclass
 class PipingLineCandidateDTO:
@@ -314,6 +325,14 @@ class VectorSymbolExtractor:
                 if (inter_area / b_area) >= 0.50:
                     return True
         return False
+
+    def classify_primitive_shape(self, candidate: Any) -> str:
+        """Determina la forma geométrica primitiva ('circle', 'square', 'hexagon', etc.)."""
+        return _classify_primitive_shape(candidate)
+
+    def is_text_like_cluster(self, candidate: Any, nearby_candidates: List[Any]) -> bool:
+        """Determina si el candidato forma parte de un clúster de trazos tipo texto vectorizado."""
+        return _is_text_like_cluster(candidate, nearby_candidates)
 
     def extract_piping_lines_from_page(
         self,

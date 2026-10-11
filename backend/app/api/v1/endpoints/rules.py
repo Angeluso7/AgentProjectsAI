@@ -3,7 +3,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.db.session import get_db
-from app.db.models.decision_memory import RuleDefinition, RuleExecution, RuleFinding
+from app.db.models.core import Project
+from app.db.models.decision_memory import (
+    RuleDefinition, RuleExecution, RuleFinding,
+    RuleApplicability, ReviewDiscipline, ReviewRun
+)
 from app.schemas.qa_rule import (
     RuleDefinitionRead, RuleFindingRead, RuleEvaluationSummaryResponse,
     UpdateRuleStatusRequest, DeleteRuleResponse,
@@ -366,6 +370,93 @@ def evaluate_document_rules_async(document_id: str, db: Session = Depends(get_db
         target_type="document",
         target_id=document_id
     )
+
+@router.get("/diagnosis/piping")
+def get_piping_rules_diagnosis(
+    project_code: str = Query("AA-2026-001"),
+    db: Session = Depends(get_db)
+) -> Dict[str, Any]:
+    """
+    Diagnóstico de reglas QA/QC para la especialidad piping agrupadas por estado de aprobación
+    y estado en ejecuciones de auditoría (para proyecto AA-2026-001 o activo).
+    """
+    from collections import Counter
+
+    # 1. Reglas en RuleDefinition para disciplina piping
+    piping_rule_defs = db.query(RuleDefinition).filter(
+        (RuleDefinition.discipline.ilike("%piping%")) |
+        (RuleDefinition.code.ilike("PIP%")) |
+        (RuleDefinition.code.ilike("ART%"))
+    ).all()
+
+    def_by_source_status = dict(Counter(r.source_status for r in piping_rule_defs))
+    def_by_active = dict(Counter("active" if (r.is_active and r.enabled) else "inactive" for r in piping_rule_defs))
+
+    # 2. Aplicabilidades para disciplina PIPING
+    disc = db.query(ReviewDiscipline).filter(ReviewDiscipline.code.ilike("piping")).first()
+    disc_id = disc.id if disc else None
+
+    applicabilities = []
+    if disc_id:
+        applicabilities = db.query(RuleApplicability).filter(RuleApplicability.discipline_id == disc_id).all()
+    
+    app_by_approval = dict(Counter(a.approval_status for a in applicabilities))
+    app_by_role = dict(Counter(a.role for a in applicabilities))
+
+    # 3. Reglas registradas con ejecutor de código Python en memoria
+    registered_codes = [r.code for r in RuleRegistry.get_rules()]
+    piping_registered_codes = [c for c in registered_codes if "PIP" in c or "SYM" in c or "GEN" in c]
+
+    # 4. Auditoría en proyecto específico
+    proj = db.query(Project).filter(Project.code == project_code).first() if project_code else None
+    runs_diag = []
+    if proj:
+        recent_runs = db.query(ReviewRun).filter(
+            ReviewRun.project_id == proj.id
+        ).order_by(ReviewRun.created_at.desc()).limit(5).all()
+
+        for r in recent_runs:
+            execs = db.query(RuleExecution).filter(RuleExecution.review_run_id == r.id).all()
+            exec_status_counts = dict(Counter(e.execution_status for e in execs))
+            reason_counts = dict(Counter(e.not_evaluable_reason_code for e in execs if e.not_evaluable_reason_code))
+            runs_diag.append({
+                "run_id": r.id,
+                "run_name": r.run_name,
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "summary_stats": r.summary_stats or {},
+                "total_executions": len(execs),
+                "by_execution_status": exec_status_counts,
+                "by_not_evaluable_reason": reason_counts,
+                "no_approved_rules_count": reason_counts.get("NO_APPROVED_RULES", 0)
+            })
+
+    return {
+        "project_code": project_code,
+        "project_found": proj is not None,
+        "project_name": proj.name if proj else None,
+        "piping_rule_definitions": {
+            "total_count": len(piping_rule_defs),
+            "by_source_status": def_by_source_status,
+            "by_active_flag": def_by_active
+        },
+        "rule_applicabilities_piping": {
+            "total_count": len(applicabilities),
+            "by_approval_status": app_by_approval,
+            "by_role": app_by_role
+        },
+        "registered_automated_executors": {
+            "total_registered": len(registered_codes),
+            "piping_and_symbols_registered": piping_registered_codes
+        },
+        "recent_runs": runs_diag,
+        "diagnosis_summary": (
+            f"El proyecto '{project_code}' cuenta con {len(piping_rule_defs)} definiciones normativas para piping, "
+            f"con {app_by_approval.get('approved', 0)} aplicabilidades aprobadas en catálogo. "
+            f"Sin embargo, los artículos normativos (ART-*) carecen de ejecutores Python automáticos registrados, "
+            f"por lo que en la corrida de auditoría resultan en estado not_evaluable con código NO_APPROVED_RULES."
+        )
+    }
 
 @router.get("/{rule_code}", response_model=RuleDefinitionRead)
 def get_rule_detail(rule_code: str, db: Session = Depends(get_db)):

@@ -298,11 +298,15 @@ class SymbolInventoryService:
 
         for sym in active_symbols:
             # Caso 1: Tiene match con plantilla canónica
-            if sym.matched_template_id or sym.matched_template_version_id:
-                tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.id == sym.matched_template_id).first() if sym.matched_template_id else None
+            tmpl_id = sym.matched_template_id or getattr(sym, "matched_library_entry_id", None)
+            if tmpl_id or sym.matched_template_version_id or sym.matching_status == "matched":
+                tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.id == tmpl_id).first() if tmpl_id else None
+                if not tmpl and sym.symbol_type:
+                    tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.symbol_class == sym.symbol_type).first()
                 tmpl_ver = db.query(SymbolTemplateVersion).filter(SymbolTemplateVersion.id == sym.matched_template_version_id).first() if sym.matched_template_version_id else None
 
-                key = f"TMPL_{sym.matched_template_id}_{sym.matched_template_version_id}"
+                t_id_effective = tmpl.id if tmpl else tmpl_id
+                key = f"TMPL_{t_id_effective}_{sym.matched_template_version_id}"
                 if key not in grouped_candidates:
                     # Determinar estado de catálogo
                     if is_sandbox_mode:
@@ -311,20 +315,27 @@ class SymbolInventoryService:
                         is_approved = (tmpl_ver.approval_status == "approved") if tmpl_ver else (tmpl.status == "active" if tmpl else False)
                         cat_status = "recognized_production" if is_approved else "recognized_sandbox"
 
+                    clean_display_name = (tmpl.display_name or "").lstrip("• ").strip() if tmpl and tmpl.display_name else None
+                    canonical_name_resolved = (
+                        tmpl.canonical_name
+                        or clean_display_name
+                        or tmpl.symbol_class
+                    ) if tmpl else sym.symbol_type
+
                     grouped_candidates[key] = {
                         "grouping_key": key,
                         "grouping_method": "template_match",
                         "grouping_confidence": 0.95,
                         "display_code": (tmpl.canonical_code if tmpl and tmpl.canonical_code else f"SYM-{sym.symbol_type}"),
-                        "matched_template_id": sym.matched_template_id,
+                        "matched_template_id": t_id_effective,
                         "matched_template_version_id": sym.matched_template_version_id,
-                        "canonical_name": tmpl.canonical_name if tmpl else sym.symbol_type,
-                        "description": tmpl.technical_function if tmpl else "Símbolo técnico identificado mediante catálogo normativo.",
-                        "technical_function": tmpl.technical_function if tmpl else None,
-                        "standard_reference": tmpl.standard_reference if tmpl else "Norma ISA-5.1 / PIP PNC00001",
+                        "canonical_name": canonical_name_resolved,
+                        "description": (tmpl.technical_function or tmpl.category or "Símbolo técnico identificado mediante catálogo normativo.") if tmpl else "Símbolo técnico identificado mediante catálogo normativo.",
+                        "technical_function": (tmpl.technical_function or tmpl.category) if tmpl else None,
+                        "standard_reference": (tmpl.standard_reference or "Norma ISA-5.1 / PIP PNC00001") if tmpl else "Norma ISA-5.1 / PIP PNC00001",
                         "catalog_status": cat_status,
                         "requires_human_review": False,
-                        "explanation": f"Símbolo catalogado con coincidencia de plantilla versión {getattr(tmpl_ver, 'version_number', 1)}.",
+                        "explanation": f"Símbolo catalogado: {canonical_name_resolved} (coincidencia de plantilla v{getattr(tmpl_ver, 'version_number', 1)}).",
                         "symbols": []
                     }
                 grouped_candidates[key]["symbols"].append(sym)

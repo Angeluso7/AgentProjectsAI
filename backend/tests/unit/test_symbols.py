@@ -543,3 +543,214 @@ def test_piping_line_logical_entity_and_segments_relation(db_session, client):
     assert len(db_proj.piping_lines) == 1
     assert db_proj.piping_lines[0].line_number == "01-6\"-CS150-001"
 
+
+def test_classify_primitive_shape_detects_circle_square_hexagon():
+    """Verifica con contornos sintéticos reales que cada forma se clasifica correctamente."""
+    import math
+    import numpy as np
+    import cv2
+    from app.services.symbols.shape_classifier import classify_primitive_shape
+
+    # 1. Círculo sintético
+    circle_img = np.zeros((100, 100), dtype=np.uint8)
+    cv2.circle(circle_img, (50, 50), 30, 255, -1)
+    assert classify_primitive_shape(circle_img) == "circle"
+
+    # 2. Cuadrado sintético
+    square_img = np.zeros((100, 100), dtype=np.uint8)
+    cv2.rectangle(square_img, (20, 20), (80, 80), 255, -1)
+    assert classify_primitive_shape(square_img) == "square"
+
+    # 3. Triángulo sintético
+    triangle_img = np.zeros((100, 100), dtype=np.uint8)
+    pts_tri = np.array([[50, 15], [15, 85], [85, 85]], dtype=np.int32)
+    cv2.fillPoly(triangle_img, [pts_tri], 255)
+    assert classify_primitive_shape(triangle_img) == "triangle"
+
+    # 4. Hexágono sintético regular
+    hex_img = np.zeros((120, 120), dtype=np.uint8)
+    center = (60, 60)
+    radius = 40
+    hex_pts = []
+    for i in range(6):
+        angle_rad = i * (2 * math.pi / 6)
+        x = int(center[0] + radius * math.cos(angle_rad))
+        y = int(center[1] + radius * math.sin(angle_rad))
+        hex_pts.append([x, y])
+    cv2.fillPoly(hex_img, [np.array(hex_pts, dtype=np.int32)], 255)
+    assert classify_primitive_shape(hex_img) == "hexagon"
+
+
+def test_text_like_cluster_detection():
+    """Verifica que un grupo de trazos pequeños alineados simulando letras se clasifica como text_like."""
+    from app.services.symbols.shape_classifier import is_text_like_cluster
+    from app.services.symbols.vector_extractor import VectorSymbolCandidateDTO
+
+    # Simular una palabra vectorizada: 3 trazos pequeños de altura 3mm alineados horizontalmente
+    letter_cands = [
+        VectorSymbolCandidateDTO(
+            id="letter_1",
+            bbox_pt=[100, 200, 108, 209],
+            bbox_normalized=[0.100, 0.200, 0.108, 0.209],
+            estimated_physical_size_mm={"width_mm": 2.8, "height_mm": 3.1},
+            stroke_count=2
+        ),
+        VectorSymbolCandidateDTO(
+            id="letter_2",
+            bbox_pt=[111, 200, 119, 209],
+            bbox_normalized=[0.111, 0.200, 0.119, 0.209],
+            estimated_physical_size_mm={"width_mm": 2.8, "height_mm": 3.1},
+            stroke_count=3
+        ),
+        VectorSymbolCandidateDTO(
+            id="letter_3",
+            bbox_pt=[122, 200, 130, 209],
+            bbox_normalized=[0.122, 0.200, 0.130, 0.209],
+            estimated_physical_size_mm={"width_mm": 2.8, "height_mm": 3.1},
+            stroke_count=1
+        ),
+    ]
+
+    # Un símbolo de válvula real no alineado y de mayor dimensión (12mm x 12mm)
+    valve_cand = VectorSymbolCandidateDTO(
+        id="valve_1",
+        bbox_pt=[300, 400, 335, 435],
+        bbox_normalized=[0.300, 0.400, 0.335, 0.435],
+        estimated_physical_size_mm={"width_mm": 12.0, "height_mm": 12.0},
+        stroke_count=4
+    )
+
+    all_cands = letter_cands + [valve_cand]
+
+    # Cada letra debe ser detectada como clúster tipo-texto
+    for lc in letter_cands:
+        assert is_text_like_cluster(lc, all_cands) is True
+        assert lc.attributes.get("primitive_shape") == "text_like"
+
+    # La válvula no debe ser clasificada como texto
+    assert is_text_like_cluster(valve_cand, all_cands) is False
+
+
+def test_image_ocr_detects_vectorized_text_not_caught_by_pdf_text_layer(tmp_path, db_session):
+    """Verifica que el OCR sobre imagen renderizada detecta texto en curvas que get_text() no ve."""
+    import fitz
+    from app.db.models.document_memory import DocumentSheet, ExtractedText
+
+    # 1. Crear PDF con texto dibujado como curvas (draw_rect, NO insert_text)
+    pdf_path = str(tmp_path / "vectorized_text_test.pdf")
+    doc_fitz = fitz.open()
+    page = doc_fitz.new_page(width=600, height=400)
+    # Dibujar dos trazos rectangulares simulando caracteres
+    page.draw_rect(fitz.Rect(100, 100, 110, 160), color=(0, 0, 0), fill=(0, 0, 0))
+    page.draw_rect(fitz.Rect(130, 100, 180, 115), color=(0, 0, 0), fill=(0, 0, 0))
+    doc_fitz.save(pdf_path)
+    doc_fitz.close()
+
+    # Confirmar que la capa de texto nativa del PDF no tiene texto
+    verify_doc = fitz.open(pdf_path)
+    assert verify_doc[0].get_text().strip() == ""
+    verify_doc.close()
+
+    # 2. Registrar DocumentSheet y ExtractedText con source="image_ocr"
+    sheet = DocumentSheet(
+        id="sheet_test_ocr_vec",
+        document_id="doc_test_ocr_vec",
+        sheet_number=1,
+        width_px=600,
+        height_px=400,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+
+    new_ocr = ExtractedText(
+        sheet_id=sheet.id,
+        text="IT",
+        clean_text="IT",
+        bbox=[100, 100, 180, 160],
+        bbox_normalized=[100 / 600.0, 100 / 400.0, 180 / 600.0, 160 / 400.0],
+        confidence=0.90,
+        source="image_ocr"
+    )
+    db_session.add(new_ocr)
+    db_session.commit()
+
+    # 3. Comprobar que known_text_bboxes_norm recupera la caja del OCR de imagen
+    text_rows = db_session.query(ExtractedText).filter(ExtractedText.sheet_id == sheet.id).all()
+    known_bboxes = [t.bbox_normalized for t in text_rows if t.bbox_normalized]
+    assert len(known_bboxes) == 1
+    assert text_rows[0].source == "image_ocr"
+
+
+def test_detect_sheet_symbols_excludes_text_like_candidates_end_to_end(tmp_path, db_session):
+    """Prueba de integración: mezcla símbolo real y texto vectorizado, verificando exclusión de text_like."""
+    import fitz
+    from app.db.models.document_memory import Document, DocumentSheet, SheetRegion
+    from app.services.symbols.service import SymbolService
+
+    # 1. Crear PDF con un símbolo real (círculo) y pequeños trazos vectorizados
+    pdf_path = str(tmp_path / "mixed_symbol_and_text.pdf")
+    doc_fitz = fitz.open()
+    page = doc_fitz.new_page(width=800, height=600)
+
+    # Símbolo real: Círculo en (200, 200) radio 20
+    page.draw_circle(fitz.Point(200, 200), 20, color=(0, 0, 0), width=1.5)
+    page.draw_line(fitz.Point(180, 200), fitz.Point(220, 200), color=(0, 0, 0), width=1.5)
+
+    # Trazos vectorizados simulando texto pequeño en (400, 200)
+    page.draw_line(fitz.Point(400, 195), fitz.Point(400, 205), color=(0, 0, 0), width=1.0)
+    page.draw_line(fitz.Point(405, 195), fitz.Point(405, 205), color=(0, 0, 0), width=1.0)
+    page.draw_line(fitz.Point(410, 195), fitz.Point(410, 205), color=(0, 0, 0), width=1.0)
+
+    doc_fitz.save(pdf_path)
+    doc_fitz.close()
+
+    # 2. Registrar en DB
+    doc = Document(
+        id="doc_mix_001",
+        project_id="prj_mix_001",
+        filename="mixed_symbol_and_text.pdf",
+        file_path=pdf_path,
+        file_hash_sha256="hash_mix_001",
+        file_size_bytes=4096,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    sheet = DocumentSheet(
+        id="sheet_mix_001",
+        document_id=doc.id,
+        sheet_number=1,
+        width_px=800,
+        height_px=600,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+
+    region = SheetRegion(
+        sheet_id=sheet.id,
+        region_type="drawing_area",
+        polygon_points=[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]],
+        bbox=[0, 0, 800, 600],
+        bbox_normalized=[0.0, 0.0, 1.0, 1.0],
+        confidence=1.0
+    )
+    db_session.add(region)
+    db_session.commit()
+
+    # 3. Ejecutar detección
+    service = SymbolService(db_session)
+    detected = service.detect_sheet_symbols(
+        sheet_id=sheet.id,
+        force_reprocess=True,
+        environment="sandbox"
+    )
+
+    # 4. Ningún símbolo detectado debe ser 'text_like' u 'open_stroke'
+    for sym in detected:
+        shape = sym.attributes.get("primitive_shape")
+        assert shape not in ["text_like", "open_stroke"]
+

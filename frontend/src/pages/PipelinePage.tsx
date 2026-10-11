@@ -629,9 +629,19 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                       <div className="flex items-center justify-between text-slate-500 text-[11px] mt-2 pt-1 border-t border-slate-100 dark:border-slate-800">
                         <span>{r.requested_at ? new Date(r.requested_at).toLocaleTimeString() : 'N/A'}</span>
                         <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-slate-700 dark:text-slate-300">
-                            {r.findings_count} hallazgo(s)
-                          </span>
+                          {((r.summary_stats?.passed ?? 0) + (r.summary_stats?.failed ?? 0) + (r.summary_stats?.warning ?? 0) === 0 && (r.summary_stats?.not_evaluable ?? 0) > 0) ? (
+                            <span
+                              className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 flex items-center gap-1"
+                              title={`Sin reglas activas con ejecutor (${r.summary_stats?.not_evaluable} no evaluables). 0 hallazgos por ausencia de reglas ejecutables.`}
+                            >
+                              <AlertTriangle className="w-2.5 h-2.5 text-amber-600 shrink-0" />
+                              Sin reglas activas
+                            </span>
+                          ) : (
+                            <span className="font-semibold text-slate-700 dark:text-slate-300">
+                              {r.findings_count} hallazgo(s)
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={(e) => {
@@ -830,7 +840,10 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-1">
-                      Ejecutado por {activeRun.requested_by} • Duración: {activeRun.execution_time_sec}s • {activeRun.rule_count} reglas evaluadas
+                      Ejecutado por {activeRun.requested_by} • Duración: {activeRun.execution_time_sec}s • {
+                        ((activeRun.summary_stats?.passed ?? 0) + (activeRun.summary_stats?.failed ?? 0) + (activeRun.summary_stats?.warning ?? 0))
+                      } reglas activas evaluadas
+                      {(activeRun.summary_stats?.not_evaluable ?? 0) > 0 ? ` (${activeRun.summary_stats?.not_evaluable} no evaluables)` : ''}
                     </p>
                   </div>
 
@@ -874,6 +887,19 @@ export const PipelinePage: React.FC<PipelinePageProps> = ({ onNavigate }) => {
                     </button>
                   </div>
                 </div>
+
+                {/* Banner de Advertencia si no hubo reglas activas evaluadas */}
+                {((activeRun.summary_stats?.passed ?? 0) + (activeRun.summary_stats?.failed ?? 0) + (activeRun.summary_stats?.warning ?? 0) === 0 && (activeRun.summary_stats?.not_evaluable ?? 0) > 0) && (
+                  <div className="p-3.5 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-300 dark:border-amber-800 flex items-start gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold">Sin reglas QA/QC activas evaluadas para esta especialidad</span>
+                      <p className="mt-0.5 text-amber-800 dark:text-amber-300">
+                        Se registraron 0 hallazgos debido a que las {activeRun.summary_stats?.not_evaluable} reglas normativas asociadas a este documento están en estado "No Evaluable" (código NO_APPROVED_RULES / sin ejecutor activo). No interprete este resultado como una aprobación técnica exhaustiva del plano.
+                      </p>
+                    </div>
+                  </div>
+                )}
 
                 {/* Banner de Descarga / Feedback */}
                 {downloadFeedback && (

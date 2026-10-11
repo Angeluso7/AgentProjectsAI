@@ -15,6 +15,7 @@ from app.schemas.document import (
 from app.services.ingest.service import IngestService
 from app.services.cad.dxf_service import DxfService
 from app.core.deps import get_current_tenant, require_role, TenantContext
+from app.core.logging import logger
 
 router = APIRouter()
 
