@@ -335,8 +335,16 @@ export const ReviewPage: React.FC = () => {
                   }}
                 >
                   <div style={{ fontWeight: 600, fontSize: '14px' }}>{r.run_name}</div>
-                  <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px' }}>
-                    {r.findings_count} Hallazgos • {new Date(r.created_at).toLocaleDateString()}
+                  <div style={{ fontSize: '12px', color: 'var(--text-dim)', marginTop: '2px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {((r.summary_stats?.passed ?? 0) + (r.summary_stats?.failed ?? 0) + (r.summary_stats?.warning ?? 0) === 0 && (r.summary_stats?.not_evaluable ?? 0) > 0) ? (
+                      <span style={{ color: '#d97706', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '3px' }}>
+                        <AlertTriangle style={{ width: '12px', height: '12px' }} />
+                        Sin reglas activas
+                      </span>
+                    ) : (
+                      <span>{r.findings_count} Hallazgos</span>
+                    )}
+                    <span>• {new Date(r.created_at).toLocaleDateString()}</span>
                   </div>
                 </div>
               ))}
