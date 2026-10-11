@@ -144,26 +144,47 @@ class SimplePdfCanvas:
     ) -> float:
         """
         Dibuja una tabla vectorial estándar con encabezado oscuro, texto blanco,
-        filas alternadas, salto automático de página y truncamiento defensivo por celda.
+        filas alternadas, salto automático de página, word-wrap real multilínea y truncamiento defensivo (máx 3 líneas).
         Retorna la coordenada y final tras dibujar la tabla.
         """
         table_width = sum(col_widths)
         current_y = start_y
+        max_cell_lines = 3
+        line_spacing = font_size + 2.5
 
         def _render_header(at_y: float) -> float:
             self.draw_rect(start_x, at_y - header_height, table_width, header_height, fill_color=header_bg)
             x_offset = start_x
             for i, h in enumerate(headers):
                 w = col_widths[i]
-                max_chars = max(3, int((w - 6) / (header_font_size * 0.58)))
-                self.draw_text(
-                    str(h)[:max_chars],
-                    x_offset + 4,
-                    at_y - header_height + 6,
-                    font_size=header_font_size,
-                    font="Helvetica-Bold",
-                    color=header_fg
-                )
+                max_chars = max(3, int((w - 4) / (header_font_size * 0.52)))
+                h_lines = self.wrap_text(str(h), max_chars_per_line=max_chars)[:2]
+                if len(h_lines) <= 1:
+                    self.draw_text(
+                        h_lines[0] if h_lines else "",
+                        x_offset + 3,
+                        at_y - header_height + 6,
+                        font_size=header_font_size,
+                        font="Helvetica-Bold",
+                        color=header_fg
+                    )
+                else:
+                    self.draw_text(
+                        h_lines[0],
+                        x_offset + 3,
+                        at_y - header_height + 10,
+                        font_size=header_font_size,
+                        font="Helvetica-Bold",
+                        color=header_fg
+                    )
+                    self.draw_text(
+                        h_lines[1],
+                        x_offset + 3,
+                        at_y - header_height + 3,
+                        font_size=header_font_size,
+                        font="Helvetica-Bold",
+                        color=header_fg
+                    )
                 x_offset += w
             return at_y - header_height
 
@@ -174,40 +195,71 @@ class SimplePdfCanvas:
         current_y = _render_header(current_y)
 
         for r_idx, row in enumerate(rows):
-            if current_y - row_height < min_y:
+            # 1. Preparar el texto envuelto para cada celda
+            wrapped_row_cells: List[List[str]] = []
+            for c_idx, val in enumerate(row):
+                if c_idx >= len(col_widths):
+                    break
+                w = col_widths[c_idx]
+                val_str = "" if val is None else str(val).strip()
+                max_chars_per_line = max(3, int((w - 5) / (font_size * 0.50)))
+                raw_lines = self.wrap_text(val_str, max_chars_per_line=max_chars_per_line)
+                if not raw_lines:
+                    wrapped_row_cells.append([""])
+                elif len(raw_lines) <= max_cell_lines:
+                    wrapped_row_cells.append(raw_lines)
+                else:
+                    # Truncar con "..." en la última línea permitida
+                    kept = raw_lines[:max_cell_lines]
+                    last = kept[-1]
+                    if len(last) > max_chars_per_line - 3:
+                        kept[-1] = last[:max(0, max_chars_per_line - 3)].rstrip() + "..."
+                    else:
+                        kept[-1] = last + "..."
+                    wrapped_row_cells.append(kept)
+
+            # 2. Calcular altura dinámica de la fila
+            row_lines_count = max(len(c_lines) for c_lines in wrapped_row_cells) if wrapped_row_cells else 1
+            dyn_row_height = max(row_height, (row_lines_count - 1) * line_spacing + font_size + 8.0)
+
+            # 3. Salto de página si la fila excede el límite inferior
+            if current_y - dyn_row_height < min_y:
                 self.new_page()
                 current_y = self.height - 50
                 current_y = _render_header(current_y)
 
+            # 4. Fondo de la fila
             bg = alt_row_bg if r_idx % 2 == 1 else default_row_bg
             self.draw_rect(
                 start_x,
-                current_y - row_height,
+                current_y - dyn_row_height,
                 table_width,
-                row_height,
+                dyn_row_height,
                 fill_color=bg,
                 stroke_color=stroke_color,
                 line_width=0.5
             )
 
+            # 5. Dibujar texto multilínea por celda
             x_offset = start_x
-            for c_idx, val in enumerate(row):
-                if c_idx >= len(col_widths):
-                    break
+            for c_idx, c_lines in enumerate(wrapped_row_cells):
                 w = col_widths[c_idx]
-                val_str = "" if val is None else str(val)
-                max_chars = max(3, int((w - 3) / (font_size * 0.48)))
-                self.draw_text(
-                    val_str[:max_chars],
-                    x_offset + 3,
-                    current_y - row_height + 5,
-                    font_size=font_size,
-                    font="Helvetica",
-                    color=text_color
-                )
+                for l_idx, l_text in enumerate(c_lines):
+                    if row_lines_count == 1:
+                        line_y = current_y - dyn_row_height + 5.0
+                    else:
+                        line_y = current_y - 4.0 - font_size - (l_idx * line_spacing)
+                    self.draw_text(
+                        l_text,
+                        x_offset + 3,
+                        line_y,
+                        font_size=font_size,
+                        font="Helvetica",
+                        color=text_color
+                    )
                 x_offset += w
 
-            current_y -= row_height
+            current_y -= dyn_row_height
 
         return current_y
 

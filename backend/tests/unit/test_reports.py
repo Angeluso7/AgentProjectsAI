@@ -348,3 +348,119 @@ def test_export_service_pdf_generation_tabular(tmp_path):
     assert "NO_APPROVED_RULES: 35" in full_text
     assert doc.page_count <= 5  # No 15 páginas como antes
 
+
+def test_export_service_canonical_name_propagation_from_template(db_session, tmp_path):
+    """
+    Fase 1: Verifica que para un DetectedSymbol con matching_status='matched' y un
+    SymbolTemplate asociado con canonical_name poblado, la exportación (XLSX y PDF)
+    propaga el canonical_name real a la fila generada en vez de '-'.
+    """
+    import openpyxl
+    import fitz
+    from app.db.models.document_memory import DetectedSymbol
+    from app.db.models.template_memory import SymbolTemplate
+    from app.db.models.decision_memory import ReviewRun, ReviewRunDocument
+    from app.services.review.export_service import ReviewExportService
+
+    # 1. Crear proyecto, documento y lámina
+    proj = Project(id=str(uuid.uuid4()), name="Proyecto Test Canónico", code="PRJ-CAN-01")
+    db_session.add(proj)
+    doc = Document(id=str(uuid.uuid4()), project_id=proj.id, filename="PID-CANONICO-001.pdf", page_count=1)
+    db_session.add(doc)
+    sheet = DocumentSheet(id=str(uuid.uuid4()), document_id=doc.id, sheet_number=1, sheet_code="PID-01")
+    db_session.add(sheet)
+
+    # 2. Crear SymbolTemplate con canonical_name explícito
+    tmpl = SymbolTemplate(
+        id=str(uuid.uuid4()),
+        symbol_class="control_valve_diaphragm",
+        display_name="• Control Valve with Diaphragm Actuator",
+        canonical_name="Válvula de Control Diafragma",
+        canonical_code="PIP-VALVE-CTRL-DIA",
+        category="valve",
+        discipline="piping",
+        standard_reference="ISA 5.1 / ASME B16.34",
+        status="active"
+    )
+    db_session.add(tmpl)
+    db_session.commit()
+
+    # 3. Crear DetectedSymbol con matching_status="matched" y matched_template_id
+    sym = DetectedSymbol(
+        id=str(uuid.uuid4()),
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="control_valve_diaphragm",
+        discipline="piping",
+        matching_status="matched",
+        detection_status="detected",
+        matched_template_id=tmpl.id,
+        matched_library_entry_id=tmpl.id,
+        confidence=0.96,
+        geometric_confidence=0.95,
+        classification="symbol",
+        bbox=[100, 100, 150, 150],
+        bbox_normalized=[0.1, 0.1, 0.15, 0.15]
+    )
+    db_session.add(sym)
+
+    # 4. Crear ReviewRun y vincular documento
+    run = ReviewRun(
+        id=str(uuid.uuid4()),
+        project_id=proj.id,
+        run_name="Auditoría Test Propagación Canónica",
+        execution_mode="production",
+        status="succeeded",
+        summary_stats={"passed": 1, "failed": 0, "warning": 0, "not_evaluable": 0}
+    )
+    db_session.add(run)
+    db_session.commit()
+
+    r_doc = ReviewRunDocument(
+        review_run_id=run.id,
+        document_id=doc.id,
+        status="included",
+        document_role="primary"
+    )
+    db_session.add(r_doc)
+    db_session.commit()
+
+    # 5. Generar reporte XLSX
+    report_xlsx = ReviewExportService.create_report(
+        db=db_session,
+        review_run_id=run.id,
+        export_format="xlsx"
+    )
+    assert report_xlsx is not None
+    assert os.path.exists(report_xlsx.artifact_path)
+
+    wb = openpyxl.load_workbook(report_xlsx.artifact_path)
+    assert "Resumen de Inventario" in wb.sheetnames
+    ws_inv = wb["Resumen de Inventario"]
+
+    # Fila 2 corresponde al primer grupo de símbolos catalogados
+    code_val = ws_inv.cell(row=2, column=1).value
+    canonical_val = ws_inv.cell(row=2, column=2).value
+    std_val = ws_inv.cell(row=2, column=4).value
+
+    assert code_val == "PIP-VALVE-CTRL-DIA"
+    assert canonical_val == "Válvula de Control Diafragma"
+    assert canonical_val != "-"
+    assert "ISA 5.1" in str(std_val)
+
+    # 6. Generar reporte PDF
+    report_pdf = ReviewExportService.create_report(
+        db=db_session,
+        review_run_id=run.id,
+        export_format="pdf"
+    )
+    assert report_pdf is not None
+    assert os.path.exists(report_pdf.artifact_path)
+
+    pdf_doc = fitz.open(report_pdf.artifact_path)
+    full_pdf_text = "".join([p.get_text() for p in pdf_doc])
+
+    assert "PIP-VALVE-CTRL-DIA" in full_pdf_text
+    assert "Válvula de Control Diafragma" in full_pdf_text
+
+

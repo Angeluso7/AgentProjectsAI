@@ -17,6 +17,7 @@ from app.db.models.document_memory import (
     Document, DocumentSheet, PipingLine, PipingLineSegment,
     ExtractedTable, ExtractedText, DetectedSymbol, TitleBlockExtraction
 )
+from app.db.models.template_memory import SymbolTemplate
 from app.services.reporting.pdf_renderer import SimplePdfCanvas
 from app.core.logging import logger
 
@@ -165,10 +166,40 @@ class ReviewExportService:
         groups_summary = []
         for g in inv_groups:
             occ_list = SymbolInventoryService.get_group_occurrences_summary(db, g.id)
+
+            # Trazabilidad estricta: DetectedSymbol.matched_template_id -> SymbolTemplate
+            canonical_name = g.canonical_name
+            std_ref = g.standard_reference
+            tech_func = g.technical_function
+            cat_status = g.catalog_status
+            explanation = g.explanation
+
+            tmpl_id = g.matched_template_id
+            if not tmpl_id:
+                for o in occ_list:
+                    sym_obj = db.query(DetectedSymbol).filter(DetectedSymbol.id == o.get("occurrence_id")).first()
+                    if sym_obj and (sym_obj.matched_template_id or getattr(sym_obj, "matched_library_entry_id", None)):
+                        tmpl_id = sym_obj.matched_template_id or getattr(sym_obj, "matched_library_entry_id", None)
+                        break
+
+            if tmpl_id:
+                tmpl = db.query(SymbolTemplate).filter(SymbolTemplate.id == tmpl_id).first()
+                if tmpl:
+                    clean_dn = (tmpl.display_name or "").lstrip("• ").strip() if tmpl.display_name else None
+                    resolved_name = tmpl.canonical_name or clean_dn or tmpl.symbol_class
+                    if resolved_name and (not canonical_name or canonical_name in ("-", "None", "")):
+                        canonical_name = resolved_name
+                    if tmpl.standard_reference and (not std_ref or std_ref in ("-", "None", "")):
+                        std_ref = tmpl.standard_reference
+                    if (tmpl.technical_function or tmpl.category) and (not tech_func or tech_func in ("-", "None", "")):
+                        tech_func = tmpl.technical_function or tmpl.category
+                    if not explanation or explanation in ("-", "None", ""):
+                        explanation = f"Símbolo catalogado: {canonical_name}" + (f" ({tmpl.category})" if tmpl.category else "")
+
             for o in occ_list:
                 o["group_display_code"] = g.display_code
-                o["group_canonical_name"] = g.canonical_name
-                o["catalog_status"] = g.catalog_status
+                o["group_canonical_name"] = canonical_name or "-"
+                o["catalog_status"] = cat_status
             all_occurrences.extend(occ_list)
 
             group_tags: List[str] = []
@@ -180,17 +211,17 @@ class ReviewExportService:
             groups_summary.append({
                 "id": g.id,
                 "display_code": g.display_code,
-                "canonical_name": g.canonical_name,
-                "description": g.description,
-                "technical_function": g.technical_function,
-                "standard_reference": g.standard_reference,
-                "catalog_status": g.catalog_status,
+                "canonical_name": canonical_name or "-",
+                "description": g.description or tech_func or "-",
+                "technical_function": tech_func,
+                "standard_reference": std_ref or "Norma ISA-5.1 / PIP PNC00001",
+                "catalog_status": cat_status,
                 "confidence_summary": g.confidence_summary or {},
                 "total_occurrences": g.total_occurrences,
                 "occurrences_by_document": g.occurrences_by_document or {},
                 "occurrences_by_sheet": g.occurrences_by_sheet or {},
                 "requires_human_review": g.requires_human_review,
-                "explanation": g.explanation,
+                "explanation": explanation or "-",
                 "tags": group_tags
             })
 
@@ -775,7 +806,7 @@ class ReviewExportService:
                 "Código", "Nombre Canónico / Identidad", "Catálogo", "Norma / Ref.",
                 "Conteo Doc.", "Total", "Conf.", "HITL", "Explicación Técnica"
             ]
-            col_widths_inv = [72, 105, 52, 50, 48, 28, 28, 26, 106]
+            col_widths_inv = [70, 115, 48, 56, 42, 22, 24, 22, 116]
             rows_inv = []
             for g in groups:
                 by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
@@ -791,7 +822,7 @@ class ReviewExportService:
                     "SÍ" if g.get("requires_human_review") else "NO",
                     g.get("explanation") or "-"
                 ])
-            y = pdf.draw_table(headers_inv, rows_inv, col_widths_inv, start_y=y, font_size=7.0)
+            y = pdf.draw_table(headers_inv, rows_inv, col_widths_inv, start_y=y, font_size=6.8)
 
         # =====================================================================
         # Sección 3: Tabla 2 - Anexo de Ubicaciones y Ocurrencias Técnicas
