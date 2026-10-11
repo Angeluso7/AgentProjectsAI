@@ -9,6 +9,7 @@ from app.db.models.document_memory import (
 from app.db.models.operations import ReviewTask
 from app.services.scanning.layered_scan_service import DocumentLayeredScanService
 from app.services.operations.service import OperationsService
+from app.services.symbols.vector_extractor import VectorSymbolExtractor
 
 
 @pytest.fixture
@@ -530,4 +531,114 @@ def test_manual_piping_line_crud_api(client, db_session, test_setup_project_and_
     # Verificar que ya no exista
     res_after = client.get(f"/api/v1/symbols/sheets/{sheet.id}/piping-lines")
     assert not any(l["id"] == line_id for l in res_after.json())
+
+
+def test_phase_4_sequential_symbol_ordering_upstream_downstream(db_session, test_setup_project_and_sheet):
+    """
+    Fase 4: Verifica la proyección paramétrica t (0->1) y el ordenamiento secuencial
+    de símbolos 'inline' a lo largo de una tubería tanto aguas arriba como aguas abajo.
+    """
+    proj, doc, sheet = test_setup_project_and_sheet
+    scan_service = DocumentLayeredScanService(db_session)
+    vec_extractor = VectorSymbolExtractor()
+
+    # 1. Crear PipingLine y su segmento horizontal de x=0.1 a x=0.9 en y=0.5
+    pline = PipingLine(
+        project_id=proj.id,
+        line_number="10-6\"-P-001",
+        flow_direction="forward",
+        source="auto_vector_extraction",
+        confidence_status="auto_high",
+        attributes={}
+    )
+    db_session.add(pline)
+    db_session.commit()
+    db_session.refresh(pline)
+
+    seg = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline.id,
+        polyline_points=[[0.1, 0.5], [0.9, 0.5]],
+        bbox_normalized=[0.1, 0.49, 0.9, 0.51],
+        line_style="solid",
+        length_mm=400.0,
+        connected_symbol_ids=[]
+    )
+    db_session.add(seg)
+    db_session.commit()
+    db_session.refresh(seg)
+
+    # 2. Probar VectorSymbolExtractor.compute_symbol_projection_t
+    bbox_start = [0.18, 0.48, 0.22, 0.52]  # Centro en x=0.20 -> t = (0.2 - 0.1) / (0.9 - 0.1) = 0.1 / 0.8 = 0.125
+    bbox_mid = [0.48, 0.48, 0.52, 0.52]    # Centro en x=0.50 -> t = (0.5 - 0.1) / 0.8 = 0.4 / 0.8 = 0.500
+    bbox_end = [0.78, 0.48, 0.82, 0.52]    # Centro en x=0.80 -> t = (0.8 - 0.1) / 0.8 = 0.7 / 0.8 = 0.875
+
+    t_start = vec_extractor.compute_symbol_projection_t(bbox_start, seg.polyline_points)
+    t_mid = vec_extractor.compute_symbol_projection_t(bbox_mid, seg.polyline_points)
+    t_end = vec_extractor.compute_symbol_projection_t(bbox_end, seg.polyline_points)
+
+    assert abs(t_start - 0.125) < 0.01
+    assert abs(t_mid - 0.500) < 0.01
+    assert abs(t_end - 0.875) < 0.01
+
+    # 3. Crear 3 DetectedSymbol y evaluar con Capa 2
+    s_inlet = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="gate_valve_inlet",
+        discipline="piping",
+        bbox_normalized=bbox_start,
+        confidence=0.92,
+        attributes={}
+    )
+    s_control = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="control_valve",
+        discipline="piping",
+        bbox_normalized=bbox_mid,
+        confidence=0.95,
+        attributes={}
+    )
+    s_outlet = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="check_valve_outlet",
+        discipline="piping",
+        bbox_normalized=bbox_end,
+        confidence=0.89,
+        attributes={}
+    )
+    db_session.add_all([s_inlet, s_control, s_outlet])
+    db_session.commit()
+
+    # Ejecutar Capa 2 del escaneo por capas
+    syms, conf = scan_service._layer_2_symbols_in_corridor(
+        sheet=sheet,
+        piping_lines=[pline],
+        pw=1000.0,
+        ph=1000.0
+    )
+
+    db_session.refresh(s_inlet)
+    db_session.refresh(s_control)
+    db_session.refresh(s_outlet)
+
+    assert s_inlet.attributes.get("piping_line_relation") == "inline"
+    assert s_control.attributes.get("piping_line_relation") == "inline"
+    assert s_outlet.attributes.get("piping_line_relation") == "inline"
+
+    assert s_inlet.attributes.get("sequence_position") is not None
+    assert s_control.attributes.get("sequence_position") is not None
+    assert s_outlet.attributes.get("sequence_position") is not None
+
+    assert s_inlet.attributes["sequence_position"] < s_control.attributes["sequence_position"] < s_outlet.attributes["sequence_position"]
+
+    # 4. Probar ordenamiento aguas arriba -> aguas abajo
+    ordered_forward = scan_service.get_ordered_symbols_for_line(pline.id, flow_direction="forward")
+    assert [s.symbol_type for s in ordered_forward] == ["gate_valve_inlet", "control_valve", "check_valve_outlet"]
+
+    # 5. Probar ordenamiento inverso (flujo reverso)
+    ordered_reverse = scan_service.get_ordered_symbols_for_line(pline.id, flow_direction="reverse")
+    assert [s.symbol_type for s in ordered_reverse] == ["check_valve_outlet", "control_valve", "gate_valve_inlet"]
 

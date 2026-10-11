@@ -821,3 +821,37 @@ class DocumentLayeredScanService:
             cum_len += seg_l
 
         return min_dist_mm, best_t_cum
+
+    def get_ordered_symbols_for_line(
+        self,
+        piping_line_id: str,
+        flow_direction: Optional[str] = None
+    ) -> List[DetectedSymbol]:
+        """
+        Retorna la lista de símbolos 'inline' ordenados secuencialmente a lo largo de la tubería
+        (aguas arriba -> aguas abajo).
+        Si flow_direction es 'reverse', invierte el orden (descendente por sequence_position).
+        """
+        pline = self.db.query(PipingLine).filter(PipingLine.id == piping_line_id).first()
+        direction = flow_direction or (pline.flow_direction if pline else "unconfirmed")
+
+        seg_ids = [s.id for s in pline.segments] if pline else []
+        all_syms = self.db.query(DetectedSymbol).all()
+
+        matching_syms: List[DetectedSymbol] = []
+        for sym in all_syms:
+            attrs = sym.attributes or {}
+            if attrs.get("piping_line_relation") != "inline":
+                continue
+            is_match = (
+                attrs.get("piping_line_id") == piping_line_id or
+                any(sid in attrs.get("connected_line_segment_ids", []) for sid in seg_ids)
+            )
+            if is_match:
+                matching_syms.append(sym)
+
+        def get_t(s: DetectedSymbol) -> float:
+            return float((s.attributes or {}).get("sequence_position", 0.0))
+
+        matching_syms.sort(key=get_t, reverse=(direction == "reverse"))
+        return matching_syms

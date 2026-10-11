@@ -504,3 +504,59 @@ class VectorSymbolExtractor:
                     return True
 
         return False
+
+    def compute_symbol_projection_t(
+        self,
+        symbol_bbox_norm: List[float],
+        polyline_points: List[List[float]],
+    ) -> float:
+        """
+        Calcula la proyección normalizada t (0.0 -> 1.0) del centro del símbolo
+        a lo largo de la polilínea de tubería.
+        """
+        if not symbol_bbox_norm or len(symbol_bbox_norm) != 4 or not polyline_points or len(polyline_points) < 2:
+            return 0.0
+
+        cx = (symbol_bbox_norm[0] + symbol_bbox_norm[2]) / 2.0
+        cy = (symbol_bbox_norm[1] + symbol_bbox_norm[3]) / 2.0
+
+        seg_lengths = []
+        total_len = 0.0
+        for i in range(len(polyline_points) - 1):
+            pa = polyline_points[i]
+            pb = polyline_points[i + 1]
+            sl = math.hypot(pb[0] - pa[0], pb[1] - pa[1])
+            seg_lengths.append(sl)
+            total_len += sl
+
+        if total_len <= 1e-9:
+            return 0.0
+
+        min_dist_sq = float("inf")
+        best_t_global = 0.0
+        accum_len = 0.0
+
+        for i in range(len(polyline_points) - 1):
+            pa = polyline_points[i]
+            pb = polyline_points[i + 1]
+            sl = seg_lengths[i]
+            if sl <= 1e-9:
+                continue
+
+            dx = pb[0] - pa[0]
+            dy = pb[1] - pa[1]
+            t_local = ((cx - pa[0]) * dx + (cy - pa[1]) * dy) / (sl * sl)
+            t_local_clamped = max(0.0, min(1.0, t_local))
+
+            proj_x = pa[0] + t_local_clamped * dx
+            proj_y = pa[1] + t_local_clamped * dy
+
+            dist_sq = (cx - proj_x) ** 2 + (cy - proj_y) ** 2
+            if dist_sq < min_dist_sq:
+                min_dist_sq = dist_sq
+                t_global = (accum_len + t_local_clamped * sl) / total_len
+                best_t_global = max(0.0, min(1.0, t_global))
+
+            accum_len += sl
+
+        return round(best_t_global, 4)
