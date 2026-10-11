@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.document_memory import (
-    Document, DocumentSheet, SheetRegion, DetectedSymbol
+    Document, DocumentSheet, SheetRegion, DetectedSymbol, ExtractedText
 )
 from app.db.models.template_memory import SymbolTemplate, SymbolLibrary
 from app.db.repositories.document_repository import DocumentRepository
@@ -97,6 +97,15 @@ class SymbolService:
                 logger.warning(f"No se pudo inspeccionar PDF {pdf_path}: {pdf_err}")
                 fitz_doc = None
 
+        # Recolectar bboxes de texto conocidos (OCR) para excluir bloques de texto de la detección de símbolos
+        text_rows = self.db.query(ExtractedText).filter(ExtractedText.sheet_id == sheet.id).all()
+        known_text_bboxes_norm = [
+            t.bbox_normalized for t in text_rows
+            if t.bbox_normalized and len(t.bbox_normalized) == 4
+        ]
+        if known_text_bboxes_norm:
+            logger.info(f"Lámina {sheet_id}: {len(known_text_bboxes_norm)} cajas de texto OCR recuperadas para exclusión de símbolos.")
+
         has_vector_drawings = len(drawings) >= 8
         raw_candidates = None
         render_mode = "vector"
@@ -111,7 +120,8 @@ class SymbolService:
                 doc_uid=sheet.id[:8],
                 region_rect=region_rect,
                 min_size_mm=3.0,
-                max_size_mm=35.0
+                max_size_mm=35.0,
+                known_text_bboxes_norm=known_text_bboxes_norm
             )
             render_mode = "vector"
 
@@ -143,7 +153,8 @@ class SymbolService:
                     page_number=sheet.sheet_number,
                     doc_uid=sheet.id[:8],
                     min_size_mm=3.0,
-                    max_size_mm=35.0
+                    max_size_mm=35.0,
+                    known_text_bboxes_norm=known_text_bboxes_norm
                 )
                 raw_candidates = [
                     c for c in all_rast_cands

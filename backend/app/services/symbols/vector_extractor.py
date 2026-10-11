@@ -51,7 +51,8 @@ class VectorSymbolExtractor:
         region_rect: Optional[fitz.Rect] = None,
         min_size_mm: float = 3.0,
         max_size_mm: float = 35.0,
-        cluster_distance_mm: float = 2.0
+        cluster_distance_mm: float = 2.0,
+        known_text_bboxes_norm: Optional[List[List[float]]] = None
     ) -> List[VectorSymbolCandidateDTO]:
         """
         Extrae candidatos a símbolo agrupando trazos vectoriales dentro de la página o región.
@@ -125,29 +126,41 @@ class VectorSymbolExtractor:
             if aspect_ratio > 4.0 or aspect_ratio < 0.25:
                 continue
 
-            # Calcular Score Ponderado Blando (S_sym)
-            confidence = self._compute_soft_confidence(w_mm, h_mm, cluster["stroke_count"], cluster["paths_count"])
-
-            norm_box = [
+            tight_norm_box = [
                 round(c_rect.x0 / pw, 4),
                 round(c_rect.y0 / ph, 4),
                 round(c_rect.x1 / pw, 4),
                 round(c_rect.y1 / ph, 4)
             ]
 
+            # Descarte contra cajas de texto conocidas (>=50% solapamiento)
+            if known_text_bboxes_norm and self._overlaps_with_text(tight_norm_box, known_text_bboxes_norm):
+                continue
+
+            # Calcular Score Ponderado Blando (S_sym)
+            confidence = self._compute_soft_confidence(w_mm, h_mm, cluster["stroke_count"], cluster["paths_count"])
+
             # Inferencia de familia orientativa según forma
             family_hint = self._infer_family_hint(w_mm, h_mm, aspect_ratio, cluster["stroke_count"])
 
-            # Renderizar Crop en alta resolución (300 DPI)
+            # Margen fijo de 3mm convertido a puntos según la geometría del PDF
+            margin_pt = 3.0 / PT_TO_MM
+            mx0 = max(0.0, c_rect.x0 - margin_pt)
+            my0 = max(0.0, c_rect.y0 - margin_pt)
+            mx1 = min(pw, c_rect.x1 + margin_pt)
+            my1 = min(ph, c_rect.y1 + margin_pt)
+
+            norm_box = [
+                round(mx0 / pw, 4),
+                round(my0 / ph, 4),
+                round(mx1 / pw, 4),
+                round(my1 / ph, 4)
+            ]
+
+            # Renderizar Crop en alta resolución (300 DPI) con margen de 3mm
             crop_path = None
             try:
-                pad = 4 # 4 pt de padding
-                clip_r = fitz.Rect(
-                    max(0, c_rect.x0 - pad),
-                    max(0, c_rect.y0 - pad),
-                    min(pw, c_rect.x1 + pad),
-                    min(ph, c_rect.y1 + pad)
-                )
+                clip_r = fitz.Rect(mx0, my0, mx1, my1)
                 pix = page.get_pixmap(clip=clip_r, dpi=300)
                 crop_name = f"sym_vec_{doc_uid}_p{page_number}_{idx + 1}.png"
                 full_crop_path = os.path.join(self.crops_dir, crop_name)
@@ -158,7 +171,7 @@ class VectorSymbolExtractor:
 
             candidate = VectorSymbolCandidateDTO(
                 id=str(uuid.uuid4()),
-                bbox_pt=[round(c_rect.x0, 1), round(c_rect.y0, 1), round(c_rect.x1, 1), round(c_rect.y1, 1)],
+                bbox_pt=[round(mx0, 1), round(my0, 1), round(mx1, 1), round(my1, 1)],
                 bbox_normalized=norm_box,
                 estimated_physical_size_mm={
                     "width_mm": w_mm,
@@ -270,3 +283,22 @@ class VectorSymbolExtractor:
             return "pumps"
         else:
             return "fittings"
+
+    def _overlaps_with_text(self, box: List[float], text_boxes: List[List[float]]) -> bool:
+        """Determina si la caja del candidato tiene solapamiento significativo (>=50%) con texto OCR."""
+        bx0, by0, bx1, by1 = box
+        b_area = max(1e-6, (bx1 - bx0) * (by1 - by0))
+
+        for tb in text_boxes:
+            tx0, ty0, tx1, ty1 = tb
+            ix0 = max(bx0, tx0)
+            iy0 = max(by0, ty0)
+            ix1 = min(bx1, tx1)
+            iy1 = min(by1, ty1)
+
+            if ix1 > ix0 and iy1 > iy0:
+                inter_area = (ix1 - ix0) * (iy1 - iy0)
+                # Si el 50% o más de la caja del símbolo está dentro de una caja de texto, es texto
+                if (inter_area / b_area) >= 0.50:
+                    return True
+        return False

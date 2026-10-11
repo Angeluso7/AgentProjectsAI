@@ -273,3 +273,59 @@ def test_hitl_approval_promotes_symbol_to_canonical(db_session, tmp_path):
     assert created_tpl is not None
     assert "PIP-VALVE-BALL" in created_tpl.display_name or "PIP-VALVE-BALL" in created_tpl.symbol_class or created_tpl.is_active_for_detection
 
+
+def test_ocr_text_exclusion_and_3mm_margin():
+    """Valida que los extractores descarten candidatos que se solapan con texto OCR y apliquen margen de 3mm."""
+    from app.services.symbols.vector_extractor import VectorSymbolExtractor, PT_TO_MM
+    from app.services.symbols.raster_extractor import RasterSymbolExtractor
+    import numpy as np
+
+    vec_extractor = VectorSymbolExtractor()
+    rast_extractor = RasterSymbolExtractor()
+
+    # 1. Validación de _overlaps_with_text en vector y raster
+    candidate_box = [0.10, 0.10, 0.15, 0.15]
+    overlapping_text = [[0.09, 0.09, 0.16, 0.16]]
+    non_overlapping_text = [[0.50, 0.50, 0.60, 0.60]]
+
+    assert vec_extractor._overlaps_with_text(candidate_box, overlapping_text) is True
+    assert vec_extractor._overlaps_with_text(candidate_box, non_overlapping_text) is False
+
+    assert rast_extractor._overlaps_with_text(candidate_box, overlapping_text) is True
+    assert rast_extractor._overlaps_with_text(candidate_box, non_overlapping_text) is False
+
+    # 2. Extracción raster sobre imagen sintética con y sin exclusión de texto OCR
+    # Crear imagen blanca de 400x400 con un símbolo técnico hueco de 30x30 (100 a 130)
+    img = np.ones((400, 400, 3), dtype=np.uint8) * 255
+    img[100:130, 100:102] = 0
+    img[100:130, 128:130] = 0
+    img[100:102, 100:130] = 0
+    img[128:130, 100:130] = 0
+
+    # Sin texto conocido: debe extraer el candidato con margen de 3mm
+    cands_no_text = rast_extractor.extract_candidates_from_image(
+        image_input=img,
+        dpi=150,
+        page_number=1,
+        known_text_bboxes_norm=None
+    )
+    assert len(cands_no_text) == 1
+    cand = cands_no_text[0]
+
+    # Verificar que el bbox expandido incluye el margen de 3mm (3mm * (150/25.4) ~ 17.7 -> 18px)
+    margin_px = int(round(3.0 * (150 / 25.4)))
+    assert cand.bbox_pixel[0] == max(0, 100 - margin_px)
+    assert cand.bbox_pixel[1] == max(0, 100 - margin_px)
+    assert cand.bbox_pixel[2] == min(400, 130 + margin_px)
+    assert cand.bbox_pixel[3] == min(400, 130 + margin_px)
+
+    # Con texto OCR que cubre el candidato: debe ser descartado
+    text_covering_cand = [[0.24, 0.24, 0.33, 0.33]] # ~100/400=0.25 a 130/400=0.325
+    cands_with_text = rast_extractor.extract_candidates_from_image(
+        image_input=img,
+        dpi=150,
+        page_number=1,
+        known_text_bboxes_norm=text_covering_cand
+    )
+    assert len(cands_with_text) == 0
+
