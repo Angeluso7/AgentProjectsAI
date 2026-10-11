@@ -71,6 +71,7 @@ class SymbolService:
         from app.services.symbols.raster_extractor import RasterSymbolExtractor
         from app.services.symbols.template_matcher import TemplateMatcher, AUTO_MATCH_THRESHOLD, HITL_SUGGESTION_THRESHOLD
         from app.services.symbols.symbol_inventory_service import SymbolInventoryService
+        from app.services.symbols.shape_classifier import classify_primitive_shape, is_text_like_cluster
 
         dx0, dy0, dx1, dy1 = drawing_bbox_norm
 
@@ -97,14 +98,83 @@ class SymbolService:
                 logger.warning(f"No se pudo inspeccionar PDF {pdf_path}: {pdf_err}")
                 fitz_doc = None
 
-        # Recolectar bboxes de texto conocidos (OCR) para excluir bloques de texto de la detección de símbolos
+        # 1. OCR independiente de imagen renderizada (pytesseract) para detectar texto vectorizado (curvas CAD)
+        existing_image_ocr = self.db.query(ExtractedText).filter(
+            ExtractedText.sheet_id == sheet.id,
+            ExtractedText.source == "image_ocr"
+        ).first()
+
+        if not existing_image_ocr and (page or sheet.raster_image_path):
+            try:
+                import pytesseract
+                from PIL import Image
+
+                ocr_img = None
+                img_w, img_h = 0, 0
+                if page:
+                    pix = page.get_pixmap(dpi=150)
+                    ocr_img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    img_w, img_h = pix.width, pix.height
+                elif sheet.raster_image_path and os.path.exists(sheet.raster_image_path):
+                    ocr_img = Image.open(sheet.raster_image_path)
+                    img_w, img_h = ocr_img.size
+
+                if ocr_img is not None and img_w > 0 and img_h > 0:
+                    ocr_data = pytesseract.image_to_data(
+                        ocr_img,
+                        output_type=pytesseract.Output.DICT,
+                        config="--psm 11"
+                    )
+                    new_ocr_entities = []
+                    n_boxes = len(ocr_data.get("text", []))
+                    for i in range(n_boxes):
+                        raw_txt = ocr_data["text"][i]
+                        clean_txt = raw_txt.strip() if raw_txt else ""
+                        conf_str = str(ocr_data["conf"][i])
+                        try:
+                            conf_val = float(conf_str)
+                        except (ValueError, TypeError):
+                            conf_val = -1.0
+
+                        if clean_txt and len(clean_txt) >= 1 and conf_val >= 20.0:
+                            lx = float(ocr_data["left"][i])
+                            ly = float(ocr_data["top"][i])
+                            lw = float(ocr_data["width"][i])
+                            lh = float(ocr_data["height"][i])
+
+                            norm_bbox = [
+                                round(max(0.0, lx / img_w), 4),
+                                round(max(0.0, ly / img_h), 4),
+                                round(min(1.0, (lx + lw) / img_w), 4),
+                                round(min(1.0, (ly + lh) / img_h), 4),
+                            ]
+                            px_bbox = [int(lx), int(ly), int(lx + lw), int(ly + lh)]
+
+                            new_ocr_entities.append(ExtractedText(
+                                sheet_id=sheet.id,
+                                text=raw_txt,
+                                clean_text=clean_txt,
+                                bbox=px_bbox,
+                                bbox_normalized=norm_bbox,
+                                confidence=round(conf_val / 100.0, 3),
+                                angle=0.0,
+                                source="image_ocr"
+                            ))
+                    if new_ocr_entities:
+                        self.db.add_all(new_ocr_entities)
+                        self.db.commit()
+                        logger.info(f"Lámina {sheet_id}: {len(new_ocr_entities)} bloques de texto agregados vía image_ocr (pytesseract).")
+            except Exception as ocr_err:
+                logger.warning(f"Aviso ejecutando image_ocr para lámina {sheet.id}: {ocr_err}")
+
+        # Recolectar bboxes de texto conocidos (combinando capa nativa pdf_text_layer/vector_pdf + image_ocr)
         text_rows = self.db.query(ExtractedText).filter(ExtractedText.sheet_id == sheet.id).all()
         known_text_bboxes_norm = [
             t.bbox_normalized for t in text_rows
             if t.bbox_normalized and len(t.bbox_normalized) == 4
         ]
         if known_text_bboxes_norm:
-            logger.info(f"Lámina {sheet_id}: {len(known_text_bboxes_norm)} cajas de texto OCR recuperadas para exclusión de símbolos.")
+            logger.info(f"Lámina {sheet_id}: {len(known_text_bboxes_norm)} cajas de texto combinadas (nativa + image_ocr) recuperadas para exclusión.")
 
         has_vector_drawings = len(drawings) >= 8
         raw_candidates = None
@@ -196,11 +266,36 @@ class SymbolService:
 
         if raw_candidates is not None:
             # -----------------------------------------------------------------
-            # 2. Matching determinista con TemplateMatcher contra SymbolTemplate
+            # 2. Clasificación de forma geométrica y descarte de texto vectorizado
+            # -----------------------------------------------------------------
+            plausible_candidates = []
+            for cand in raw_candidates:
+                shape = classify_primitive_shape(cand)
+                if is_text_like_cluster(cand, raw_candidates):
+                    shape = "text_like"
+                    if hasattr(cand, "attributes") and isinstance(cand.attributes, dict):
+                        cand.attributes["primitive_shape"] = "text_like"
+
+                if shape in ["text_like", "open_stroke"]:
+                    logger.debug(
+                        f"Lámina {sheet_id}: descartando candidato {getattr(cand, 'id', '')} con forma '{shape}' "
+                        f"(descartado antes de TemplateMatcher)."
+                    )
+                    continue
+
+                plausible_candidates.append(cand)
+
+            logger.info(
+                f"Lámina {sheet_id}: {len(plausible_candidates)} de {len(raw_candidates)} candidatos superaron el filtro de forma "
+                f"({len(raw_candidates) - len(plausible_candidates)} descartados como text_like u open_stroke)."
+            )
+
+            # -----------------------------------------------------------------
+            # 3. Matching determinista con TemplateMatcher contra SymbolTemplate
             # -----------------------------------------------------------------
             template_matcher = TemplateMatcher(self.db)
 
-            for cand in raw_candidates:
+            for cand in plausible_candidates:
                 cand_img = None
                 if cand.crop_image_path and os.path.exists(cand.crop_image_path):
                     cand_img = cv2.imread(cand.crop_image_path, cv2.IMREAD_UNCHANGED)
@@ -277,7 +372,11 @@ class SymbolService:
                     match_rotation_deg=match_rot,
                     match_method="ncc_hu_composite_v1",
                     match_evidence=match_evidence,
-                    attributes=getattr(cand, "estimated_physical_size_mm", {}),
+                    attributes={
+                        **getattr(cand, "estimated_physical_size_mm", {}),
+                        **getattr(cand, "attributes", {}),
+                        "primitive_shape": getattr(cand, "attributes", {}).get("primitive_shape", "irregular_closed")
+                    },
                     project_id=proj_id,
                     project_document_id=proj_doc_id,
                     record_kind="occurrence" if proj_id else "candidate",

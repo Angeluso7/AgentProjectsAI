@@ -2,7 +2,7 @@ import os
 import uuid
 import math
 from typing import List, Dict, Any, Optional, Tuple
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from PIL import Image
@@ -16,6 +16,15 @@ try:
 except ImportError:
     OPENCV_AVAILABLE = False
     logger.warning("OpenCV no disponible; RasterSymbolExtractor usará fallback con PIL/NumPy.")
+
+from app.services.symbols.shape_classifier import (
+    classify_primitive_shape as _classify_primitive_shape,
+    is_text_like_cluster as _is_text_like_cluster
+)
+
+# Exportar al nivel de módulo para conveniencia y pruebas
+classify_primitive_shape = _classify_primitive_shape
+is_text_like_cluster = _is_text_like_cluster
 
 
 @dataclass
@@ -31,6 +40,7 @@ class RasterSymbolCandidateDTO:
     confidence_score: float = 0.75
     crop_image_path: Optional[str] = None
     canonical_family_hint: str = "valves"
+    attributes: Dict[str, Any] = field(default_factory=dict)
 
 
 class RasterSymbolExtractor:
@@ -284,4 +294,12 @@ class RasterSymbolExtractor:
 
         final = 0.45 * size_score + 0.35 * density_score + 0.20 * aspect_score
         return min(0.95, max(0.40, final))
+
+    def classify_primitive_shape(self, candidate: Any) -> str:
+        """Determina la forma geométrica primitiva ('circle', 'square', 'hexagon', etc.)."""
+        return _classify_primitive_shape(candidate)
+
+    def is_text_like_cluster(self, candidate: Any, nearby_candidates: List[Any]) -> bool:
+        """Determina si el candidato forma parte de un clúster de trazos tipo texto vectorizado."""
+        return _is_text_like_cluster(candidate, nearby_candidates)
 
