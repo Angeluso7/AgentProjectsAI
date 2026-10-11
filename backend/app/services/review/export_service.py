@@ -13,7 +13,10 @@ from app.db.models.decision_memory import (
     ReviewRunStep,
     ReviewRunDocument
 )
-from app.db.models.document_memory import Document
+from app.db.models.document_memory import (
+    Document, DocumentSheet, PipingLine, PipingLineSegment,
+    ExtractedTable, ExtractedText, DetectedSymbol, TitleBlockExtraction
+)
 from app.services.reporting.pdf_renderer import SimplePdfCanvas
 from app.core.logging import logger
 
@@ -197,6 +200,100 @@ class ReviewExportService:
             "groups": groups_summary,
             "occurrences": all_occurrences
         }
+
+        # Cargar entidades de piping y capas complementarias
+        sheet_ids = [s.id for s in db.query(DocumentSheet).filter(DocumentSheet.document_id.in_(doc_ids)).all()] if doc_ids else []
+
+        # 1. Line List (PipingLine)
+        piping_lines_data = []
+        if run.project_id:
+            p_lines = db.query(PipingLine).filter(PipingLine.project_id == run.project_id).all()
+            all_syms = db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id.in_(sheet_ids)).all() if sheet_ids else []
+            for pl in p_lines:
+                sheet_names = set()
+                connected_sym_ids = set()
+                for seg in pl.segments:
+                    if seg.sheet:
+                        sheet_names.add(seg.sheet.sheet_code or str(seg.sheet.sheet_number))
+                    for csid in (seg.connected_symbol_ids or []):
+                        connected_sym_ids.add(csid)
+
+                for sym in all_syms:
+                    if (sym.attributes or {}).get("piping_line_id") == pl.id:
+                        connected_sym_ids.add(sym.id)
+
+                piping_lines_data.append({
+                    "id": pl.id,
+                    "line_number": pl.line_number or "S/N",
+                    "nominal_size": pl.nominal_size or "-",
+                    "service_fluid": pl.service_fluid or "-",
+                    "spec_class": pl.spec_class or "-",
+                    "insulation": pl.insulation or "No",
+                    "from_to": f"{pl.from_equipment_tag or '-'} -> {pl.to_equipment_tag or '-'}",
+                    "from_equipment_tag": pl.from_equipment_tag or "-",
+                    "to_equipment_tag": pl.to_equipment_tag or "-",
+                    "flow_direction": pl.flow_direction or "unconfirmed",
+                    "sheets": ", ".join(sorted(sheet_names)) or "-",
+                    "valves_count": len(connected_sym_ids),
+                    "source": "manual" if pl.source in ("manual_trace", "manual_corrected") else "auto",
+                    "confidence_status": pl.confidence_status or "-"
+                })
+        run_data["piping_lines"] = piping_lines_data
+
+        # 2. Leyendas de Símbolos (Capa 5)
+        legends_data = []
+        if sheet_ids:
+            tables = db.query(ExtractedTable).filter(ExtractedTable.sheet_id.in_(sheet_ids)).all()
+            for tbl in tables:
+                is_leg = tbl.table_type == "leyenda_simbolos" or (tbl.raw_structure or {}).get("is_symbol_legend") is True
+                if is_leg:
+                    legends_data.append({
+                        "id": tbl.id,
+                        "title": tbl.title or "Leyenda de Símbolos",
+                        "sheet_name": tbl.sheet.sheet_code or str(tbl.sheet.sheet_number) if tbl.sheet else "-",
+                        "dimensions": f"{tbl.row_count}x{tbl.column_count}",
+                        "classification": "Tabla identificada como leyenda de símbolos",
+                        "description": (tbl.raw_structure or {}).get("description") or "-"
+                    })
+        run_data["legends"] = legends_data
+
+        # 3. Notas Técnicas Vinculadas (Capa 6)
+        notes_data = []
+        if sheet_ids:
+            raw_texts = db.query(ExtractedText).filter(ExtractedText.sheet_id.in_(sheet_ids)).all()
+            for txt in raw_texts:
+                t_content = txt.text or ""
+                txt_attrs = getattr(txt, "attributes", None) or {}
+                is_note = txt_attrs.get("is_technical_note") or "NOTA" in t_content.upper()
+                if is_note and len(t_content.strip()) > 5:
+                    notes_data.append({
+                        "id": txt.id,
+                        "sheet_name": txt.sheet.sheet_code or str(txt.sheet.sheet_number) if txt.sheet else "-",
+                        "text": t_content.strip(),
+                        "confidence": round(txt.confidence or 1.0, 2)
+                    })
+        run_data["technical_notes"] = notes_data
+
+        # 4. Metadatos de Cajetín Extraídos (Capa 7)
+        title_blocks_data = []
+        if sheet_ids:
+            tb_list = db.query(TitleBlockExtraction).filter(TitleBlockExtraction.sheet_id.in_(sheet_ids)).all()
+            for tb in tb_list:
+                title_blocks_data.append({
+                    "id": tb.id,
+                    "sheet_code": tb.sheet_code or (tb.sheet.sheet_code if tb.sheet else "-"),
+                    "sheet_title": tb.sheet_title or "-",
+                    "project_name": tb.project_name or "-",
+                    "revision": tb.revision or "-",
+                    "scale_text": tb.scale_text or "-",
+                    "discipline": tb.discipline or "-",
+                    "date_text": tb.date_text or "-",
+                    "drawn_by": tb.drawn_by or "-",
+                    "checked_by": tb.checked_by or "-",
+                    "approved_by": tb.approved_by or "-",
+                    "revisions_summary": (tb.raw_fields or {}).get("revisions") or []
+                })
+        run_data["title_blocks"] = title_blocks_data
 
         # Directorio destino
         target_dir = os.path.join(cls.BASE_STORAGE_DIR, run.project_id)
@@ -464,6 +561,112 @@ class ReviewExportService:
 
         for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O"]:
             ws_occ.column_dimensions[col_letter].width = 22
+
+        # Sheet 7: Tabla Line List
+        piping_lines = run_data.get("piping_lines", [])
+        ws_lines = wb.create_sheet(title="Line List")
+        headers_lines = [
+            "N° de Línea", "Tamaño (DN)", "Servicio / Fluido", "Spec / Clase",
+            "Aislación", "Desde - Hasta", "Dirección de Flujo", "Hojas / Láminas",
+            "Válvulas / Instrumentos", "Origen del Dato", "Estado Confianza"
+        ]
+        ws_lines.append(headers_lines)
+        for col in range(1, len(headers_lines) + 1):
+            cell = ws_lines.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for pl in piping_lines:
+            ws_lines.append([
+                pl.get("line_number"),
+                pl.get("nominal_size"),
+                pl.get("service_fluid"),
+                pl.get("spec_class"),
+                pl.get("insulation"),
+                pl.get("from_to"),
+                pl.get("flow_direction"),
+                pl.get("sheets"),
+                pl.get("valves_count", 0),
+                pl.get("source", "auto").upper(),
+                pl.get("confidence_status")
+            ])
+
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K"]:
+            ws_lines.column_dimensions[col_letter].width = 22
+
+        # Sheet 8: Leyendas de Símbolos
+        legends = run_data.get("legends", [])
+        ws_leg = wb.create_sheet(title="Leyendas de Símbolos")
+        headers_leg = ["ID Tabla", "Título / Nombre", "Lámina / Hoja", "Dimensiones", "Clasificación", "Descripción"]
+        ws_leg.append(headers_leg)
+        for col in range(1, len(headers_leg) + 1):
+            cell = ws_leg.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for lg in legends:
+            ws_leg.append([
+                lg.get("id"),
+                lg.get("title"),
+                lg.get("sheet_name"),
+                lg.get("dimensions"),
+                lg.get("classification"),
+                lg.get("description")
+            ])
+
+        for col_letter in ["A", "B", "C", "D", "E", "F"]:
+            ws_leg.column_dimensions[col_letter].width = 25
+
+        # Sheet 9: Notas Técnicas
+        notes = run_data.get("technical_notes", [])
+        ws_notes = wb.create_sheet(title="Notas Técnicas")
+        headers_notes = ["ID Texto", "Lámina", "Contenido de Nota", "Confianza"]
+        ws_notes.append(headers_notes)
+        for col in range(1, len(headers_notes) + 1):
+            cell = ws_notes.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for nt in notes:
+            ws_notes.append([
+                nt.get("id"),
+                nt.get("sheet_name"),
+                nt.get("text"),
+                nt.get("confidence", 1.0)
+            ])
+
+        for col_letter in ["A", "B", "C", "D"]:
+            ws_notes.column_dimensions[col_letter].width = 30
+
+        # Sheet 10: Metadatos Cajetín
+        title_blocks = run_data.get("title_blocks", [])
+        ws_tb = wb.create_sheet(title="Metadatos Cajetín")
+        headers_tb = [
+            "Lámina / Código", "Título del Plano", "Proyecto", "Revisión",
+            "Escala", "Especialidad", "Fecha", "Dibujó", "Revisó", "Aprobó"
+        ]
+        ws_tb.append(headers_tb)
+        for col in range(1, len(headers_tb) + 1):
+            cell = ws_tb.cell(row=1, column=col)
+            cell.fill = header_fill
+            cell.font = header_font
+
+        for tb in title_blocks:
+            ws_tb.append([
+                tb.get("sheet_code"),
+                tb.get("sheet_title"),
+                tb.get("project_name"),
+                tb.get("revision"),
+                tb.get("scale_text"),
+                tb.get("discipline"),
+                tb.get("date_text"),
+                tb.get("drawn_by"),
+                tb.get("checked_by"),
+                tb.get("approved_by")
+            ])
+
+        for col_letter in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]:
+            ws_tb.column_dimensions[col_letter].width = 22
 
         wb.save(output_path)
 
@@ -749,6 +952,92 @@ class ReviewExportService:
                     45, y, font_size=8, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5)
                 )
                 y -= 14
+
+        # =====================================================================
+        # Sección 6: Line List (Listado de Líneas de Piping)
+        # =====================================================================
+        piping_lines = run_data.get("piping_lines", [])
+        if piping_lines:
+            pdf.new_page()
+            y = pdf.height - 50
+            pdf.draw_text(f"6. Line List - Trazado y Continuidad de Tuberías ({len(piping_lines)} líneas)", 40, y, font_size=12, font="Helvetica-Bold")
+            y -= 16
+
+            headers_ll = ["N° Línea", "DN", "Serv.", "Spec", "Aisl.", "Desde - Hasta", "Flujo", "Láminas", "Válv.", "Origen"]
+            col_widths_ll = [80, 35, 40, 45, 35, 110, 50, 60, 30, 45]
+            rows_ll = []
+            for pl in piping_lines:
+                rows_ll.append([
+                    pl.get("line_number") or "S/N",
+                    pl.get("nominal_size") or "-",
+                    pl.get("service_fluid") or "-",
+                    pl.get("spec_class") or "-",
+                    pl.get("insulation") or "-",
+                    pl.get("from_to") or "-",
+                    pl.get("flow_direction") or "unconfirmed",
+                    pl.get("sheets") or "-",
+                    pl.get("valves_count", 0),
+                    pl.get("source", "auto").upper()
+                ])
+            y = pdf.draw_table(headers_ll, rows_ll, col_widths_ll, start_y=y, font_size=7.5)
+
+        # =====================================================================
+        # Sección 7: Leyendas de Símbolos Técnicos (Capa 5)
+        # =====================================================================
+        legends = run_data.get("legends", [])
+        if legends:
+            y -= 20
+            if y < 140:
+                pdf.new_page()
+                y = pdf.height - 50
+            pdf.draw_text(f"7. Leyendas de Símbolos Técnicos ({len(legends)} identificadas)", 40, y, font_size=12, font="Helvetica-Bold")
+            y -= 14
+            headers_leg = ["Título / Cuadro", "Lámina", "Dimensiones", "Clasificación"]
+            col_widths_leg = [160, 100, 70, 200]
+            rows_leg = [
+                [l.get("title") or "Leyenda", l.get("sheet_name") or "-", l.get("dimensions") or "-", "Tabla identificada como leyenda de símbolos"]
+                for l in legends
+            ]
+            y = pdf.draw_table(headers_leg, rows_leg, col_widths_leg, start_y=y, font_size=7.5)
+
+        # =====================================================================
+        # Sección 8: Notas Técnicas y Referencias Vinculadas (Capa 6)
+        # =====================================================================
+        notes = run_data.get("technical_notes", [])
+        if notes:
+            y -= 20
+            if y < 140:
+                pdf.new_page()
+                y = pdf.height - 50
+            pdf.draw_text(f"8. Notas Técnicas y Referencias Vinculadas ({len(notes)} notas)", 40, y, font_size=12, font="Helvetica-Bold")
+            y -= 14
+            for n in notes[:15]:
+                for nl in SimplePdfCanvas.wrap_text(f"[{n.get('sheet_name')}] {n.get('text')}", max_chars_per_line=95):
+                    pdf.draw_text(nl, 45, y, font_size=8, color=(0.15, 0.2, 0.25))
+                    y -= 11
+                    if y < 70:
+                        pdf.new_page()
+                        y = pdf.height - 50
+                y -= 2
+
+        # =====================================================================
+        # Sección 9: Metadatos del Cajetín y Registro de Revisiones (Capa 7)
+        # =====================================================================
+        title_blocks = run_data.get("title_blocks", [])
+        if title_blocks:
+            y -= 20
+            if y < 140:
+                pdf.new_page()
+                y = pdf.height - 50
+            pdf.draw_text("9. Metadatos del Cajetín y Registro de Revisiones", 40, y, font_size=12, font="Helvetica-Bold")
+            y -= 14
+            headers_tb = ["Lámina / Código", "Título del Plano", "Rev.", "Escala", "Especialidad", "Fecha"]
+            col_widths_tb = [90, 190, 40, 60, 80, 70]
+            rows_tb = [
+                [tb.get("sheet_code") or "-", tb.get("sheet_title") or "-", tb.get("revision") or "-", tb.get("scale_text") or "-", tb.get("discipline") or "-", tb.get("date_text") or "-"]
+                for tb in title_blocks
+            ]
+            y = pdf.draw_table(headers_tb, rows_tb, col_widths_tb, start_y=y, font_size=7.5)
 
         with open(output_path, "wb") as out_f:
             out_f.write(pdf.build_pdf_bytes())

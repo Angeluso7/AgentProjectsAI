@@ -7,9 +7,12 @@ from app.db.models.document_memory import (
     ExtractedTable, ExtractedTableCell, PipingLine, PipingLineSegment, TitleBlockExtraction
 )
 from app.db.models.operations import ReviewTask
+from app.db.models.decision_memory import ReviewRun, ReviewRunDocument
 from app.services.scanning.layered_scan_service import DocumentLayeredScanService
 from app.services.operations.service import OperationsService
 from app.services.symbols.vector_extractor import VectorSymbolExtractor
+from app.services.review.export_service import ReviewExportService
+import openpyxl
 
 
 @pytest.fixture
@@ -641,4 +644,140 @@ def test_phase_4_sequential_symbol_ordering_upstream_downstream(db_session, test
     # 5. Probar ordenamiento inverso (flujo reverso)
     ordered_reverse = scan_service.get_ordered_symbols_for_line(pline.id, flow_direction="reverse")
     assert [s.symbol_type for s in ordered_reverse] == ["check_valve_outlet", "control_valve", "gate_valve_inlet"]
+
+
+def test_phase_5_export_line_list_and_layered_scan_sections(db_session, test_setup_project_and_sheet):
+    """
+    Fase 5: Verifica la generación de reportes con la tabla 'Line List', secciones de
+    leyendas (Capa 5), notas técnicas (Capa 6) y metadatos de cajetín (Capa 7) en XLSX y PDF.
+    """
+    proj, doc, sheet = test_setup_project_and_sheet
+
+    # 1. Crear ReviewRun y vincular documento
+    run = ReviewRun(
+        project_id=proj.id,
+        run_name="Auditoría P&ID con Line List",
+        execution_mode="production",
+        status="succeeded",
+        summary_stats={"passed": 5, "failed": 0, "warning": 1, "not_evaluable": 2}
+    )
+    db_session.add(run)
+    db_session.commit()
+    db_session.refresh(run)
+
+    r_doc = ReviewRunDocument(
+        review_run_id=run.id,
+        document_id=doc.id,
+        status="completed",
+        document_role="primary"
+    )
+    db_session.add(r_doc)
+
+    # 2. Crear datos de PipingLine
+    pline = PipingLine(
+        project_id=proj.id,
+        line_number="01-6\"-CS150-001",
+        nominal_size="6\"",
+        service_fluid="P",
+        spec_class="CS150",
+        insulation="No",
+        from_equipment_tag="TK-101",
+        to_equipment_tag="P-101",
+        flow_direction="forward",
+        source="manual_trace",
+        confidence_status="manual_confirmed",
+        attributes={}
+    )
+    db_session.add(pline)
+    db_session.commit()
+    db_session.refresh(pline)
+
+    seg = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline.id,
+        polyline_points=[[0.1, 0.2], [0.8, 0.2]],
+        bbox_normalized=[0.1, 0.19, 0.8, 0.21],
+        line_style="solid",
+        length_mm=350.0,
+        connected_symbol_ids=[]
+    )
+    db_session.add(seg)
+
+    # 3. Crear leyenda (Capa 5)
+    leg_tbl = ExtractedTable(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        title="LEYENDA GENERAL DE INSTRUMENTACION",
+        table_type="leyenda_simbolos",
+        row_count=5,
+        column_count=2,
+        raw_structure={"is_symbol_legend": True, "description": "Símbolos ISA 5.1"}
+    )
+    db_session.add(leg_tbl)
+
+    # 4. Crear nota técnica (Capa 6)
+    note_txt = ExtractedText(
+        sheet_id=sheet.id,
+        text="NOTA 1: REVISAR SOLDADURAS SEGUN ASME B31.3 CATEGORIA D",
+        confidence=0.98,
+        bbox=[100, 200, 400, 220],
+        bbox_normalized=[0.1, 0.2, 0.4, 0.22]
+    )
+    db_session.add(note_txt)
+
+    # 5. Crear cajetín técnico (Capa 7)
+    tb_ext = TitleBlockExtraction(
+        sheet_id=sheet.id,
+        sheet_code="PID-001-REV-A",
+        sheet_title="DIAGRAMA DE TUBERIAS E INSTRUMENTACION PLANTA SUR",
+        project_name=proj.name,
+        revision="A",
+        scale_text="S/E",
+        discipline="piping",
+        date_text="2026-10-10",
+        drawn_by="J. PEREZ",
+        checked_by="M. GOMEZ",
+        approved_by="R. DIAZ",
+        raw_fields={"revisions": [{"rev": "A", "date": "2026-10-10", "desc": "EMISION INICIAL"}]}
+    )
+    db_session.add(tb_ext)
+    db_session.commit()
+
+    # 6. Probar generación de reporte XLSX
+    report_xlsx = ReviewExportService.create_report(
+        db=db_session,
+        review_run_id=run.id,
+        export_format="xlsx"
+    )
+    assert report_xlsx is not None
+    assert os.path.exists(report_xlsx.artifact_path)
+
+    wb = openpyxl.load_workbook(report_xlsx.artifact_path)
+    sheet_names = wb.sheetnames
+    assert "Line List" in sheet_names
+    assert "Leyendas de Símbolos" in sheet_names
+    assert "Notas Técnicas" in sheet_names
+    assert "Metadatos Cajetín" in sheet_names
+
+    ws_ll = wb["Line List"]
+    # Fila 1 encabezados, Fila 2 datos de la línea
+    assert ws_ll.cell(row=2, column=1).value == "01-6\"-CS150-001"
+    assert ws_ll.cell(row=2, column=2).value == "6\""
+    assert ws_ll.cell(row=2, column=3).value == "P"
+    assert ws_ll.cell(row=2, column=4).value == "CS150"
+    assert ws_ll.cell(row=2, column=10).value == "MANUAL"
+
+    # 7. Probar generación de reporte PDF
+    report_pdf = ReviewExportService.create_report(
+        db=db_session,
+        review_run_id=run.id,
+        export_format="pdf"
+    )
+    assert report_pdf is not None
+    assert os.path.exists(report_pdf.artifact_path)
+    assert os.path.getsize(report_pdf.artifact_path) > 1000
+
+    with open(report_pdf.artifact_path, "rb") as f:
+        pdf_bytes = f.read()
+    assert pdf_bytes.startswith(b"%PDF")
 
