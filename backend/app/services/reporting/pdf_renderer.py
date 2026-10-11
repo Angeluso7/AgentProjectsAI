@@ -123,6 +123,94 @@ class SimplePdfCanvas:
         
         self.current_page_commands.append(f"q {' '.join(ops)} Q")
 
+    def draw_table(
+        self,
+        headers: List[str],
+        rows: List[List[Any]],
+        col_widths: List[float],
+        start_y: float,
+        start_x: float = 40.0,
+        row_height: float = 18.0,
+        header_height: float = 20.0,
+        min_y: float = 60.0,
+        font_size: float = 7.5,
+        header_font_size: float = 8.0,
+        header_bg: tuple = (0.15, 0.20, 0.30),
+        header_fg: tuple = (1.0, 1.0, 1.0),
+        alt_row_bg: tuple = (0.97, 0.97, 0.98),
+        default_row_bg: tuple = (1.0, 1.0, 1.0),
+        stroke_color: tuple = (0.88, 0.90, 0.93),
+        text_color: tuple = (0.15, 0.20, 0.25),
+    ) -> float:
+        """
+        Dibuja una tabla vectorial estándar con encabezado oscuro, texto blanco,
+        filas alternadas, salto automático de página y truncamiento defensivo por celda.
+        Retorna la coordenada y final tras dibujar la tabla.
+        """
+        table_width = sum(col_widths)
+        current_y = start_y
+
+        def _render_header(at_y: float) -> float:
+            self.draw_rect(start_x, at_y - header_height, table_width, header_height, fill_color=header_bg)
+            x_offset = start_x
+            for i, h in enumerate(headers):
+                w = col_widths[i]
+                max_chars = max(3, int((w - 6) / (header_font_size * 0.58)))
+                self.draw_text(
+                    str(h)[:max_chars],
+                    x_offset + 4,
+                    at_y - header_height + 6,
+                    font_size=header_font_size,
+                    font="Helvetica-Bold",
+                    color=header_fg
+                )
+                x_offset += w
+            return at_y - header_height
+
+        if current_y - header_height < min_y:
+            self.new_page()
+            current_y = self.height - 50
+
+        current_y = _render_header(current_y)
+
+        for r_idx, row in enumerate(rows):
+            if current_y - row_height < min_y:
+                self.new_page()
+                current_y = self.height - 50
+                current_y = _render_header(current_y)
+
+            bg = alt_row_bg if r_idx % 2 == 1 else default_row_bg
+            self.draw_rect(
+                start_x,
+                current_y - row_height,
+                table_width,
+                row_height,
+                fill_color=bg,
+                stroke_color=stroke_color,
+                line_width=0.5
+            )
+
+            x_offset = start_x
+            for c_idx, val in enumerate(row):
+                if c_idx >= len(col_widths):
+                    break
+                w = col_widths[c_idx]
+                val_str = "" if val is None else str(val)
+                max_chars = max(3, int((w - 3) / (font_size * 0.48)))
+                self.draw_text(
+                    val_str[:max_chars],
+                    x_offset + 3,
+                    current_y - row_height + 5,
+                    font_size=font_size,
+                    font="Helvetica",
+                    color=text_color
+                )
+                x_offset += w
+
+            current_y -= row_height
+
+        return current_y
+
     def build_pdf_bytes(self) -> bytes:
         if self.current_page_commands:
             self.pages.append("\n".join(self.current_page_commands))

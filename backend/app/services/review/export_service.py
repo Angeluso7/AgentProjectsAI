@@ -533,45 +533,112 @@ class ReviewExportService:
                 pdf.new_page()
                 y = pdf.height - 50
 
-        y -= 10
-        # Evaluaciones y Hallazgos
-        pdf.draw_text("2. Evaluaciones de Reglas y Not Evaluable", 40, y, font_size=12, font="Helvetica-Bold")
-        y -= 18
+        # =====================================================================
+        # Sección 2: Tabla 1 - Inventario Consolidado de Simbología
+        # =====================================================================
+        inventory = run_data.get("symbol_inventory", {})
+        metrics = inventory.get("metrics", {})
+        groups = inventory.get("groups", [])
+        occurrences = inventory.get("occurrences", [])
 
-        for ex in run_data.get("executions", []):
-            status = ex.get("status", "").upper()
-            color = (0.1, 0.6, 0.2) if status == "PASSED" else (0.8, 0.2, 0.1) if status == "FAILED" else (0.8, 0.5, 0.0) if status == "WARNING" else (0.5, 0.5, 0.6)
+        pdf.new_page()
+        y = pdf.height - 50
 
-            pdf.draw_text(f"{ex.get('rule_code')} - {ex.get('rule_name')}", 45, y, font_size=9, font="Helvetica-Bold")
-            pdf.draw_text(status, pdf.width - 120, y, font_size=9, font="Helvetica-Bold", color=color)
-            y -= 13
+        pdf.draw_text("2. Inventario Consolidado de Simbología (Tabla 1)", 40, y, font_size=12, font="Helvetica-Bold")
+        y -= 16
 
-            if ex.get("not_evaluable_reason_code"):
-                reason_str = f"Razón: {ex.get('not_evaluable_reason_code')} - {ex.get('not_evaluable_reason_message') or ''}"
-                for r_line in SimplePdfCanvas.wrap_text(reason_str, max_chars_per_line=95):
-                    pdf.draw_text(r_line, 55, y, font_size=8, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5))
-                    y -= 11
-                    if y < 70:
-                        pdf.new_page()
-                        y = pdf.height - 50
-                if ex.get("recommended_action"):
-                    act_str = f"Acción recomendada: {ex.get('recommended_action')}"
-                    for a_line in SimplePdfCanvas.wrap_text(act_str, max_chars_per_line=95):
-                        pdf.draw_text(a_line, 55, y, font_size=8, font="Helvetica", color=(0.2, 0.4, 0.7))
-                        y -= 11
-                        if y < 70:
-                            pdf.new_page()
-                            y = pdf.height - 50
-            y -= 4
+        # Cuadro de Métricas de Cobertura
+        pdf.draw_rect(40, y - 36, pdf.width - 80, 40, fill_color=(0.95, 0.97, 1.0), stroke_color=(0.7, 0.8, 0.95), line_width=0.75)
+        my = y - 12
+        pdf.draw_text(
+            f"Ocurrencias Válidas: {metrics.get('valid_symbol_occurrences', 0)} | Grupos: {metrics.get('inventory_groups', 0)} | Figuras Excluidas: {metrics.get('figures_excluded', 0)}",
+            48, my, font_size=8.5, font="Helvetica-Bold", color=(0.1, 0.25, 0.5)
+        )
+        my -= 14
+        prod_cov = round(metrics.get("production_coverage", 0.0) * 100, 1)
+        sand_cov = round(metrics.get("sandbox_coverage", 0.0) * 100, 1)
+        unk_rate = round(metrics.get("unknown_rate", 0.0) * 100, 1)
+        pdf.draw_text(
+            f"Cob. Productiva: {prod_cov}% | Cob. Sandbox: {sand_cov}% | Tasa Desconocidos: {unk_rate}% | Rec. Prod: {metrics.get('recognized_production', 0)} | Rec. Sandbox: {metrics.get('recognized_sandbox', 0)} | Desconocidos: {metrics.get('unknown', 0)}",
+            48, my, font_size=8, font="Helvetica", color=(0.2, 0.3, 0.4)
+        )
+        y -= 48
 
-            if y < 70:
-                pdf.new_page()
-                y = pdf.height - 50
+        if not groups:
+            pdf.draw_text("No se registraron grupos de simbología identificados.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
+            y -= 15
+        else:
+            headers_inv = [
+                "Código", "Nombre Canónico / Identidad", "Catálogo", "Norma / Ref.",
+                "Conteo Doc.", "Total", "Conf.", "HITL", "Explicación Técnica"
+            ]
+            col_widths_inv = [72, 105, 52, 50, 48, 28, 28, 26, 106]
+            rows_inv = []
+            for g in groups:
+                by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
+                conf_avg = round((g.get("confidence_summary") or {}).get("avg", 1.0), 2)
+                rows_inv.append([
+                    g.get("display_code") or "-",
+                    g.get("canonical_name") or "-",
+                    (g.get("catalog_status") or "-").upper(),
+                    g.get("standard_reference") or "-",
+                    by_doc_str or "-",
+                    g.get("total_occurrences", 0),
+                    f"{conf_avg:.2f}",
+                    "SÍ" if g.get("requires_human_review") else "NO",
+                    g.get("explanation") or "-"
+                ])
+            y = pdf.draw_table(headers_inv, rows_inv, col_widths_inv, start_y=y, font_size=7.0)
 
-        y -= 10
-        # Hallazgos Detallados
+        # =====================================================================
+        # Sección 3: Tabla 2 - Anexo de Ubicaciones y Ocurrencias Técnicas
+        # =====================================================================
+        y -= 20
+        if y < 140:
+            pdf.new_page()
+            y = pdf.height - 50
+
+        pdf.draw_text("3. Anexo de Ubicaciones y Ocurrencias Técnicas (Tabla 2)", 40, y, font_size=12, font="Helvetica-Bold")
+        y -= 16
+
+        if not occurrences:
+            pdf.draw_text("No se registraron ocurrencias específicas en este informe.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
+            y -= 15
+        else:
+            headers_occ = ["Documento", "Lámina / Pág", "Código", "BBox / Contexto", "Tag", "Conf."]
+            col_widths_occ = [110, 80, 60, 145, 70, 50]
+            rows_occ = []
+            for o in occurrences[:50]:
+                sym_b = str(o.get('symbol_crop_bbox') or o.get('bbox_normalized') or '-')
+                sheet_label = f"{o.get('sheet_name') or '-'} (p.{o.get('page_number', 1)})"
+                rows_occ.append([
+                    o.get('document_name') or "-",
+                    sheet_label,
+                    o.get('group_display_code') or "-",
+                    sym_b,
+                    o.get('detected_tag_or_code') or "-",
+                    round(o.get('geometric_confidence', 1.0), 2)
+                ])
+            y = pdf.draw_table(headers_occ, rows_occ, col_widths_occ, start_y=y)
+
+            if len(occurrences) > 50:
+                y -= 8
+                pdf.draw_text(
+                    f"... y {len(occurrences) - 50} ocurrencias adicionales disponibles en la exportación XLSX.",
+                    45, y, font_size=8, font="Helvetica-Oblique", color=(0.2, 0.4, 0.7)
+                )
+                y -= 14
+
+        # =====================================================================
+        # Sección 4: Hallazgos Técnicos Registrados
+        # =====================================================================
+        y -= 20
+        if y < 140:
+            pdf.new_page()
+            y = pdf.height - 50
+
         findings = run_data.get("findings", [])
-        pdf.draw_text(f"3. Hallazgos Técnicos Registrados ({len(findings)})", 40, y, font_size=12, font="Helvetica-Bold")
+        pdf.draw_text(f"4. Hallazgos Técnicos Registrados ({len(findings)})", 40, y, font_size=12, font="Helvetica-Bold")
         y -= 18
 
         if not findings:
@@ -610,114 +677,76 @@ class ReviewExportService:
                     pdf.new_page()
                     y = pdf.height - 50
 
-        # Sección 4: Tabla 1 - Inventario Consolidado de Simbología
-        inventory = run_data.get("symbol_inventory", {})
-        metrics = inventory.get("metrics", {})
-        groups = inventory.get("groups", [])
-        occurrences = inventory.get("occurrences", [])
-
+        # =====================================================================
+        # Sección 5: Evaluaciones de Reglas y Estado Normativo
+        # =====================================================================
         pdf.new_page()
         y = pdf.height - 50
 
-        pdf.draw_text("4. Inventario Consolidado de Simbología (Tabla 1)", 40, y, font_size=12, font="Helvetica-Bold")
-        y -= 16
+        executions = run_data.get("executions", [])
+        evaluated_rules = [ex for ex in executions if (ex.get("status") or "").upper() != "NOT_EVALUABLE"]
+        not_eval_rules = [ex for ex in executions if (ex.get("status") or "").upper() == "NOT_EVALUABLE"]
 
-        # Cuadro de Métricas de Cobertura
-        pdf.draw_rect(40, y - 36, pdf.width - 80, 40, fill_color=(0.95, 0.97, 1.0), stroke_color=(0.7, 0.8, 0.95), line_width=0.75)
-        my = y - 12
-        pdf.draw_text(
-            f"Ocurrencias Válidas: {metrics.get('valid_symbol_occurrences', 0)} | Grupos: {metrics.get('inventory_groups', 0)} | Figuras Excluidas: {metrics.get('figures_excluded', 0)}",
-            48, my, font_size=8.5, font="Helvetica-Bold", color=(0.1, 0.25, 0.5)
-        )
-        my -= 14
-        prod_cov = round(metrics.get("production_coverage", 0.0) * 100, 1)
-        sand_cov = round(metrics.get("sandbox_coverage", 0.0) * 100, 1)
-        unk_rate = round(metrics.get("unknown_rate", 0.0) * 100, 1)
-        pdf.draw_text(
-            f"Cob. Productiva: {prod_cov}% | Cob. Sandbox: {sand_cov}% | Tasa Desconocidos: {unk_rate}% | Rec. Prod: {metrics.get('recognized_production', 0)} | Rec. Sandbox: {metrics.get('recognized_sandbox', 0)} | Desconocidos: {metrics.get('unknown', 0)}",
-            48, my, font_size=8, font="Helvetica", color=(0.2, 0.3, 0.4)
-        )
-        y -= 50
+        pdf.draw_text("5. Evaluaciones de Reglas y Estado Normativo", 40, y, font_size=12, font="Helvetica-Bold")
+        y -= 18
 
-        if not groups:
-            pdf.draw_text("No se registraron grupos de simbología identificados.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
-            y -= 15
-        else:
-            for g in groups:
-                status_color = (0.1, 0.6, 0.2) if "production" in g.get("catalog_status", "") else (0.8, 0.5, 0.0) if "sandbox" in g.get("catalog_status", "") else (0.7, 0.2, 0.2)
-                pdf.draw_text(
-                    f"[{g.get('display_code')}] {g.get('canonical_name') or 'Símbolo'}",
-                    45, y, font_size=9, font="Helvetica-Bold"
-                )
-                pdf.draw_text(
-                    f"{g.get('catalog_status', '').upper()}",
-                    pdf.width - 150, y, font_size=8, font="Helvetica-Bold", color=status_color
-                )
-                y -= 12
-                by_doc_str = "; ".join([f"{k}: {v}" for k, v in (g.get("occurrences_by_document") or {}).items()])
-                info_line = f"Total: {g.get('total_occurrences', 0)} | Por Documento: {by_doc_str or '-'} | Norma: {g.get('standard_reference') or '-'}"
-                for i_line in SimplePdfCanvas.wrap_text(info_line, max_chars_per_line=95):
-                    pdf.draw_text(i_line, 55, y, font_size=7.5, color=(0.3, 0.3, 0.3))
-                    y -= 10
-                    if y < 70:
-                        pdf.new_page()
-                        y = pdf.height - 50
-
-                tags = g.get("tags", [])
-                tags_str = f"Tags detectados: {', '.join(tags) if tags else '-'}"
-                for t_line in SimplePdfCanvas.wrap_text(tags_str, max_chars_per_line=95):
-                    pdf.draw_text(t_line, 55, y, font_size=7.5, color=(0.2, 0.35, 0.5))
-                    y -= 10
-                    if y < 70:
-                        pdf.new_page()
-                        y = pdf.height - 50
-                if g.get("explanation"):
-                    for e_line in SimplePdfCanvas.wrap_text(f"Detalle: {g.get('explanation')}", max_chars_per_line=95):
-                        pdf.draw_text(e_line, 55, y, font_size=7.5, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5))
-                        y -= 10
-                        if y < 70:
-                            pdf.new_page()
-                            y = pdf.height - 50
-                y -= 4
-
+        # 5.1 Reglas Evaluadas Activas
+        if evaluated_rules:
+            pdf.draw_text(f"Reglas Evaluadas Activas ({len(evaluated_rules)})", 45, y, font_size=10, font="Helvetica-Bold", color=(0.1, 0.2, 0.35))
+            y -= 14
+            for ex in evaluated_rules:
+                status = ex.get("status", "").upper()
+                color = (0.1, 0.6, 0.2) if status == "PASSED" else (0.8, 0.2, 0.1) if status == "FAILED" else (0.8, 0.5, 0.0)
+                pdf.draw_text(f"{ex.get('rule_code')} - {ex.get('rule_name')}", 45, y, font_size=8.5, font="Helvetica-Bold")
+                pdf.draw_text(status, pdf.width - 120, y, font_size=8.5, font="Helvetica-Bold", color=color)
+                y -= 13
                 if y < 70:
                     pdf.new_page()
                     y = pdf.height - 50
-
-        # Sección 5: Tabla 2 - Anexo de Ubicaciones y Ocurrencias Técnicas
-        pdf.new_page()
-        y = pdf.height - 50
-        pdf.draw_text("5. Anexo de Ubicaciones y Ocurrencias Técnicas (Tabla 2)", 40, y, font_size=12, font="Helvetica-Bold")
-        y -= 16
-
-        if not occurrences:
-            pdf.draw_text("No se registraron ocurrencias específicas en este informe.", 45, y, font_size=9, font="Helvetica-Oblique", color=(0.5, 0.5, 0.5))
-            y -= 15
+            y -= 8
         else:
-            for o in occurrences[:100]:  # Mostrar hasta 100 ocurrencias en PDF para legibilidad
-                occ_head = f"• {o.get('group_display_code')} | {o.get('document_name')} | {o.get('sheet_name')} (Pág {o.get('page_number')}) | Tag: {o.get('detected_tag_or_code') or '-'}"
-                for o_line in SimplePdfCanvas.wrap_text(occ_head, max_chars_per_line=95):
-                    pdf.draw_text(o_line, 45, y, font_size=8, font="Helvetica-Bold")
-                    y -= 11
-                    if y < 70:
-                        pdf.new_page()
-                        y = pdf.height - 50
-                sym_b = str(o.get('symbol_crop_bbox') or o.get('bbox_normalized') or '-')
-                ctx_b = str(o.get('occurrence_context_crop_bbox') or '-')
-                pdf.draw_text(
-                    f"  Símbolo (3mm): {sym_b} | Contexto (15mm): {ctx_b} | Conf: {round(o.get('geometric_confidence', 1.0), 2)}",
-                    52, y, font_size=7, color=(0.4, 0.45, 0.5)
-                )
-                y -= 11
+            pdf.draw_text("No se ejecutaron reglas activas deterministas en esta corrida.", 45, y, font_size=8.5, font="Helvetica-Oblique", color=(0.4, 0.4, 0.4))
+            y -= 16
 
-                if y < 70:
-                    pdf.new_page()
-                    y = pdf.height - 50
+        # 5.2 Resumen Agrupado de Reglas Not Evaluable
+        if not_eval_rules:
+            if y < 180:
+                pdf.new_page()
+                y = pdf.height - 50
 
-            if len(occurrences) > 100:
+            reasons_count: Dict[str, int] = {}
+            for ex in not_eval_rules:
+                cause = ex.get("not_evaluable_reason_code") or "NO_APPROVED_RULES"
+                reasons_count[cause] = reasons_count.get(cause, 0) + 1
+
+            pdf.draw_text(f"Resumen de Reglas Sin Ejecutor Activo ({len(not_eval_rules)} reglas)", 45, y, font_size=10, font="Helvetica-Bold", color=(0.5, 0.3, 0.1))
+            y -= 16
+
+            causes_summary = " | ".join([f"{c}: {n}" for c, n in reasons_count.items()])
+            pdf.draw_rect(40, y - 24, pdf.width - 80, 26, fill_color=(0.98, 0.96, 0.93), stroke_color=(0.85, 0.75, 0.6), line_width=0.5)
+            pdf.draw_text(
+                f"Causa principal: {causes_summary}",
+                50, y - 10, font_size=8, font="Helvetica", color=(0.45, 0.25, 0.05)
+            )
+            y -= 36
+
+            headers_ne = ["Código Regla", "Nombre / Título", "Causa", "Acción Recomendada"]
+            col_widths_ne = [95, 170, 110, 140]
+            rows_ne = []
+            for ex in not_eval_rules[:20]:
+                rows_ne.append([
+                    ex.get("rule_code") or "-",
+                    ex.get("rule_name") or "-",
+                    ex.get("not_evaluable_reason_code") or "SIN_EJECUTOR",
+                    ex.get("recommended_action") or "-"
+                ])
+            y = pdf.draw_table(headers_ne, rows_ne, col_widths_ne, start_y=y)
+
+            if len(not_eval_rules) > 20:
+                y -= 8
                 pdf.draw_text(
-                    f"... y {len(occurrences) - 100} ocurrencias adicionales disponibles en la exportación XLSX (Hoja 'Ocurrencias y Localizaciones').",
-                    45, y, font_size=8, font="Helvetica-Oblique", color=(0.2, 0.4, 0.7)
+                    f"+{len(not_eval_rules) - 20} reglas adicionales sin ejecutor activo disponibles en la exportación XLSX completa.",
+                    45, y, font_size=8, font="Helvetica-Oblique", color=(0.4, 0.45, 0.5)
                 )
                 y -= 14
 
