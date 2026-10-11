@@ -125,6 +125,23 @@ export const PlanViewerPage: React.FC = () => {
   const [pan, setPan] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [isPanning, setIsPanning] = useState<boolean>(false);
   const [panStart, setPanStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [isSpacePressed, setIsSpacePressed] = useState<boolean>(false);
+  const panDragRef = useRef<{
+    startX: number;
+    startY: number;
+    startPanX: number;
+    startPanY: number;
+    isDragging: boolean;
+    active: boolean;
+  }>({
+    startX: 0,
+    startY: 0,
+    startPanX: 0,
+    startPanY: 0,
+    isDragging: false,
+    active: false,
+  });
+  const dragJustEndedRef = useRef<boolean>(false);
 
   // Selección Rectangular Manual y Recorte
   const [isDrawingCrop, setIsDrawingCrop] = useState<boolean>(false);
@@ -196,6 +213,58 @@ export const PlanViewerPage: React.FC = () => {
     window.addEventListener('click', handleGlobalClick);
     return () => window.removeEventListener('click', handleGlobalClick);
   }, []);
+
+  // Zoom no pasivo para evitar desplazamiento vertical del navegador sobre el lienzo
+  useEffect(() => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const handleNativeWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const zoomStep = 0.15;
+      if (e.deltaY < 0) {
+        setZoom((prev) => Math.min(Number((prev + zoomStep).toFixed(2)), 5.0));
+      } else {
+        setZoom((prev) => Math.max(Number((prev - zoomStep).toFixed(2)), 0.25));
+      }
+    };
+    vp.addEventListener('wheel', handleNativeWheel, { passive: false });
+    return () => {
+      vp.removeEventListener('wheel', handleNativeWheel);
+    };
+  }, []);
+
+  // Atajos de navegación por teclado: Barra espaciadora (Pan rápido), Escape y Backspace (Trazado)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+      if (e.code === 'Space' && !e.repeat) {
+        e.preventDefault();
+        setIsSpacePressed(true);
+      }
+      if (e.code === 'Escape' && activeTool === 'trace_line') {
+        setCurrentTracePoints([]);
+        setActiveTool('select');
+      }
+      if ((e.code === 'Backspace' || e.code === 'Delete') && activeTool === 'trace_line') {
+        setCurrentTracePoints((pts) => pts.slice(0, -1));
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space') {
+        setIsSpacePressed(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [activeTool]);
 
   const showToast = (message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info', duration = 3000) => {
     setViewerToast({ message, type });
@@ -375,6 +444,7 @@ export const PlanViewerPage: React.FC = () => {
   };
 
   const handleSelectTable = async (table: ExtractedTableItem) => {
+    if (dragJustEndedRef.current) return;
     setSelectedTable(table);
     setSelectedEntity({ type: 'table', data: table });
     try {
@@ -386,11 +456,13 @@ export const PlanViewerPage: React.FC = () => {
   };
 
   const handleSelectSymbol = (sym: DetectedSymbolItem) => {
+    if (dragJustEndedRef.current) return;
     setSelectedSymbol(sym);
     setSelectedEntity({ type: 'symbol', data: sym });
   };
 
   const handleSelectFinding = (f: RuleFindingItem) => {
+    if (dragJustEndedRef.current) return;
     setSelectedFinding(f);
     setSelectedEntity({ type: 'finding', data: f });
   };
@@ -555,29 +627,72 @@ export const PlanViewerPage: React.FC = () => {
     }
   };
 
+  // Cursor contextual para el visor según herramienta y estado de arrastre
+  const getViewerCursor = () => {
+    if (isPanning) return BLACK_GRABBING_CURSOR;
+    if (isSpacePressed || activeTool === 'pan') return BLACK_GRAB_CURSOR;
+    if (activeTool === 'crop') return RED_CROSSHAIR_CURSOR;
+    if (activeTool === 'trace_line') return 'crosshair';
+    return 'default';
+  };
+
   // =========================================================
-  // CONTROL DE PAN (ARRASTRE LIBRE DEL PLANO CON MANO NEGRA)
+  // CONTROL DE PAN (ARRASTRE LIBRE DEL PLANO)
+  // Distingue entre clic simple y arrastre continuo mediante umbral de 4px
   // =========================================================
   const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool === 'pan') {
-      e.preventDefault();
-      setIsPanning(true);
-      setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+    if (e.button === 2) return; // Ignorar clic secundario (menú contextual)
+
+    const isMiddleClick = e.button === 1;
+    const isPanTool = activeTool === 'pan';
+    const isTraceOrSelect = activeTool === 'trace_line' || activeTool === 'select';
+    const isLeftClick = e.button === 0;
+
+    if (isMiddleClick || isPanTool || isSpacePressed || (isLeftClick && isTraceOrSelect)) {
+      if (isMiddleClick || isPanTool || isSpacePressed) {
+        e.preventDefault();
+      }
+      panDragRef.current = {
+        startX: e.clientX,
+        startY: e.clientY,
+        startPanX: pan.x,
+        startPanY: pan.y,
+        isDragging: false,
+        active: true,
+      };
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (activeTool === 'pan' && isPanning) {
-      e.preventDefault();
+    if (!panDragRef.current.active) return;
+
+    const dx = e.clientX - panDragRef.current.startX;
+    const dy = e.clientY - panDragRef.current.startY;
+    const distSq = dx * dx + dy * dy;
+
+    // Distinguir arrastre de paneo vs clic estático (umbral 4px = 16px²)
+    if (distSq >= 16) {
+      if (!panDragRef.current.isDragging) {
+        panDragRef.current.isDragging = true;
+        setIsPanning(true);
+      }
       setPan({
-        x: e.clientX - panStart.x,
-        y: e.clientY - panStart.y,
+        x: panDragRef.current.startPanX + dx,
+        y: panDragRef.current.startPanY + dy,
       });
     }
   };
 
   const handleMouseUp = () => {
-    if (activeTool === 'pan') {
+    if (panDragRef.current.active) {
+      if (panDragRef.current.isDragging) {
+        dragJustEndedRef.current = true;
+        setTimeout(() => {
+          dragJustEndedRef.current = false;
+        }, 60);
+      }
+      panDragRef.current.active = false;
+      panDragRef.current.isDragging = false;
       setIsPanning(false);
     }
   };
@@ -591,7 +706,14 @@ export const PlanViewerPage: React.FC = () => {
   // TRAZADO MANUAL DE PIPING LINES (SNAP MAGNÉTICO PUNTO A PUNTO)
   // =========================================================
   const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    // Si se acaba de realizar un arrastre (Pan), suprimir la inserción de punto
+    if (dragJustEndedRef.current) {
+      dragJustEndedRef.current = false;
+      return;
+    }
     if (activeTool !== 'trace_line') return;
+    if (e.button !== 0) return; // Solo clic primario izquierdo agrega puntos
+
     const rect = sheetContainerRef.current?.getBoundingClientRect();
     if (!rect) return;
 
@@ -600,18 +722,16 @@ export const PlanViewerPage: React.FC = () => {
     ptX = Math.max(0, Math.min(1, ptX));
     ptY = Math.max(0, Math.min(1, ptY));
 
-    // Snap magnético (umbral 14px en pantalla)
-    const snapThresholdX = 14 / rect.width;
-    const snapThresholdY = 14 / rect.height;
+    // Snap magnético: umbral constante de 14px reales sobre pantalla recalculado dinámicamente con el zoom
+    const snapThresholdPx = 14;
     let snapped = false;
 
     // 1. Probar contra vértices de pipingLines existentes
     for (const pline of pipingLines) {
       for (const seg of pline.segments || []) {
         for (const ep of seg.polyline_points || []) {
-          const dx = Math.abs(ep[0] - ptX);
-          const dy = Math.abs(ep[1] - ptY);
-          if (dx <= snapThresholdX && dy <= snapThresholdY) {
+          const screenDist = Math.hypot((ep[0] - ptX) * rect.width, (ep[1] - ptY) * rect.height);
+          if (screenDist <= snapThresholdPx) {
             ptX = ep[0];
             ptY = ep[1];
             snapped = true;
@@ -626,9 +746,8 @@ export const PlanViewerPage: React.FC = () => {
     // 2. Probar contra puntos previos del mismo trazo activo
     if (!snapped && currentTracePoints.length >= 1) {
       for (const prevPt of currentTracePoints) {
-        const dx = Math.abs(prevPt[0] - ptX);
-        const dy = Math.abs(prevPt[1] - ptY);
-        if (dx <= snapThresholdX && dy <= snapThresholdY) {
+        const screenDist = Math.hypot((prevPt[0] - ptX) * rect.width, (prevPt[1] - ptY) * rect.height);
+        if (screenDist <= snapThresholdPx) {
           ptX = prevPt[0];
           ptY = prevPt[1];
           snapped = true;
@@ -1186,7 +1305,6 @@ export const PlanViewerPage: React.FC = () => {
                   }}
                   onClick={() => {
                     setActiveTool(activeTool === 'trace_line' ? 'select' : 'trace_line');
-                    setCurrentTracePoints([]);
                   }}
                   title="Trazar Línea de Piping: Click punto a punto con snap magnético sobre el plano"
                 >
@@ -1387,7 +1505,7 @@ export const PlanViewerPage: React.FC = () => {
                   <GitCommitHorizontal size={14} className="text-cyan-400 animate-pulse" />
                   <span>
                     Trazado de Piping: {currentTracePoints.length} {currentTracePoints.length === 1 ? 'punto' : 'puntos'}
-                    <span style={{ color: '#94a3b8', fontSize: '10px', marginLeft: '4px' }}>(Snap magnético activo)</span>
+                    <span style={{ color: '#94a3b8', fontSize: '10px', marginLeft: '4px' }}>(Snap magnético activo • Arrastra para Pan / Rueda para Zoom)</span>
                   </span>
                 </div>
 
@@ -1502,7 +1620,7 @@ export const PlanViewerPage: React.FC = () => {
               justifyContent: 'center',
               overflow: 'hidden',
               padding: '16px',
-              cursor: activeTool === 'pan' ? (isPanning ? BLACK_GRABBING_CURSOR : BLACK_GRAB_CURSOR) : activeTool === 'crop' ? RED_CROSSHAIR_CURSOR : activeTool === 'trace_line' ? 'crosshair' : 'default',
+              cursor: getViewerCursor(),
               userSelect: 'none',
             }}
           >
@@ -1510,9 +1628,24 @@ export const PlanViewerPage: React.FC = () => {
               <div
                 ref={sheetContainerRef}
                 onClick={handleContainerClick}
-                onMouseDown={handleCropMouseDown}
-                onMouseMove={handleCropMouseMove}
-                onMouseUp={handleCropMouseUp}
+                onMouseDown={(e) => {
+                  handleCropMouseDown(e);
+                  if (activeTool !== 'crop') {
+                    handleMouseDown(e);
+                  }
+                }}
+                onMouseMove={(e) => {
+                  handleCropMouseMove(e);
+                  if (activeTool !== 'crop') {
+                    handleMouseMove(e);
+                  }
+                }}
+                onMouseUp={() => {
+                  handleCropMouseUp();
+                  if (activeTool !== 'crop') {
+                    handleMouseUp();
+                  }
+                }}
                 style={{
                   position: 'relative',
                   transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
@@ -1527,7 +1660,7 @@ export const PlanViewerPage: React.FC = () => {
                   borderRadius: '6px',
                   overflow: 'hidden',
                   background: '#080e1a',
-                  pointerEvents: activeTool === 'pan' ? 'none' : 'auto',
+                  pointerEvents: 'auto',
                 }}
               >
                 {/* Imagen Base Rasterizada Servida Directamente por el Backend */}
@@ -1564,7 +1697,10 @@ export const PlanViewerPage: React.FC = () => {
                   return (
                     <div
                       key={reg.id}
-                      onClick={() => setSelectedEntity({ type: 'region', data: reg })}
+                      onClick={() => {
+                        if (dragJustEndedRef.current) return;
+                        setSelectedEntity({ type: 'region', data: reg });
+                      }}
                       style={{
                         position: 'absolute',
                         left: `${x0 * 100}%`,
@@ -1578,6 +1714,7 @@ export const PlanViewerPage: React.FC = () => {
                         display: 'flex',
                         alignItems: 'flex-start',
                         padding: '3px',
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`Región: ${reg.region_type} (${(reg.confidence * 100).toFixed(0)}%)`}
                     >
@@ -1596,7 +1733,10 @@ export const PlanViewerPage: React.FC = () => {
                   return (
                     <div
                       key={txt.id}
-                      onClick={() => setSelectedEntity({ type: 'ocr', data: txt })}
+                      onClick={() => {
+                        if (dragJustEndedRef.current) return;
+                        setSelectedEntity({ type: 'ocr', data: txt });
+                      }}
                       style={{
                         position: 'absolute',
                         left: `${x0 * 100}%`,
@@ -1607,6 +1747,7 @@ export const PlanViewerPage: React.FC = () => {
                         background: isSelected ? 'rgba(56, 189, 248, 0.3)' : 'rgba(56, 189, 248, 0.08)',
                         cursor: 'pointer',
                         zIndex: isSelected ? 25 : 6,
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`OCR: "${txt.text || (txt as any).text_content || ''}" (${(txt.confidence * 100).toFixed(0)}%)`}
                     />
@@ -1621,7 +1762,10 @@ export const PlanViewerPage: React.FC = () => {
                   return (
                     <div
                       key={tbl.id}
-                      onClick={() => handleSelectTable(tbl)}
+                      onClick={() => {
+                        if (dragJustEndedRef.current) return;
+                        handleSelectTable(tbl);
+                      }}
                       style={{
                         position: 'absolute',
                         left: `${x0 * 100}%`,
@@ -1636,6 +1780,7 @@ export const PlanViewerPage: React.FC = () => {
                         display: 'flex',
                         alignItems: 'flex-start',
                         padding: '2px',
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`Tabla: ${tbl.title || 'Cuadro'} (${tbl.row_count}x${tbl.column_count})`}
                     >
@@ -1655,7 +1800,10 @@ export const PlanViewerPage: React.FC = () => {
                   return (
                     <div
                       key={sym.id}
-                      onClick={() => handleSelectSymbol(sym)}
+                      onClick={() => {
+                        if (dragJustEndedRef.current) return;
+                        handleSelectSymbol(sym);
+                      }}
                       style={{
                         position: 'absolute',
                         left: `${x0 * 100}%`,
@@ -1670,6 +1818,7 @@ export const PlanViewerPage: React.FC = () => {
                         borderRadius: '2px',
                         display: 'flex',
                         alignItems: 'flex-start',
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`[${(sym.discipline || 'unknown').toUpperCase()}] ${sym.symbol_type} (${(sym.confidence * 100).toFixed(0)}%)`}
                     />
@@ -1685,7 +1834,10 @@ export const PlanViewerPage: React.FC = () => {
                   return (
                     <div
                       key={f.id}
-                      onClick={() => handleSelectFinding(f)}
+                      onClick={() => {
+                        if (dragJustEndedRef.current) return;
+                        handleSelectFinding(f);
+                      }}
                       style={{
                         position: 'absolute',
                         left: `${x0 * 100}%`,
@@ -1700,6 +1852,7 @@ export const PlanViewerPage: React.FC = () => {
                         borderRadius: '3px',
                         display: 'flex',
                         alignItems: 'flex-start',
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`[${f.severity.toUpperCase()}] ${f.title} (${f.rule_code})`}
                     />
@@ -1717,6 +1870,7 @@ export const PlanViewerPage: React.FC = () => {
                     <div
                       key={ann.id}
                       onClick={(e) => {
+                        if (dragJustEndedRef.current) return;
                         e.stopPropagation();
                         setSelectedEntity({ type: 'manual_annotation', data: ann });
                         setSelectionMenu({
@@ -1751,6 +1905,7 @@ export const PlanViewerPage: React.FC = () => {
                         alignItems: 'flex-start',
                         padding: '2px',
                         transition: 'border 0.15s ease, background 0.15s ease',
+                        pointerEvents: (activeTool === 'trace_line' || activeTool === 'pan' || isPanning) ? 'none' : 'auto',
                       }}
                       title={`[${ann.element_type.toUpperCase()}] ${ann.name} (Clic: opciones)`}
                     >
@@ -1828,8 +1983,9 @@ export const PlanViewerPage: React.FC = () => {
                       return (
                         <g
                           key={line.id}
-                          style={{ cursor: 'pointer' }}
+                          style={{ cursor: activeTool === 'trace_line' ? 'crosshair' : 'pointer' }}
                           onClick={(e) => {
+                            if (activeTool === 'trace_line' || dragJustEndedRef.current) return;
                             e.stopPropagation();
                             setSelectedPipingLine(line);
                             setSelectedEntity(null);
