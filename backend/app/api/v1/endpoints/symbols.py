@@ -15,7 +15,8 @@ from app.schemas.symbol import (
     MergeVariantRequest, SplitVariantRequest,
     BatchPromoteToTemplateRequest, BatchPromoteToTemplateResponse,
     CanonicalCatalogResponse, CanonicalTemplateItem, CandidateCurationDetail,
-    SymbolOccurrenceItem, MatchCandidateRequest, MatchCandidateResponse, MatchedTemplateItem
+    SymbolOccurrenceItem, MatchCandidateRequest, MatchCandidateResponse, MatchedTemplateItem,
+    PipingLineRead, PipingLineSegmentRead, ManualPipingLineCreateRequest
 )
 from app.schemas.intake_extractions import StructuredSymbolRead
 from app.schemas.operations import AsyncJobAcceptedResponse
@@ -873,6 +874,132 @@ def match_candidate(
         best_match=best,
         matches=matches
     )
+
+
+# ============================================================================
+# FASE 3: ENDPOINTS DE GESTIÓN Y TRAZADO MANUAL DE PIPING LINES
+# ============================================================================
+
+@router.get("/sheets/{sheet_id}/piping-lines", response_model=List[PipingLineRead])
+def list_sheet_piping_lines(
+    sheet_id: str,
+    db: Session = Depends(get_db)
+):
+    """Retorna las líneas de piping asociadas a la lámina activa."""
+    from app.db.models.document_memory import PipingLineSegment, PipingLine
+    
+    segments = db.query(PipingLineSegment).filter(PipingLineSegment.sheet_id == sheet_id).all()
+    line_ids = {s.piping_line_id for s in segments if s.piping_line_id}
+    
+    if not line_ids:
+        return []
+    
+    lines = db.query(PipingLine).filter(PipingLine.id.in_(line_ids)).all()
+    return lines
+
+
+@router.post("/sheets/{sheet_id}/piping-lines", response_model=PipingLineRead, status_code=status.HTTP_201_CREATED)
+def create_manual_piping_line(
+    sheet_id: str,
+    payload: ManualPipingLineCreateRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Crea una nueva entidad PipingLine trazada manualmente por el usuario en el visor.
+    Persiste la línea lógica y su segmento asociado con source='manual_trace'.
+    """
+    import math
+    from app.db.models.document_memory import DocumentSheet, PipingLine, PipingLineSegment
+    
+    sheet = db.query(DocumentSheet).filter(DocumentSheet.id == sheet_id).first()
+    if not sheet:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Lámina '{sheet_id}' no encontrada.")
+    
+    doc = sheet.document
+    project_id = doc.project_id if doc else None
+    if not project_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="La lámina no tiene un proyecto asociado.")
+    
+    pts = payload.polyline_points
+    if len(pts) < 2:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Una línea de piping requiere al menos 2 puntos.")
+    
+    # Calcular longitud física en mm
+    pw_mm = (sheet.width_px or 3000) * (25.4 / (sheet.dpi or 150))
+    ph_mm = (sheet.height_px or 2000) * (25.4 / (sheet.dpi or 150))
+    
+    tot_len_mm = 0.0
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    
+    for i in range(len(pts) - 1):
+        dx_mm = (pts[i + 1][0] - pts[i][0]) * pw_mm
+        dy_mm = (pts[i + 1][1] - pts[i][1]) * ph_mm
+        tot_len_mm += math.hypot(dx_mm, dy_mm)
+    
+    bbox_norm = [min(xs), min(ys), max(xs), max(ys)]
+    
+    # 1. Crear PipingLine
+    pline = PipingLine(
+        project_id=project_id,
+        line_number=payload.line_number,
+        nominal_size=payload.nominal_size,
+        service_fluid=payload.service_fluid,
+        spec_class=payload.spec_class,
+        insulation=payload.insulation,
+        from_equipment_tag=payload.from_equipment_tag,
+        to_equipment_tag=payload.to_equipment_tag,
+        flow_direction=payload.flow_direction or "unconfirmed",
+        source="manual_trace",
+        confidence_status="manual_confirmed",
+        attributes={
+            "total_length_mm": round(tot_len_mm, 2),
+            "created_via": "manual_viewer_tool"
+        }
+    )
+    db.add(pline)
+    db.commit()
+    db.refresh(pline)
+    
+    # 2. Crear PipingLineSegment
+    seg = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline.id,
+        polyline_points=pts,
+        bbox_normalized=bbox_norm,
+        line_style="solid",
+        length_mm=round(tot_len_mm, 2),
+        stroke_width_pt=2.0,
+        connected_symbol_ids=[],
+        is_main_process_line=True,
+        attributes={"source": "manual_trace"}
+    )
+    db.add(seg)
+    db.commit()
+    db.refresh(pline)
+    
+    return pline
+
+
+@router.delete("/piping-lines/{line_id}", status_code=status.HTTP_200_OK)
+def delete_piping_line(
+    line_id: str,
+    db: Session = Depends(get_db)
+):
+    """Elimina una línea de piping trazada o gestionada."""
+    from app.db.models.document_memory import PipingLine, PipingLineSegment
+    
+    pline = db.query(PipingLine).filter(PipingLine.id == line_id).first()
+    if not pline:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Línea de piping '{line_id}' no encontrada.")
+    
+    # Eliminar segmentos asociados
+    db.query(PipingLineSegment).filter(PipingLineSegment.piping_line_id == line_id).delete(synchronize_session=False)
+    db.delete(pline)
+    db.commit()
+    
+    return {"message": "Línea de piping eliminada exitosamente.", "id": line_id}
+
 
 
 

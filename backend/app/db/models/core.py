@@ -108,6 +108,7 @@ class Project(Base):
     versions = relationship("ProjectVersion", back_populates="project", cascade="all, delete-orphan")
     documents = relationship("Document", back_populates="project", cascade="all, delete-orphan")
     review_runs = relationship("ReviewRun", back_populates="project", cascade="all, delete-orphan")
+    piping_lines = relationship("PipingLine", back_populates="project", cascade="all, delete-orphan")
 
 
 class ProjectVersion(Base):

@@ -374,6 +374,12 @@ class SymbolService:
                 if connected_line_ids:
                     attrs["piping_line_relation"] = "inline"
                     attrs["connected_line_segment_ids"] = connected_line_ids
+                    # Proyectar sequence_position sobre la polilínea del primer segmento asociado
+                    matched_seg = next((pl for pl in persisted_piping_lines if pl.id == connected_line_ids[0]), None)
+                    if matched_seg and matched_seg.polyline_points:
+                        attrs["sequence_position"] = vec_extractor.compute_symbol_projection_t(
+                            sym.bbox_normalized, matched_seg.polyline_points
+                        )
                 else:
                     attrs["piping_line_relation"] = "callout_candidate"
                     attrs["callout_leader_line_status"] = "unresolved_trace"

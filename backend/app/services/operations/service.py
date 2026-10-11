@@ -447,6 +447,36 @@ class OperationsService:
                     self.db.add(sym)
                     self.db.commit()
 
+        # Conexión del aprendizaje HITL para tareas de trazado de líneas (FASE 2)
+        if task.task_type == "line_trace_review" and decision in ("approved", "corrected"):
+            from app.db.models.document_memory import PipingLine, PipingLineSegment
+
+            line_id = (task.evidence_refs or {}).get("line_id") or (task.payload or {}).get("line_id")
+            if line_id:
+                line = self.db.query(PipingLine).filter(PipingLine.id == line_id).first()
+                if line:
+                    line.source = "manual_corrected"
+                    line.confidence_status = "manual_confirmed"
+                    c_val = corrected_value or {}
+                    if c_val.get("line_number"):
+                        line.line_number = c_val["line_number"]
+                    if c_val.get("nominal_size"):
+                        line.nominal_size = c_val["nominal_size"]
+                    if c_val.get("service_fluid"):
+                        line.service_fluid = c_val["service_fluid"]
+                    if c_val.get("spec_class"):
+                        line.spec_class = c_val["spec_class"]
+                    if c_val.get("flow_direction"):
+                        line.flow_direction = c_val["flow_direction"]
+                    self.db.add(line)
+
+                    for seg in line.segments:
+                        seg_attrs = dict(seg.attributes or {})
+                        seg_attrs["review_decision"] = decision
+                        seg.attributes = seg_attrs
+                        self.db.add(seg)
+                    self.db.commit()
+
         return decision_record
 
     # ==========================================

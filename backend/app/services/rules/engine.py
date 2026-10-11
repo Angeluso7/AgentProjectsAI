@@ -389,6 +389,7 @@ class RuleEngine:
 
         res_type = resolution_data.get("resolution_type", "confirmed")
         finding.status = res_type
+        self.db.add(finding)
 
         res = FindingResolution(
             finding_id=finding.id,

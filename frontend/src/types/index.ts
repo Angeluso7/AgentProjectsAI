@@ -3092,6 +3092,43 @@ export interface DismissResearchCaseRequest {
   rationale: string;
 }
 
+export interface PipingLineSegmentItem {
+  id: string;
+  sheet_id: string;
+  piping_line_id?: string;
+  polyline_points: [number, number][];
+  bbox_normalized?: [number, number, number, number];
+  line_style: string;
+  length_mm: number;
+  stroke_width_pt: number;
+  connected_symbol_ids: string[];
+  is_main_process_line: boolean;
+  attributes: Record<string, any>;
+  created_at?: string;
+}
+
+export interface PipingLineItem {
+  id: string;
+  project_id: string;
+  line_number?: string;
+  nominal_size?: string;
+  service_fluid?: string;
+  spec_class?: string;
+  insulation?: string;
+  design_pressure?: number;
+  design_temperature?: number;
+  from_equipment_tag?: string;
+  to_equipment_tag?: string;
+  flow_direction: string;
+  source: string;
+  confidence_status: string;
+  attributes: Record<string, any>;
+  segments: PipingLineSegmentItem[];
+  created_at: string;
+  updated_at: string;
+}
+
+
 
 
 
