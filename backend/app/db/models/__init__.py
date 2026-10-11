@@ -8,7 +8,8 @@ from app.db.models.operations import (
 )
 from app.db.models.document_memory import (
     Document, DocumentSheet, SheetRegion, TitleBlockExtraction, ExtractedText,
-    ExtractedTable, ExtractedTableCell, DetectedSymbol, SymbolOccurrence, VisualEvidence
+    ExtractedTable, ExtractedTableCell, DetectedSymbol, SymbolOccurrence, VisualEvidence,
+    PipingLineSegment
 )
 from app.db.models.normative_memory import (
     NormativeDocument, NormativeClause, NormativeCriterion, NormativeEmbedding
@@ -113,6 +114,7 @@ __all__ = [
     "DetectedSymbol",
     "SymbolOccurrence",
     "VisualEvidence",
+    "PipingLineSegment",
     "NormativeDocument",
     "NormativeClause",
     "NormativeCriterion",

@@ -2,7 +2,7 @@ from typing import List, Dict, Any, Optional
 from sqlalchemy.orm import Session
 
 from app.db.models.document_memory import (
-    Document, DocumentSheet, SheetRegion, DetectedSymbol, ExtractedText
+    Document, DocumentSheet, SheetRegion, DetectedSymbol, ExtractedText, PipingLineSegment
 )
 from app.db.models.template_memory import SymbolTemplate, SymbolLibrary
 from app.db.repositories.document_repository import DocumentRepository
@@ -109,6 +109,8 @@ class SymbolService:
         has_vector_drawings = len(drawings) >= 8
         raw_candidates = None
         render_mode = "vector"
+        persisted_piping_lines: List[PipingLineSegment] = []
+        vec_extractor = None
 
         if fitz_doc and page and has_vector_drawings:
             logger.info(f"Lámina {sheet_id} (pág {sheet.sheet_number}): extrayendo con PIPELINE VECTORIAL ({len(drawings)} trazos).")
@@ -124,6 +126,34 @@ class SymbolService:
                 known_text_bboxes_norm=known_text_bboxes_norm
             )
             render_mode = "vector"
+
+            # Extracción y persistencia de líneas de piping / proceso (Fase 4)
+            line_cands = vec_extractor.extract_piping_lines_from_page(
+                page=page,
+                page_number=sheet.sheet_number,
+                region_rect=region_rect,
+                min_length_mm=40.0
+            )
+            for lcand in line_cands:
+                line_seg = PipingLineSegment(
+                    sheet_id=sheet.id,
+                    polyline_points=lcand.polyline_points,
+                    bbox_normalized=lcand.bbox_normalized,
+                    line_style=lcand.line_style,
+                    length_mm=lcand.length_mm,
+                    stroke_width_pt=lcand.stroke_width_pt,
+                    connected_symbol_ids=[],
+                    is_main_process_line=lcand.is_main_process_line,
+                    attributes=lcand.attributes
+                )
+                self.db.add(line_seg)
+                persisted_piping_lines.append(line_seg)
+
+            if persisted_piping_lines:
+                self.db.commit()
+                for pl in persisted_piping_lines:
+                    self.db.refresh(pl)
+                logger.info(f"Lámina {sheet_id}: {len(persisted_piping_lines)} líneas de piping detectadas y persistidas.")
 
         if not raw_candidates:
             # Fallback Raster: usar imagen rasterizada o renderizar desde PDF
@@ -328,6 +358,29 @@ class SymbolService:
                 self.db.refresh(sym)
                 self._evaluate_symbol_policy(sym, sheet)
                 created_symbols.append(sym)
+
+        # Asociación símbolo-línea de piping (en línea vs candidato a callout)
+        if persisted_piping_lines and vec_extractor and created_symbols:
+            for sym in created_symbols:
+                connected_line_ids = []
+                for pl in persisted_piping_lines:
+                    if vec_extractor.check_symbol_intersects_line(sym.bbox_normalized, pl.polyline_points):
+                        connected_line_ids.append(pl.id)
+                        if sym.id not in pl.connected_symbol_ids:
+                            pl.connected_symbol_ids = list(pl.connected_symbol_ids) + [sym.id]
+                            self.db.add(pl)
+
+                attrs = dict(sym.attributes or {})
+                if connected_line_ids:
+                    attrs["piping_line_relation"] = "inline"
+                    attrs["connected_line_segment_ids"] = connected_line_ids
+                else:
+                    attrs["piping_line_relation"] = "callout_candidate"
+                    attrs["callout_leader_line_status"] = "unresolved_trace"
+                sym.attributes = attrs
+                self.db.add(sym)
+
+            self.db.commit()
 
         self.db.commit()
         for sym in created_symbols:

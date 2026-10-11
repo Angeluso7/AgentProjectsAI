@@ -77,6 +77,7 @@ class DocumentSheet(Base):
     evidences = relationship("VisualEvidence", back_populates="sheet", cascade="all, delete-orphan")
     title_block_extraction = relationship("TitleBlockExtraction", back_populates="sheet", uselist=False, cascade="all, delete-orphan")
     structural_nodes = relationship("DocumentStructuralNode", back_populates="sheet")
+    piping_lines = relationship("PipingLineSegment", back_populates="sheet", cascade="all, delete-orphan")
 
 
 class SheetRegion(Base):
@@ -365,4 +366,27 @@ class DocumentStructuralNode(Base):
     # Relaciones
     document = relationship("Document", back_populates="structural_nodes")
     sheet = relationship("DocumentSheet", back_populates="structural_nodes")
+
+
+class PipingLineSegment(Base):
+    """Segmento de trazo vectorial correspondiente a una línea de piping / proceso en un plano técnico."""
+    __tablename__ = "piping_line_segments"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    polyline_points = Column(JSON, nullable=False) # [[x0, y0], [x1, y1], ...] coordenadas normalizadas 0.0 - 1.0
+    bbox_normalized = Column(JSON, nullable=False) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
+    line_style = Column(String(30), default="solid", nullable=False) # solid, dashed, dotted
+    length_mm = Column(Float, nullable=False)
+    stroke_width_pt = Column(Float, default=1.0, nullable=False)
+    
+    connected_symbol_ids = Column(JSON, default=list, nullable=False) # Lista de IDs de DetectedSymbol intersectados / conectados
+    is_main_process_line = Column(Boolean, default=True, nullable=False)
+    attributes = Column(JSON, default=dict, nullable=False)
+    
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Relaciones
+    sheet = relationship("DocumentSheet", back_populates="piping_lines")
 
