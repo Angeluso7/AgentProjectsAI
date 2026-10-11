@@ -283,6 +283,7 @@ def detect_sheet_symbols_sync(
     engine = request.engine if request and request.engine else "yolo_sahi_hybrid"
     thresh = request.confidence_threshold if request and request.confidence_threshold else 0.50
     disc = request.discipline if request else None
+    env = request.environment if request and request.environment else "production"
 
     try:
         return service.detect_sheet_symbols(
@@ -290,7 +291,8 @@ def detect_sheet_symbols_sync(
             force_reprocess=force,
             engine=engine,
             confidence_threshold=thresh,
-            discipline=disc
+            discipline=disc,
+            environment=env
         )
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))

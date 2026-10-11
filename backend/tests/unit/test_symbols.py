@@ -54,8 +54,8 @@ def test_detect_symbols_on_sheet(client, db_session):
     db_session.commit()
     db_session.refresh(drawing_reg)
 
-    # 3. Invocar detección síncrona
-    res = client.post(f"/api/v1/symbols/sheets/{sheet.id}", json={"force_reprocess": True})
+    # 3. Invocar detección síncrona en modo sandbox
+    res = client.post(f"/api/v1/symbols/sheets/{sheet.id}", json={"force_reprocess": True, "environment": "sandbox"})
     assert res.status_code == 200
     symbols = res.json()
     assert len(symbols) > 0
@@ -83,10 +83,49 @@ def test_detect_symbols_on_sheet(client, db_session):
     assert len(summary["by_category"]) >= 4
 
     # 5. Endpoint Asíncrono (HTTP 202)
-    async_res = client.post(f"/api/v1/symbols/sheets/{sheet.id}/async")
+    async_res = client.post(f"/api/v1/symbols/sheets/{sheet.id}/async", json={"environment": "sandbox"})
     assert async_res.status_code == 202
     assert "job_id" in async_res.json()
     assert async_res.json()["status"] == "queued"
+
+def test_production_mode_does_not_generate_synthetic_symbols(client, db_session):
+    """Garantiza que en modo 'production' NUNCA se generen símbolos sintéticos placeholder."""
+    proj_res = client.post("/api/v1/projects/", json={
+        "code": "PRJ-PROD-GUARD",
+        "name": "Proyecto Prod Sin Placeholders",
+        "discipline": "piping"
+    })
+    project_id = proj_res.json()["id"]
+
+    doc = Document(
+        project_id=project_id,
+        filename="dummy_prod.pdf",
+        file_path="no_file_exists.pdf",
+        file_hash_sha256="hash_prod_001",
+        file_size_bytes=1024,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(doc)
+    db_session.commit()
+    db_session.refresh(doc)
+
+    sheet = DocumentSheet(
+        document_id=doc.id,
+        sheet_number=1,
+        width_px=8000,
+        height_px=6000,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+    db_session.refresh(sheet)
+
+    service = SymbolService(db_session)
+    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True, environment="production")
+    # En producción sin modelo ni archivo real, debe ser estrictamente lista vacía
+    assert symbols == []
+    assert len(symbols) == 0
 
 def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     """Verifica que símbolos inciertos o unknown_symbol_candidate generen ReviewTask y DecisionTrace."""
@@ -122,7 +161,7 @@ def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     db_session.refresh(sheet)
 
     service = SymbolService(db_session)
-    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True)
+    symbols = service.detect_sheet_symbols(sheet_id=sheet.id, force_reprocess=True, environment="sandbox")
     assert len(symbols) > 0
 
     # Verificar que unknown_symbol_candidate generó ReviewTask

@@ -26,7 +26,8 @@ class SymbolService:
         force_reprocess: bool = False,
         engine: str = "yolo_sahi_hybrid",
         confidence_threshold: float = 0.50,
-        discipline: Optional[str] = None
+        discipline: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> List[DetectedSymbol]:
         sheet = self.doc_repo.get_sheet_by_id(sheet_id)
         if not sheet:
@@ -55,6 +56,7 @@ class SymbolService:
         doc = getattr(sheet, "document", None) or self.db.query(Document).filter(Document.id == sheet.document_id).first()
         proj_id = doc.project_id if doc else None
         proj_doc_id = doc.id if (doc and doc.project_id) else None
+        effective_env = (environment or "production").lower().strip()
 
         # Consultar librerías de símbolos canónicos en template_memory
         library_templates = self.db.query(SymbolTemplate).all()
@@ -66,7 +68,8 @@ class SymbolService:
             library_templates=library_templates,
             engine=engine,
             confidence_threshold=confidence_threshold,
-            discipline_filter=discipline
+            discipline_filter=discipline,
+            environment=effective_env
         )
 
         created_symbols: List[DetectedSymbol] = []
@@ -88,6 +91,7 @@ class SymbolService:
                 project_id=proj_id,
                 project_document_id=proj_doc_id,
                 record_kind="occurrence" if proj_id else "candidate",
+                environment=effective_env,
                 matching_status="unmatched"
             )
             self.db.add(sym)
@@ -218,7 +222,8 @@ class SymbolService:
         document_id: str,
         force_reprocess: bool = False,
         engine: str = "yolo_sahi_hybrid",
-        discipline: Optional[str] = None
+        discipline: Optional[str] = None,
+        environment: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         doc = self.db.query(Document).filter(Document.id == document_id).first()
         effective_discipline = discipline
@@ -236,7 +241,8 @@ class SymbolService:
                 sheet_id=s.id,
                 force_reprocess=force_reprocess,
                 engine=engine,
-                discipline=effective_discipline
+                discipline=effective_discipline,
+                environment=environment
             )
             matched_count = sum(1 for sym in syms if sym.matching_status == "matched")
             unknown_count = sum(1 for sym in syms if sym.matching_status == "unknown_symbol")

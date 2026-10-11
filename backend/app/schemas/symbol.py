@@ -30,6 +30,7 @@ class SymbolDetectProcessRequest(BaseModel):
     engine: Optional[str] = Field(default="yolo_sahi_hybrid", description="Motor: yolo_sahi_hybrid, template_matching, geometric_heuristic")
     confidence_threshold: Optional[float] = Field(default=0.50, description="Umbral mínimo de aceptación")
     discipline: Optional[str] = Field(default=None, description="Filtra por disciplina")
+    environment: Optional[str] = Field(default="production", description="Entorno de ejecución: production | sandbox")
 
 class SymbolSummaryItem(BaseModel):
     symbol_type: str
