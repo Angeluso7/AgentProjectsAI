@@ -368,12 +368,43 @@ class DocumentStructuralNode(Base):
     sheet = relationship("DocumentSheet", back_populates="structural_nodes")
 
 
+class PipingLine(Base):
+    """Entidad lógica de línea de piping / proceso en el proyecto."""
+    __tablename__ = "piping_lines"
+
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id = Column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    line_number = Column(String(100), nullable=True, index=True) # ej. "01-6\"-CS150-001"
+    nominal_size = Column(String(50), nullable=True) # ej. "6\""
+    service_fluid = Column(String(50), nullable=True) # ej. "P", "CW", "IA"
+    spec_class = Column(String(50), nullable=True) # ej. "CS150", "A106"
+    insulation = Column(String(50), nullable=True)
+    design_pressure = Column(Float, nullable=True)
+    design_temperature = Column(Float, nullable=True)
+    from_equipment_tag = Column(String(100), nullable=True)
+    to_equipment_tag = Column(String(100), nullable=True)
+
+    flow_direction = Column(String(30), default="unconfirmed", nullable=False) # "forward" | "reverse" | "unconfirmed"
+    source = Column(String(50), default="auto_vector_extraction", nullable=False) # "auto_vector_extraction" | "manual_trace" | "manual_corrected"
+    confidence_status = Column(String(30), default="auto_low_needs_review", nullable=False) # "auto_high" | "auto_low_needs_review" | "manual_confirmed"
+
+    attributes = Column(JSON, default=dict, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    # Relaciones
+    project = relationship("Project", back_populates="piping_lines")
+    segments = relationship("PipingLineSegment", back_populates="piping_line")
+
+
 class PipingLineSegment(Base):
     """Segmento de trazo vectorial correspondiente a una línea de piping / proceso en un plano técnico."""
     __tablename__ = "piping_line_segments"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
     sheet_id = Column(String(36), ForeignKey("document_sheets.id", ondelete="CASCADE"), nullable=False, index=True)
+    piping_line_id = Column(String(36), ForeignKey("piping_lines.id", ondelete="SET NULL"), nullable=True, index=True)
     
     polyline_points = Column(JSON, nullable=False) # [[x0, y0], [x1, y1], ...] coordenadas normalizadas 0.0 - 1.0
     bbox_normalized = Column(JSON, nullable=False) # [x0, y0, x1, y1] normalizado 0.0 - 1.0
@@ -389,4 +420,5 @@ class PipingLineSegment(Base):
 
     # Relaciones
     sheet = relationship("DocumentSheet", back_populates="piping_lines")
+    piping_line = relationship("PipingLine", back_populates="segments")
 

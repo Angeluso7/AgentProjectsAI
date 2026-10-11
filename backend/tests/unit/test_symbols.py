@@ -422,3 +422,124 @@ def test_piping_line_extraction_and_symbol_association(db_session, client):
     assert persisted.connected_symbol_ids == ["sym_001"]
     assert persisted.is_main_process_line is True
 
+
+def test_piping_line_logical_entity_and_segments_relation(db_session, client):
+    """
+    Fase 1: Verifica la entidad lógica PipingLine, su relación con múltiples PipingLineSegment
+    a través de distintas láminas (continuidad de flujo) y la retrocompatibilidad con
+    segmentos existentes que tengan piping_line_id nulo.
+    """
+    from app.db.models.document_memory import PipingLine, PipingLineSegment
+    from app.db.models.core import Project
+
+    # 1. Crear proyecto y documento con 2 láminas
+    proj_res = client.post("/api/v1/projects/", json={
+        "code": "PRJ-LINE-ENTITY-01",
+        "name": "Proyecto Entidad PipingLine",
+        "discipline": "piping"
+    })
+    project_id = proj_res.json()["id"]
+
+    db_doc = Document(
+        project_id=project_id,
+        filename="pid_line_continuity.pdf",
+        file_path="dummy_pid_line.pdf",
+        file_hash_sha256="hash_line_test_001",
+        file_size_bytes=4096,
+        status="ready",
+        page_count=2
+    )
+    db_session.add(db_doc)
+    db_session.commit()
+
+    sheet1 = DocumentSheet(document_id=db_doc.id, sheet_number=1, width_px=6000, height_px=4000, dpi=150)
+    sheet2 = DocumentSheet(document_id=db_doc.id, sheet_number=2, width_px=6000, height_px=4000, dpi=150)
+    db_session.add_all([sheet1, sheet2])
+    db_session.commit()
+
+    # 2. Segmento preexistente con piping_line_id = None (retrocompatibilidad)
+    legacy_segment = PipingLineSegment(
+        sheet_id=sheet1.id,
+        piping_line_id=None,
+        polyline_points=[[0.05, 0.2], [0.3, 0.2]],
+        bbox_normalized=[0.05, 0.19, 0.3, 0.21],
+        line_style="solid",
+        length_mm=85.0,
+        stroke_width_pt=1.5,
+        connected_symbol_ids=[],
+        is_main_process_line=True,
+        attributes={"legacy": True}
+    )
+    db_session.add(legacy_segment)
+    db_session.commit()
+    db_session.refresh(legacy_segment)
+    assert legacy_segment.piping_line_id is None
+    assert legacy_segment.piping_line is None
+
+    # 3. Crear entidad lógica PipingLine
+    piping_line = PipingLine(
+        project_id=project_id,
+        line_number="01-6\"-CS150-001",
+        nominal_size="6\"",
+        service_fluid="P",
+        spec_class="CS150",
+        insulation="N",
+        design_pressure=150.0,
+        design_temperature=80.0,
+        from_equipment_tag="TK-101",
+        to_equipment_tag="P-101A",
+        flow_direction="unconfirmed",
+        source="auto_vector_extraction",
+        confidence_status="auto_low_needs_review",
+        attributes={"fluid_name": "Crude Process Oil"}
+    )
+    db_session.add(piping_line)
+    db_session.commit()
+    db_session.refresh(piping_line)
+
+    # 4. Asociar 2 segmentos en láminas distintas a la misma PipingLine (continuidad)
+    seg1 = PipingLineSegment(
+        sheet_id=sheet1.id,
+        piping_line_id=piping_line.id,
+        polyline_points=[[0.3, 0.2], [0.95, 0.2]],
+        bbox_normalized=[0.3, 0.19, 0.95, 0.21],
+        line_style="solid",
+        length_mm=220.0,
+        stroke_width_pt=2.0,
+        connected_symbol_ids=["sym_v1"],
+        is_main_process_line=True,
+        attributes={"sheet_order": 1}
+    )
+    seg2 = PipingLineSegment(
+        sheet_id=sheet2.id,
+        piping_line_id=piping_line.id,
+        polyline_points=[[0.05, 0.5], [0.75, 0.5]],
+        bbox_normalized=[0.05, 0.49, 0.75, 0.51],
+        line_style="solid",
+        length_mm=240.0,
+        stroke_width_pt=2.0,
+        connected_symbol_ids=["sym_v2", "sym_p1"],
+        is_main_process_line=True,
+        attributes={"sheet_order": 2}
+    )
+    db_session.add_all([seg1, seg2])
+    db_session.commit()
+
+    db_session.refresh(piping_line)
+    assert len(piping_line.segments) == 2
+    sheet_ids_in_line = {s.sheet_id for s in piping_line.segments}
+    assert sheet_ids_in_line == {sheet1.id, sheet2.id}
+
+    # 5. Backfill del segmento previo hacia la línea lógica
+    legacy_segment.piping_line_id = piping_line.id
+    db_session.add(legacy_segment)
+    db_session.commit()
+
+    db_session.refresh(piping_line)
+    assert len(piping_line.segments) == 3
+
+    # 6. Relación bidireccional desde Project
+    db_proj = db_session.query(Project).filter(Project.id == project_id).first()
+    assert len(db_proj.piping_lines) == 1
+    assert db_proj.piping_lines[0].line_number == "01-6\"-CS150-001"
+
