@@ -173,3 +173,103 @@ def test_unknown_symbol_candidate_triggers_review_task(client, db_session):
     traces = db_session.query(DecisionTrace).filter(DecisionTrace.sheet_id == sheet.id).all()
     assert len(traces) >= 1
     assert any(tr.trace_type == "symbol_detection" for tr in traces)
+
+
+def test_hitl_approval_promotes_symbol_to_canonical(db_session, tmp_path):
+    """Verifica Fase 3: la aprobación/corrección en HITL promueve el símbolo a SymbolTemplate canónico."""
+    import numpy as np
+    import cv2
+    from app.services.operations.service import OperationsService
+    from app.db.models.template_memory import SymbolTemplate
+    from app.db.models.core import Project
+
+    # Generar un crop físico válido para la prueba
+    crop_file = tmp_path / "valve_ball_crop.png"
+    crop_img = np.ones((64, 64, 3), dtype=np.uint8) * 255
+    cv2.circle(crop_img, (32, 32), 16, (0, 0, 0), 2)
+    cv2.imwrite(str(crop_file), crop_img)
+
+    proj = Project(
+        code="PRJ-HITL-001",
+        name="Proyecto HITL",
+        discipline="piping"
+    )
+    db_session.add(proj)
+    db_session.commit()
+
+    doc = Document(
+        project_id=proj.id,
+        filename="hitl_test.pdf",
+        file_path="dummy.pdf",
+        file_hash_sha256="hitl_hash_1",
+        file_size_bytes=1024,
+        status="ready",
+        page_count=1
+    )
+    db_session.add(doc)
+    db_session.commit()
+
+    sheet = DocumentSheet(
+        document_id=doc.id,
+        sheet_number=1,
+        width_px=1000,
+        height_px=1000,
+        dpi=150
+    )
+    db_session.add(sheet)
+    db_session.commit()
+
+    sym = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="unknown_symbol_candidate",
+        discipline="piping",
+        bbox=[100, 100, 200, 200],
+        bbox_normalized=[0.1, 0.1, 0.2, 0.2],
+        crop_image_path=str(crop_file),
+        confidence=0.62,
+        matching_status="unknown_symbol",
+        source_engine="vector_symbol_extractor",
+        environment="production"
+    )
+    db_session.add(sym)
+    db_session.commit()
+
+    task = ReviewTask(
+        task_type="symbol_detection_review",
+        reason_code="UNKNOWN_SYMBOL_CANDIDATE",
+        reason_message="Símbolo desconocido para revisión humana",
+        confidence=0.62,
+        priority="high",
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        evidence_refs={"symbol_id": sym.id},
+        payload={"symbol_id": sym.id, "symbol_type": "unknown_symbol_candidate", "discipline": "piping"}
+    )
+    db_session.add(task)
+    db_session.commit()
+
+    ops_svc = OperationsService(db_session)
+    decision = ops_svc.resolve_review_task(
+        task_id=task.id,
+        decision="corrected",
+        reviewer="lead_engineer",
+        corrected_value={"symbol_type": "PIP-VALVE-BALL", "discipline": "piping"},
+        notes="Confirmado como válvula de bola en línea 01"
+    )
+
+    assert decision is not None
+    assert decision.decision == "corrected"
+    assert task.status in ["corrected", "resolved"]
+
+    db_session.refresh(sym)
+    assert sym.symbol_type == "PIP-VALVE-BALL"
+    assert sym.matching_status == "matched"
+    assert sym.matched_template_id is not None
+    assert sym.match_score == 1.0
+
+    # Verificar que existe la plantilla creada en BD
+    created_tpl = db_session.query(SymbolTemplate).filter(SymbolTemplate.id == sym.matched_template_id).first()
+    assert created_tpl is not None
+    assert "PIP-VALVE-BALL" in created_tpl.display_name or "PIP-VALVE-BALL" in created_tpl.symbol_class or created_tpl.is_active_for_detection
+

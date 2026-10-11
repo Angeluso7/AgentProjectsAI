@@ -8,6 +8,7 @@ from app.db.models.template_memory import SymbolTemplate, SymbolLibrary
 from app.db.repositories.document_repository import DocumentRepository
 from app.db.repositories.operations_repository import OperationsRepository
 from app.services.symbols.detector import SymbolDetector, DetectedSymbolDTO
+from app.services.symbols.symbol_inventory_service import SymbolInventoryService
 from app.services.layout.service import LayoutService
 from app.schemas.symbol import SheetSymbolsSummaryResponse, SymbolSummaryItem
 from app.core.logging import logger
@@ -343,12 +344,18 @@ class SymbolService:
                 project_id=sheet.document.project_id if sheet.document else None,
                 document_id=sheet.document_id,
                 sheet_id=sheet.id,
-                evidence_refs={"symbol_id": symbol.id, "bbox": symbol.bbox_normalized},
+                evidence_refs={
+                    "symbol_id": symbol.id,
+                    "bbox": symbol.bbox_normalized,
+                    "crop_image_path": symbol.crop_image_path
+                },
                 payload={
                     "symbol_id": symbol.id,
                     "symbol_type": symbol.symbol_type,
                     "discipline": symbol.discipline,
                     "confidence": symbol.confidence,
+                    "crop_image_path": symbol.crop_image_path,
+                    "crop_url": SymbolInventoryService.resolve_crop_url(symbol.crop_image_path),
                     "engine": symbol.source_engine,
                     "attributes": symbol.attributes
                 }
