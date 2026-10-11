@@ -34,6 +34,7 @@ class TemplateMatcher:
     def __init__(self, db: Session, normalizer: Optional[TemplateNormalizer] = None):
         self.db = db
         self.normalizer = normalizer or TemplateNormalizer()
+        self._mask_cache: Dict[str, Optional[np.ndarray]] = {}
 
     def match_candidate_image(
         self,
@@ -76,8 +77,10 @@ class TemplateMatcher:
             # Máscara vacía o insignificante
             return []
 
-        # 1. Consultar plantillas activas de la BD con filtrado de tenant/global
+        # 1. Consultar plantillas activas de la BD con filtrado de disciplina y tenant/global
         query = self.db.query(SymbolTemplate).filter(SymbolTemplate.is_active_for_detection == True)
+        if discipline:
+            query = query.filter(SymbolTemplate.discipline == discipline)
         if organization_id:
             query = query.filter(
                 (SymbolTemplate.organization_id == organization_id) | (SymbolTemplate.organization_id == None)
@@ -97,8 +100,10 @@ class TemplateMatcher:
             tmpl_ar = float(tmpl.aspect_ratio or 1.0)
             tmpl_mask_path = tmpl.normalized_mask_path
 
-            # Reconstruir o cargar la máscara normalizada de la plantilla
-            tmpl_mask = self._load_or_create_template_mask(tmpl)
+            # Reconstruir o cargar la máscara normalizada de la plantilla (usando cache en memoria)
+            if tmpl.id not in self._mask_cache:
+                self._mask_cache[tmpl.id] = self._load_or_create_template_mask(tmpl)
+            tmpl_mask = self._mask_cache[tmpl.id]
             if tmpl_mask is None:
                 continue
 
