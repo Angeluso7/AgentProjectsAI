@@ -93,6 +93,9 @@ class DocumentLayeredScanService:
         result = LayeredScanResultDTO(sheet_id=sheet_id)
 
         try:
+            # Símbolos pre-existentes en la lámina para alimentar clasificación
+            existing_symbols = self.db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet.id).all()
+
             # ==============================================================
             # CAPA 1 — Trazado automático de líneas + franja (buffer 10mm)
             # ==============================================================
@@ -102,7 +105,8 @@ class DocumentLayeredScanService:
                 page=page,
                 cached_drawings=cached_drawings,
                 pw=pw,
-                ph=ph
+                ph=ph,
+                symbols=existing_symbols
             )
             result.piping_lines = lines
             result.piping_segments = segments
@@ -119,6 +123,7 @@ class DocumentLayeredScanService:
                 ph=ph
             )
             result.symbols = symbols
+            result.review_tasks.extend(getattr(self, "_current_layer2_tasks", []))
             result.layer_confidence["layer_2_corridor_symbols"] = layer2_conf
 
             # ==============================================================
@@ -129,7 +134,8 @@ class DocumentLayeredScanService:
                 symbols=symbols,
                 cached_drawings=cached_drawings,
                 pw=pw,
-                ph=ph
+                ph=ph,
+                leader_strokes=getattr(self, "_current_leader_lines", [])
             )
             result.layer_confidence["layer_3_callouts"] = layer3_conf
 
@@ -188,6 +194,144 @@ class DocumentLayeredScanService:
     # IMPLEMENTACIÓN DE CAPAS INDIVIDUALES
     # --------------------------------------------------------------------------
 
+    @classmethod
+    def classify_stroke_candidate(
+        cls,
+        candidate: PipingLineCandidateDTO,
+        symbols: List[DetectedSymbol],
+        pw: float = 842.0,
+        ph: float = 595.0,
+        max_leader_length_mm: float = 45.0,
+        callout_proximity_tol_mm: float = 8.0,
+    ) -> Tuple[str, Dict[str, Any]]:
+        """
+        Disambigua entre una línea de piping real y una leader-line (trazo que conecta un símbolo
+        con su etiqueta/globo de referencia o callout):
+        - Leader-lines: trazos cortos (<= 45mm), rectos (sin codos a 90°), con trazo fino (<1.3pt),
+          cuyo extremo termina dentro o adyacente a un símbolo de callout/instrumento reconocido.
+        - Piping-lines: trazos largos (>= 50mm) o con codos ortogonales/curvas o trazo grueso (>=1.5pt)
+          que interconectan equipos o componentes de proceso.
+        - Caso ambiguo (40-50mm, recto, trazo medio): si un extremo termina en un callout, se clasifica
+          como leader_line para evitar stubs fantasma en la red de proceso; si no, piping_line de baja confianza.
+        """
+        pts = candidate.polyline_points or []
+        if len(pts) < 2:
+            return "piping_line", {"reason": "insufficient_points"}
+
+        # 1. Detección de codos / cambios bruscos de dirección
+        elbow_count = 0
+        for i in range(1, len(pts) - 1):
+            p_prev = pts[i - 1]
+            p_curr = pts[i]
+            p_next = pts[i + 1]
+
+            v1 = ((p_curr[0] - p_prev[0]) * pw, (p_curr[1] - p_prev[1]) * ph)
+            v2 = ((p_next[0] - p_curr[0]) * pw, (p_next[1] - p_curr[1]) * ph)
+            len1 = math.hypot(v1[0], v1[1])
+            len2 = math.hypot(v2[0], v2[1])
+
+            if len1 > 1e-4 and len2 > 1e-4:
+                dot = v1[0] * v2[0] + v1[1] * v2[1]
+                cos_theta = max(-1.0, min(1.0, dot / (len1 * len2)))
+                # Cambio de dirección superior a ~20° (cos_theta < 0.94)
+                if cos_theta < 0.94:
+                    elbow_count += 1
+
+        has_bends = elbow_count > 0
+
+        # 2. Distancia física de los extremos a símbolos reconocidos tipo callout
+        p_start = pts[0]
+        p_end = pts[-1]
+        p_start_x_mm = p_start[0] * pw * PT_TO_MM
+        p_start_y_mm = p_start[1] * ph * PT_TO_MM
+        p_end_x_mm = p_end[0] * pw * PT_TO_MM
+        p_end_y_mm = p_end[1] * ph * PT_TO_MM
+
+        near_callout = False
+        matched_callout_id = None
+        min_callout_dist_mm = float("inf")
+
+        for sym in (symbols or []):
+            stype = (sym.symbol_type or "").lower()
+            sclass = (getattr(sym, "symbol_class", None) or "").lower()
+            shape = ((sym.attributes or {}).get("primitive_shape") or "").lower()
+            is_callout_candidate = (
+                any(k in stype for k in ("instrument", "balloon", "callout", "tag", "circle", "burbuja")) or
+                any(k in sclass for k in ("instrument", "balloon", "callout", "tag", "indicator")) or
+                shape in ("circle", "hexagon") or
+                (sym.attributes or {}).get("piping_line_relation") == "callout_candidate"
+            )
+            if not is_callout_candidate or not sym.bbox_normalized or len(sym.bbox_normalized) != 4:
+                continue
+
+            sbx0, sby0, sbx1, sby1 = sym.bbox_normalized
+            scx_mm = (sbx0 + sbx1) / 2.0 * pw * PT_TO_MM
+            scy_mm = (sby0 + sby1) / 2.0 * ph * PT_TO_MM
+
+            d_s = math.hypot(p_start_x_mm - scx_mm, p_start_y_mm - scy_mm)
+            d_e = math.hypot(p_end_x_mm - scx_mm, p_end_y_mm - scy_mm)
+            d_min = min(d_s, d_e)
+
+            if d_min < min_callout_dist_mm:
+                min_callout_dist_mm = d_min
+
+            if d_min <= callout_proximity_tol_mm:
+                near_callout = True
+                matched_callout_id = sym.id
+                break
+
+        length_mm = candidate.length_mm
+        stroke_width = candidate.stroke_width_pt
+
+        meta = {
+            "length_mm": length_mm,
+            "elbow_count": elbow_count,
+            "has_bends": has_bends,
+            "stroke_width_pt": stroke_width,
+            "near_callout": near_callout,
+            "min_callout_dist_mm": round(min_callout_dist_mm, 2) if min_callout_dist_mm < float("inf") else None,
+            "matched_callout_id": matched_callout_id,
+        }
+
+        # Regla 1: Caso Claro Leader-Line (< 40mm)
+        if not has_bends and length_mm < 40.0 and near_callout and stroke_width < 1.3:
+            meta["classification"] = "leader_line"
+            meta["decision_rule"] = "clear_leader_line"
+            meta["reason"] = f"Trazo recto ({length_mm:.1f}mm) sin codos con extremo conectado a callout ({matched_callout_id})."
+            return "leader_line", meta
+
+        # Regla 2: Caso Claro Piping-Line
+        if has_bends or length_mm >= 50.0 or stroke_width >= 1.5:
+            meta["classification"] = "piping_line"
+            meta["decision_rule"] = "clear_piping_line"
+            meta["reason"] = f"Trazo característico de piping: longitud {length_mm:.1f}mm, codos={elbow_count}, grosor={stroke_width}pt."
+            return "piping_line", meta
+
+        # Regla 3: Caso Ambiguo (longitud intermedia 40-50mm, recto, grosor moderado)
+        if 40.0 <= length_mm <= 50.0 and not has_bends and stroke_width < 1.3:
+            if near_callout:
+                meta["classification"] = "leader_line"
+                meta["decision_rule"] = "ambiguous_resolved_to_leader"
+                meta["reason"] = "Caso ambiguo (40-50mm recto): contacto confirmado con callout; clasificado como leader-line para evitar falsas líneas de piping muertas."
+                return "leader_line", meta
+            else:
+                meta["classification"] = "piping_line"
+                meta["decision_rule"] = "ambiguous_resolved_to_piping"
+                meta["reason"] = "Caso ambiguo (40-50mm recto): sin contacto con callout en extremos; clasificado como piping-line con baja confianza."
+                return "piping_line", meta
+
+        # Regla 4: Fallback
+        if not has_bends and length_mm <= max_leader_length_mm and near_callout:
+            meta["classification"] = "leader_line"
+            meta["decision_rule"] = "fallback_leader"
+            meta["reason"] = "Clasificado como leader-line por longitud y proximidad a callout."
+            return "leader_line", meta
+
+        meta["classification"] = "piping_line"
+        meta["decision_rule"] = "default_piping"
+        meta["reason"] = "Clasificado por defecto como piping-line."
+        return "piping_line", meta
+
     def _layer_1_piping_lines(
         self,
         sheet: DocumentSheet,
@@ -195,19 +339,35 @@ class DocumentLayeredScanService:
         page: Optional[fitz.Page],
         cached_drawings: List[Dict[str, Any]],
         pw: float,
-        ph: float
+        ph: float,
+        symbols: Optional[List[DetectedSymbol]] = None
     ) -> Tuple[List[PipingLine], List[PipingLineSegment], List[ReviewTask], str]:
         """
-        Capa 1: Extrae trazos largos, agrupa segmentos contiguos en PipingLine lógicas
-        y genera la franja de cápsula de buffer de 10mm.
+        Capa 1: Extrae trazos largos, clasifica y desambigua leader-lines (que se enrutan a Capa 3),
+        agrupa segmentos contiguos de piping en PipingLine lógicas y genera la franja de buffer de 10mm.
         """
-        line_candidates: List[PipingLineCandidateDTO] = []
+        raw_candidates: List[PipingLineCandidateDTO] = []
         if page is not None:
-            line_candidates = self.vector_extractor.extract_piping_lines_from_page(
+            raw_candidates = self.vector_extractor.extract_piping_lines_from_page(
                 page=page,
                 page_number=sheet.sheet_number or 1,
                 min_length_mm=40.0
             )
+
+        # Disambiguación de trazos: leader-line vs piping-line
+        query_syms = symbols if symbols is not None else self.db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet.id).all()
+        line_candidates: List[PipingLineCandidateDTO] = []
+        leader_candidates: List[PipingLineCandidateDTO] = []
+
+        for cand in raw_candidates:
+            classification, meta = self.classify_stroke_candidate(cand, query_syms, pw=pw, ph=ph)
+            cand.attributes.update(meta)
+            if classification == "leader_line":
+                leader_candidates.append(cand)
+            else:
+                line_candidates.append(cand)
+
+        self._current_leader_lines = leader_candidates
 
         if not line_candidates:
             # Consultar segmentos pre-persistidos en la lámina si existen
@@ -231,7 +391,7 @@ class DocumentLayeredScanService:
                         seg.piping_line_id = pline.id
                         self.db.add(seg)
                         created_lines.append(pline)
-                self.db.commit()
+                    self.db.commit()
                 all_lines = self.db.query(PipingLine).filter(PipingLine.project_id == project_id).all() if project_id else created_lines
                 return all_lines, existing_segs, [], "auto_high" if len(existing_segs) > 0 else "auto_low_needs_review"
             return [], [], [], "auto_low_needs_review"
@@ -351,7 +511,8 @@ class DocumentLayeredScanService:
     ) -> Tuple[List[DetectedSymbol], str]:
         """
         Capa 2: Prueba inclusión de símbolos contra el polígono de franja real de 10mm de cada línea.
-        Calcula la proyección paramétrica t (0->1) para secuencia de símbolos y detecta flechas de flujo.
+        Calcula la proyección paramétrica t (0->1) para secuencia de símbolos y detecta flechas de flujo,
+        priorizando la orientación de la flecha física y detectando conflictos con el orden de trazado.
         """
         symbols = self.db.query(DetectedSymbol).filter(DetectedSymbol.sheet_id == sheet.id).all()
         if not symbols or not piping_lines:
@@ -359,6 +520,7 @@ class DocumentLayeredScanService:
 
         # Buffer real de 10mm a cada lado
         buffer_mm = 10.0
+        layer2_tasks: List[ReviewTask] = []
 
         for sym in symbols:
             if not sym.bbox_normalized or len(sym.bbox_normalized) != 4:
@@ -371,6 +533,7 @@ class DocumentLayeredScanService:
             best_line = None
             min_dist_to_line = float("inf")
             best_t_param = 0.0
+            best_subseg_vec = (1.0, 0.0)
 
             for pline in piping_lines:
                 # Evaluar contra todos los segmentos de la línea
@@ -379,13 +542,14 @@ class DocumentLayeredScanService:
                     if len(pts) < 2:
                         continue
 
-                    dist_mm, t_norm = self._compute_point_to_polyline_distance_and_t(
+                    dist_mm, t_norm, subseg_v = self._compute_point_to_polyline_projection(
                         px=cx, py=cy, polyline=pts, pw=pw, ph=ph
                     )
                     if dist_mm < min_dist_to_line:
                         min_dist_to_line = dist_mm
                         best_line = pline
                         best_t_param = t_norm
+                        best_subseg_vec = subseg_v
 
             attrs = dict(sym.attributes or {})
 
@@ -396,18 +560,74 @@ class DocumentLayeredScanService:
                 attrs["sequence_position"] = round(best_t_param, 4)
                 attrs["corridor_distance_mm"] = round(min_dist_to_line, 2)
 
-                # Detección de flecha de flujo
+                # Detección de flecha de flujo (por tipo, clase o forma primitiva triángulo)
                 sym_type_lower = (sym.symbol_type or "").lower()
-                is_flow_arrow = any(k in sym_type_lower for k in ("arrow", "flecha", "flow_dir", "flow_direction"))
+                sym_class_lower = (getattr(sym, "symbol_class", None) or "").lower()
+                prim_shape = ((sym.attributes or {}).get("primitive_shape") or "").lower()
+
+                is_flow_arrow = (
+                    any(k in sym_type_lower for k in ("arrow", "flecha", "flow_dir", "flow_direction", "flow_arrow", "arrowhead")) or
+                    any(k in sym_class_lower for k in ("arrow", "flow_arrow")) or
+                    prim_shape == "triangle"
+                )
+
                 if is_flow_arrow:
-                    # Inferencia de orientación respecto al trazo
-                    rot_deg = sym.match_rotation_deg or attrs.get("rotation_deg", 0)
-                    if rot_deg in (0, 90, 360):
-                        best_line.flow_direction = "forward"
-                    elif rot_deg in (180, 270):
-                        best_line.flow_direction = "reverse"
+                    arr_dx, arr_dy = self._infer_arrow_vector(sym, attrs)
+                    # Dot product con el vector del subsegmento de tubería activo
+                    dot = arr_dx * best_subseg_vec[0] + arr_dy * best_subseg_vec[1]
+                    arrow_dir = "forward" if dot >= 0 else "reverse"
+
+                    # Sentido de trazado (por defecto 'forward' por orden de puntos en polilínea)
+                    trace_order_dir = (best_line.attributes or {}).get("trace_direction", "forward")
+                    has_conflict = (arrow_dir != trace_order_dir)
+
+                    b_attrs = dict(best_line.attributes or {})
+                    b_attrs["arrow_detected"] = True
+                    b_attrs["detected_arrow_symbol_id"] = sym.id
+                    b_attrs["arrow_orientation"] = arrow_dir
+                    b_attrs["trace_order_direction"] = trace_order_dir
+
+                    if has_conflict:
+                        # Priorizar la flecha sobre el orden de trazado, pero marcar para revisión HITL
+                        best_line.flow_direction = arrow_dir
+                        best_line.confidence_status = "auto_low_needs_review"
+                        b_attrs["flow_direction_conflict"] = True
+                        b_attrs["flow_direction_source"] = "arrow_prioritized_with_conflict"
+                        b_attrs["conflict_details"] = (
+                            f"Conflicto en dirección de flujo: La flecha física detectada indica '{arrow_dir}', "
+                            f"pero el orden de trazado indica '{trace_order_dir}'. Se priorizó la flecha; requiere verificación HITL."
+                        )
+
+                        # Generar tarea de revisión HITL
+                        conflict_task = ReviewTask(
+                            task_type="line_trace_review",
+                            reason_code="flow_direction_conflict",
+                            reason_message=(
+                                f"Conflicto en dirección de flujo: La flecha física indica '{arrow_dir}' "
+                                f"pero el trazado indica '{trace_order_dir}'."
+                            ),
+                            sheet_id=sheet.id,
+                            project_id=best_line.project_id,
+                            status="open",
+                            priority="medium",
+                            payload={
+                                "line_id": best_line.id,
+                                "arrow_symbol_id": sym.id,
+                                "arrow_direction": arrow_dir,
+                                "trace_direction": trace_order_dir
+                            },
+                            evidence_refs={"line_id": best_line.id, "symbol_id": sym.id}
+                        )
+                        self.db.add(conflict_task)
+                        layer2_tasks.append(conflict_task)
                     else:
-                        best_line.flow_direction = "forward"
+                        # La flecha coincide con el orden de trazado
+                        best_line.flow_direction = arrow_dir
+                        b_attrs["flow_direction_conflict"] = False
+                        b_attrs["flow_direction_source"] = "detected_arrow"
+                        b_attrs["flow_direction_confidence"] = "high"
+
+                    best_line.attributes = b_attrs
                     self.db.add(best_line)
 
             else:
@@ -419,6 +639,19 @@ class DocumentLayeredScanService:
             sym.attributes = attrs
             self.db.add(sym)
 
+        # Para líneas donde no se detectó flecha, dejar orden de trazado como fallback de menor confianza
+        for pline in piping_lines:
+            p_attrs = dict(pline.attributes or {})
+            if not p_attrs.get("arrow_detected"):
+                if pline.flow_direction == "unconfirmed":
+                    pline.flow_direction = "forward"
+                p_attrs["arrow_detected"] = False
+                p_attrs["flow_direction_source"] = "trace_order_fallback"
+                p_attrs["flow_direction_confidence"] = "low"
+                pline.attributes = p_attrs
+                self.db.add(pline)
+
+        self._current_layer2_tasks = layer2_tasks
         self.db.commit()
         return symbols, "auto_high"
 
@@ -428,11 +661,12 @@ class DocumentLayeredScanService:
         symbols: List[DetectedSymbol],
         cached_drawings: List[Dict[str, Any]],
         pw: float,
-        ph: float
+        ph: float,
+        leader_strokes: Optional[List[PipingLineCandidateDTO]] = None
     ) -> str:
         """
-        Capa 3: Para símbolos callout_candidate, busca trazos cortos (líneas líder < 40mm)
-        en radios expandibles de 20mm -> 30mm -> 40mm que terminen cerca de un bloque de texto.
+        Capa 3: Para símbolos callout_candidate, busca trazos clasificados como leader-line
+        y trazos cortos (< 40mm) en radios expandibles de 20mm -> 30mm -> 40mm que terminen cerca de un bloque de texto.
         """
         callout_syms = [
             s for s in symbols
@@ -444,7 +678,7 @@ class DocumentLayeredScanService:
         # Recuperar textos OCR de la lámina
         texts = self.db.query(ExtractedText).filter(ExtractedText.sheet_id == sheet.id).all()
 
-        # Filtrar trazos cortos en cached_drawings (< 40mm) que no sean piping segments largos
+        # Filtrar trazos cortos en cached_drawings (< 40mm)
         short_strokes = []
         for d in cached_drawings:
             r = d.get("rect")
@@ -458,7 +692,24 @@ class DocumentLayeredScanService:
                     "rect": r,
                     "diag_mm": diag_mm,
                     "x_mid": (r.x0 + r.x1) / 2.0,
-                    "y_mid": (r.y0 + r.y1) / 2.0
+                    "y_mid": (r.y0 + r.y1) / 2.0,
+                    "is_classified_leader": False
+                })
+
+        # Incorporar trazos clasificados como leader-line desde Capa 1
+        active_leader_strokes = leader_strokes if leader_strokes is not None else getattr(self, "_current_leader_lines", [])
+        for ldr in (active_leader_strokes or []):
+            b = ldr.bbox_normalized
+            if b and len(b) == 4:
+                x_mid = (b[0] + b[2]) / 2.0 * pw
+                y_mid = (b[1] + b[3]) / 2.0 * ph
+                short_strokes.append({
+                    "rect": None,
+                    "diag_mm": ldr.length_mm,
+                    "x_mid": x_mid,
+                    "y_mid": y_mid,
+                    "is_classified_leader": True,
+                    "candidate": ldr
                 })
 
         for sym in callout_syms:
@@ -469,6 +720,7 @@ class DocumentLayeredScanService:
 
             leader_found = False
             target_text = None
+            used_leader_candidate = None
 
             # Búsqueda iterativa en radios crecientes: 20mm, 30mm, 40mm
             for radius_mm in (20.0, 30.0, 40.0):
@@ -487,6 +739,7 @@ class DocumentLayeredScanService:
                             if dist_to_txt_pt <= (15.0 / PT_TO_MM):
                                 leader_found = True
                                 target_text = txt
+                                used_leader_candidate = stroke.get("candidate")
                                 break
                     if leader_found:
                         break
@@ -497,6 +750,8 @@ class DocumentLayeredScanService:
                 attrs["callout_leader_line_status"] = "resolved"
                 attrs["callout_target_text"] = target_text.text
                 attrs["callout_target_text_id"] = target_text.id
+                if used_leader_candidate:
+                    attrs["leader_line_attributes"] = dict(used_leader_candidate.attributes or {})
             else:
                 attrs["callout_leader_line_status"] = "no_leader_found"
 
@@ -752,22 +1007,40 @@ class DocumentLayeredScanService:
     # MÉTODOS AUXILIARES GEOMÉTRICOS
     # --------------------------------------------------------------------------
 
-    def _compute_point_to_polyline_distance_and_t(
+    @classmethod
+    def _infer_arrow_vector(cls, sym: DetectedSymbol, attrs: Dict[str, Any]) -> Tuple[float, float]:
+        """Infiere el vector direccional 2D (dx, dy) de la flecha de flujo."""
+        if "arrow_vector" in attrs and isinstance(attrs["arrow_vector"], (list, tuple)) and len(attrs["arrow_vector"]) == 2:
+            return float(attrs["arrow_vector"][0]), float(attrs["arrow_vector"][1])
+
+        if "tip_point" in attrs and "base_point" in attrs:
+            tip = attrs["tip_point"]
+            base = attrs["base_point"]
+            return float(tip[0] - base[0]), float(tip[1] - base[1])
+
+        rot = sym.match_rotation_deg if sym.match_rotation_deg is not None else attrs.get("rotation_deg")
+        if rot is not None:
+            # 0° -> derecha (+x), 90° -> abajo (+y en coords PDF), 180° -> izquierda (-x), 270° -> arriba (-y)
+            rad = math.radians(float(rot))
+            return math.cos(rad), math.sin(rad)
+
+        return 1.0, 0.0
+
+    def _compute_point_to_polyline_projection(
         self,
         px: float,
         py: float,
         polyline: List[List[float]],
         pw: float,
         ph: float
-    ) -> Tuple[float, float]:
+    ) -> Tuple[float, float, Tuple[float, float]]:
         """
         Calcula la distancia mínima física en mm desde un punto normalizado a una polilínea,
-        y proyecta el punto sobre el parámetro paramétrico t (0.0 -> 1.0) acumulado.
+        la proyección t acumulada (0.0 -> 1.0), y el vector direccional del subsegmento activo (dx, dy).
         """
         if len(polyline) < 2:
-            return float("inf"), 0.0
+            return float("inf"), 0.0, (1.0, 0.0)
 
-        # Longitud total en mm de cada segmento
         seg_lengths_mm = []
         total_len_mm = 0.0
 
@@ -783,8 +1056,8 @@ class DocumentLayeredScanService:
         min_dist_mm = float("inf")
         best_t_cum = 0.0
         cum_len = 0.0
+        best_subseg_vec = (1.0, 0.0)
 
-        # Punto a proyectar en mm
         target_x_mm = px * pw * PT_TO_MM
         target_y_mm = py * ph * PT_TO_MM
 
@@ -817,10 +1090,26 @@ class DocumentLayeredScanService:
                     best_t_cum = (cum_len + seg_t * seg_l) / total_len_mm
                 else:
                     best_t_cum = 0.0
+                best_subseg_vec = (dx, dy)
 
             cum_len += seg_l
 
-        return min_dist_mm, best_t_cum
+        return min_dist_mm, best_t_cum, best_subseg_vec
+
+    def _compute_point_to_polyline_distance_and_t(
+        self,
+        px: float,
+        py: float,
+        polyline: List[List[float]],
+        pw: float,
+        ph: float
+    ) -> Tuple[float, float]:
+        """
+        Calcula la distancia mínima física en mm desde un punto normalizado a una polilínea,
+        y proyecta el punto sobre el parámetro paramétrico t (0.0 -> 1.0) acumulado.
+        """
+        dist, t, _ = self._compute_point_to_polyline_projection(px, py, polyline, pw, ph)
+        return dist, t
 
     def get_ordered_symbols_for_line(
         self,

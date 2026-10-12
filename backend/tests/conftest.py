@@ -14,14 +14,51 @@ from app.main import app
 from app.db.session import Base, get_db
 from app.db.models import *
 
-# In-memory SQLite para pruebas rápidas y aisladas
-SQLALCHEMY_DATABASE_URL = "sqlite:///:memory:"
+import tempfile
+import atexit
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import NullPool
+
+from app.main import app
+from app.db.session import Base, get_db
+from app.db.models import *
+
+# Para pruebas con SQLite concurrente (background jobs en ThreadPool),
+# SQLite en memoria (:memory:) con StaticPool comparte la misma conexión C entre hilos sin serialización,
+# provocando SQLITE_MISUSE ('sqlite3.InterfaceError: bad parameter or other API misuse')
+# y colisiones de transacciones entre sesiones concurrentes.
+# El uso de base de datos SQLite en archivo temporal con WAL mode y NullPool otorga a cada
+# hilo/sesión una conexión independiente y soporte completo de concurrencia WAL multi-hilo.
+TEST_DB_FILE = os.path.join(tempfile.gettempdir(), f"planreview_test_{os.getpid()}.db")
+SQLALCHEMY_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
+os.environ["DATABASE_URL"] = SQLALCHEMY_DATABASE_URL
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
+    connect_args={"check_same_thread": False, "timeout": 30.0},
+    poolclass=NullPool,
 )
+
+@event.listens_for(engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.close()
+
+def _cleanup_test_db():
+    for ext in ["", "-wal", "-shm"]:
+        target = TEST_DB_FILE + ext
+        if os.path.exists(target):
+            try:
+                os.remove(target)
+            except Exception:
+                pass
+
+atexit.register(_cleanup_test_db)
+
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # Patch global app.db.session for integration tests
@@ -32,18 +69,19 @@ app_session_mod.engine = engine
 
 @pytest.fixture(scope="function")
 def db_session():
-    """Crea una base de datos limpia en memoria para cada prueba."""
+    """Crea una base de datos limpia para cada prueba."""
     Base.metadata.create_all(bind=engine)
     db = TestingSessionLocal()
     try:
         yield db
     finally:
-        db.close()
         try:
             from app.services.operations.dispatcher import wait_for_all_jobs
             wait_for_all_jobs(timeout=10.0)
         except Exception:
             pass
+
+        db.close()
 
         import time
         for i in range(15):

@@ -781,3 +781,257 @@ def test_phase_5_export_line_list_and_layered_scan_sections(db_session, test_set
         pdf_bytes = f.read()
     assert pdf_bytes.startswith(b"%PDF")
 
+
+def test_heuristic_classification_leader_line_vs_piping_line(db_session, test_setup_project_and_sheet):
+    """
+    Fase 2: Valida la heurística de clasificación y desambiguación entre leader-lines y líneas de piping:
+    - Caso Claro 1: Leader-line recta, corta (<45mm), trazo fino, conectada a callout.
+    - Caso Claro 2: Piping-line larga (>=50mm), trazo grueso.
+    - Caso Claro 3: Piping-line corta pero con codo a 90° (presencia de curvas/bends).
+    - Caso Ambiguo 4: Longitud intermedia (44mm), recta, con callout -> clasifica a leader_line (evita stubs fantasma).
+    - Caso Ambiguo 5: Longitud intermedia (44mm), recta, sin callout -> clasifica a piping_line.
+    """
+    proj, doc, sheet = test_setup_project_and_sheet
+    scan_service = DocumentLayeredScanService(db_session)
+    pw, ph = 842.0, 595.0
+
+    # Crear símbolo de callout (globo de instrumento ISA) en coordenadas normalizadas
+    callout_sym = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="instrument_balloon",
+        bbox=[168, 119, 210, 149],
+        bbox_normalized=[0.20, 0.20, 0.25, 0.25],
+        confidence=0.94,
+        attributes={"primitive_shape": "circle"}
+    )
+    db_session.add(callout_sym)
+    db_session.commit()
+    db_session.refresh(callout_sym)
+
+    from app.services.symbols.vector_extractor import PipingLineCandidateDTO
+
+    # Caso 1: Leader-line clara (recta, 25mm, grosor 0.5pt, conectada al callout)
+    cand_leader = PipingLineCandidateDTO(
+        polyline_points=[[0.25, 0.225], [0.30, 0.225]],
+        bbox_normalized=[0.25, 0.22, 0.30, 0.23],
+        line_style="solid",
+        length_mm=25.0,
+        stroke_width_pt=0.5
+    )
+    cls_1, meta_1 = scan_service.classify_stroke_candidate(cand_leader, [callout_sym], pw=pw, ph=ph)
+    assert cls_1 == "leader_line"
+    assert meta_1["decision_rule"] == "clear_leader_line"
+    assert meta_1["near_callout"] is True
+    assert meta_1["has_bends"] is False
+
+    # Caso 2: Piping-line clara (recta, 120mm, grosor 2.0pt)
+    cand_piping = PipingLineCandidateDTO(
+        polyline_points=[[0.10, 0.60], [0.80, 0.60]],
+        bbox_normalized=[0.10, 0.59, 0.80, 0.61],
+        line_style="solid",
+        length_mm=120.0,
+        stroke_width_pt=2.0
+    )
+    cls_2, meta_2 = scan_service.classify_stroke_candidate(cand_piping, [callout_sym], pw=pw, ph=ph)
+    assert cls_2 == "piping_line"
+    assert meta_2["decision_rule"] == "clear_piping_line"
+
+    # Caso 3: Piping-line con codos ortogonales (aunque sea corta)
+    cand_elbow = PipingLineCandidateDTO(
+        polyline_points=[[0.25, 0.225], [0.28, 0.225], [0.28, 0.260]],
+        bbox_normalized=[0.25, 0.225, 0.28, 0.260],
+        line_style="solid",
+        length_mm=30.0,
+        stroke_width_pt=0.8
+    )
+    cls_3, meta_3 = scan_service.classify_stroke_candidate(cand_elbow, [callout_sym], pw=pw, ph=ph)
+    assert cls_3 == "piping_line"
+    assert meta_3["has_bends"] is True
+    assert meta_3["elbow_count"] >= 1
+
+    # Caso 4 (Ambiguo resuelto a leader_line): longitud 44mm, recto, extremo cerca de callout
+    cand_ambig_leader = PipingLineCandidateDTO(
+        polyline_points=[[0.25, 0.225], [0.35, 0.225]],
+        bbox_normalized=[0.25, 0.22, 0.35, 0.23],
+        line_style="solid",
+        length_mm=44.0,
+        stroke_width_pt=0.8
+    )
+    cls_4, meta_4 = scan_service.classify_stroke_candidate(cand_ambig_leader, [callout_sym], pw=pw, ph=ph)
+    assert cls_4 == "leader_line"
+    assert meta_4["decision_rule"] == "ambiguous_resolved_to_leader"
+
+    # Caso 5 (Ambiguo resuelto a piping_line): longitud 44mm, recto, sin callout en extremos
+    cand_ambig_piping = PipingLineCandidateDTO(
+        polyline_points=[[0.60, 0.80], [0.70, 0.80]],
+        bbox_normalized=[0.60, 0.79, 0.70, 0.81],
+        line_style="solid",
+        length_mm=44.0,
+        stroke_width_pt=0.8
+    )
+    cls_5, meta_5 = scan_service.classify_stroke_candidate(cand_ambig_piping, [callout_sym], pw=pw, ph=ph)
+    assert cls_5 == "piping_line"
+    assert meta_5["decision_rule"] == "ambiguous_resolved_to_piping"
+
+
+def test_flow_direction_with_arrow_prioritization_and_conflict_resolution(db_session, test_setup_project_and_sheet):
+    """
+    Fase 3: Valida la dirección de flujo (flow_direction) en PipingLine:
+    - Escenario 1: Línea con flecha clara alineada con orden de trazado -> alta confianza ('forward').
+    - Escenario 2: Línea sin flecha -> fallback a orden de trazado con baja confianza ('forward').
+    - Escenario 3: Línea con conflicto entre orden de trazado (forward) y flecha física (reverse)
+                   -> Prioriza flecha ('reverse'), marca 'flow_direction_conflict=True' y crea ReviewTask HITL.
+    """
+    proj, doc, sheet = test_setup_project_and_sheet
+    scan_service = DocumentLayeredScanService(db_session)
+    pw, ph = 842.0, 595.0
+
+    # 1. Escenario 1: Flecha clara alineada (forward)
+    pline_1 = PipingLine(
+        project_id=proj.id,
+        line_number="LINE-FLOW-01",
+        flow_direction="unconfirmed",
+        source="auto_vector_extraction",
+        confidence_status="auto_high",
+        attributes={"trace_direction": "forward"}
+    )
+    db_session.add(pline_1)
+    db_session.commit()
+    db_session.refresh(pline_1)
+
+    seg_1 = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline_1.id,
+        polyline_points=[[0.10, 0.30], [0.90, 0.30]], # horizontal hacia derecha (+x)
+        bbox_normalized=[0.10, 0.29, 0.90, 0.31],
+        line_style="solid",
+        length_mm=250.0,
+        stroke_width_pt=2.0
+    )
+    db_session.add(seg_1)
+
+    arrow_sym_1 = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="flow_direction_arrow",
+        bbox=[420, 175, 440, 185],
+        bbox_normalized=[0.48, 0.295, 0.52, 0.305],
+        confidence=0.91,
+        match_rotation_deg=0.0, # apunta a derecha (+x)
+        attributes={"rotation_deg": 0.0}
+    )
+    db_session.add(arrow_sym_1)
+    db_session.commit()
+
+    symbols_1, _ = scan_service._layer_2_symbols_in_corridor(
+        sheet=sheet,
+        piping_lines=[pline_1],
+        pw=pw,
+        ph=ph
+    )
+    db_session.refresh(pline_1)
+    assert pline_1.flow_direction == "forward"
+    assert pline_1.attributes.get("flow_direction_conflict") is False
+    assert pline_1.attributes.get("flow_direction_source") == "detected_arrow"
+    assert pline_1.attributes.get("flow_direction_confidence") == "high"
+
+    # 2. Escenario 2: Línea sin flecha (fallback a orden de trazado)
+    pline_2 = PipingLine(
+        project_id=proj.id,
+        line_number="LINE-FLOW-02",
+        flow_direction="unconfirmed",
+        source="auto_vector_extraction",
+        confidence_status="auto_high",
+        attributes={"trace_direction": "forward"}
+    )
+    db_session.add(pline_2)
+    db_session.commit()
+    db_session.refresh(pline_2)
+
+    seg_2 = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline_2.id,
+        polyline_points=[[0.10, 0.70], [0.90, 0.70]],
+        bbox_normalized=[0.10, 0.69, 0.90, 0.71],
+        line_style="solid",
+        length_mm=250.0,
+        stroke_width_pt=2.0
+    )
+    db_session.add(seg_2)
+    db_session.commit()
+
+    symbols_2, _ = scan_service._layer_2_symbols_in_corridor(
+        sheet=sheet,
+        piping_lines=[pline_2],
+        pw=pw,
+        ph=ph
+    )
+    db_session.refresh(pline_2)
+    assert pline_2.flow_direction == "forward"
+    assert pline_2.attributes.get("arrow_detected") is False
+    assert pline_2.attributes.get("flow_direction_source") == "trace_order_fallback"
+    assert pline_2.attributes.get("flow_direction_confidence") == "low"
+
+    # 3. Escenario 3: Conflicto entre orden de trazado (forward) y flecha física (reverse)
+    pline_3 = PipingLine(
+        project_id=proj.id,
+        line_number="LINE-FLOW-03",
+        flow_direction="unconfirmed",
+        source="manual_trace",
+        confidence_status="manual_confirmed",
+        attributes={"trace_direction": "forward"}
+    )
+    db_session.add(pline_3)
+    db_session.commit()
+    db_session.refresh(pline_3)
+
+    seg_3 = PipingLineSegment(
+        sheet_id=sheet.id,
+        piping_line_id=pline_3.id,
+        polyline_points=[[0.10, 0.50], [0.90, 0.50]], # trazado izq -> der (+x)
+        bbox_normalized=[0.10, 0.49, 0.90, 0.51],
+        line_style="solid",
+        length_mm=250.0,
+        stroke_width_pt=2.0
+    )
+    db_session.add(seg_3)
+
+    # Flecha orientada a 180° (apunta a la izquierda, en contra del trazado)
+    arrow_sym_reverse = DetectedSymbol(
+        document_id=doc.id,
+        sheet_id=sheet.id,
+        symbol_type="flow_direction_arrow",
+        bbox=[420, 295, 440, 305],
+        bbox_normalized=[0.48, 0.495, 0.52, 0.505],
+        confidence=0.95,
+        match_rotation_deg=180.0, # apunta en dirección opuesta (-x)
+        attributes={"rotation_deg": 180.0}
+    )
+    db_session.add(arrow_sym_reverse)
+    db_session.commit()
+
+    symbols_3, _ = scan_service._layer_2_symbols_in_corridor(
+        sheet=sheet,
+        piping_lines=[pline_3],
+        pw=pw,
+        ph=ph
+    )
+    db_session.refresh(pline_3)
+
+    # Debe priorizar la flecha ('reverse') sobre el orden manual ('forward')
+    assert pline_3.flow_direction == "reverse"
+    # Debe marcarse como conflicto y con estado para revisión HITL
+    assert pline_3.attributes.get("flow_direction_conflict") is True
+    assert pline_3.confidence_status == "auto_low_needs_review"
+    assert pline_3.attributes.get("arrow_orientation") == "reverse"
+    assert pline_3.attributes.get("trace_order_direction") == "forward"
+
+    # Verificar que se creó la ReviewTask HITL correspondiente
+    tasks = db_session.query(ReviewTask).filter(
+        ReviewTask.sheet_id == sheet.id,
+        ReviewTask.reason_code == "flow_direction_conflict"
+    ).all()
+    assert len(tasks) >= 1
+    assert any(t.payload.get("line_id") == pline_3.id for t in tasks)
+
